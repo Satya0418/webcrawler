@@ -1,0 +1,24 @@
+[Unit]
+Description=Medicine Safety FastAPI Application
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=medicine
+Group=medicine
+WorkingDirectory=/opt/medicine-safety/backend
+EnvironmentFile=/opt/medicine-safety/.env
+ExecStart=/opt/medicine-safety/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 4
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=medicine-api
+
+# Security sandboxing
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

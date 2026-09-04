@@ -1,0 +1,132 @@
+# ==============================================================================
+# Git Ignore Configuration for Web Crawler & Medicine Safety Project
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Environment & Secrets (NEVER COMMIT SECRETS OR PASSWORDS)
+# ------------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+!.env.example
+
+# ------------------------------------------------------------------------------
+# 2. Python Virtual Environments & Packages
+# ------------------------------------------------------------------------------
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ------------------------------------------------------------------------------
+# 3. Python Bytecode & Cache
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ------------------------------------------------------------------------------
+# 4. Testing & Code Coverage
+# ------------------------------------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.nox/
+.tox/
+
+# ------------------------------------------------------------------------------
+# 5. Local Databases & SQLite
+# ------------------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+medicine_safety.db
+backend/medicine_safety.db
+*.sql
+*.sql.gz
+backups/
+
+# ------------------------------------------------------------------------------
+# 6. Crawler Artifacts, Temporary Downloads & Scraped Outputs
+# ------------------------------------------------------------------------------
+output/
+data/
+downloads/
+crawled_data/
+*.pdf
+temp/
+tmp/
+.cache/
+
+# ------------------------------------------------------------------------------
+# 7. Background Tasks, Celery & Process Files
+# ------------------------------------------------------------------------------
+celerybeat-schedule
+celerybeat-schedule.*
+celerybeat.pid
+*.pid
+
+# ------------------------------------------------------------------------------
+# 8. Logs & Debugging Output
+# ------------------------------------------------------------------------------
+*.log
+logs/
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ------------------------------------------------------------------------------
+# 9. Operating System Files
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ------------------------------------------------------------------------------
+# 10. IDEs & Editors
+# ------------------------------------------------------------------------------
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~

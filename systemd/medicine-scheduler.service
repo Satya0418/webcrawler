@@ -1,0 +1,23 @@
+[Unit]
+Description=Medicine Safety Celery Beat Scheduler
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=medicine
+Group=medicine
+WorkingDirectory=/opt/medicine-safety/backend
+EnvironmentFile=/opt/medicine-safety/.env
+ExecStart=/opt/medicine-safety/backend/.venv/bin/celery -A app.workers.fda_worker.celery_app beat --loglevel=info
+Restart=always
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=medicine-scheduler
+
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

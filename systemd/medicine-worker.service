@@ -1,0 +1,23 @@
+[Unit]
+Description=Medicine Safety Celery Worker
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=medicine
+Group=medicine
+WorkingDirectory=/opt/medicine-safety/backend
+EnvironmentFile=/opt/medicine-safety/.env
+ExecStart=/opt/medicine-safety/backend/.venv/bin/celery -A app.workers.fda_worker.celery_app worker --loglevel=info --concurrency=2
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=medicine-worker
+
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
