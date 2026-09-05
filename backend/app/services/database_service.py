@@ -13,23 +13,14 @@ from app.services.normalization import NormalizationService
 from app.services.validation import ValidationService
 from app.services.change_detection import ChangeDetectionService
 
+from app.scrapers.fda_srlc_scraper import parse_fda_date
+
 logger = logging.getLogger(__name__)
 
 
 def _parse_date(val: Any) -> Optional[datetime]:
-    """Parse string or datetime into datetime."""
-    if not val:
-        return None
-    if isinstance(val, datetime):
-        return val
-    if isinstance(val, str):
-        val = val.strip()
-        for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y"):
-            try:
-                return datetime.strptime(val, fmt)
-            except ValueError:
-                pass
-    return None
+    """Parse string or datetime into datetime using robust FDA date parser."""
+    return parse_fda_date(val)
 
 
 class DatabaseService:
@@ -271,11 +262,11 @@ class DatabaseService:
 
     @staticmethod
     def get_safety_changes_by_drug_id(session: Session, drug_id: int) -> List[SafetyLabelingChange]:
-        """Get safety changes for a given drug."""
+        """Get safety changes for a given drug, chronologically descending."""
         result = session.execute(
             select(SafetyLabelingChange)
             .where(SafetyLabelingChange.drug_id == drug_id)
-            .order_by(desc(SafetyLabelingChange.source_date))
+            .order_by(desc(SafetyLabelingChange.source_date), desc(SafetyLabelingChange.id))
         )
         return list(result.scalars().all())
 

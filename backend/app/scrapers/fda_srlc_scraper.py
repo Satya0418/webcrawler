@@ -4,11 +4,174 @@ Responsible for parsing HTML responses and extracting structured data with faith
 """
 import logging
 import re
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
+
+
+def parse_fda_date(date_str: Optional[Any]) -> Optional[datetime]:
+    """
+    Parse string or datetime to standard datetime object for accurate comparison and chronological sorting.
+    Handles ISO, FDA MM/DD/YYYY, M/D/YYYY, text dates (e.g. 'June 25, 2026', '25-Jun-2026'), and timestamps.
+    """
+    if not date_str:
+        return None
+    if isinstance(date_str, datetime):
+        return date_str
+
+    raw = str(date_str).strip()
+    if not raw:
+        return None
+
+    # Search for date pattern anywhere in string
+    date_regex = re.compile(
+        r"(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}|\d{1,2}[-\s](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-\s]\d{2,4})",
+        re.IGNORECASE,
+    )
+    m = date_regex.search(raw)
+    target = m.group(1).strip() if m else raw
+
+    # Strip supplement notes if present: e.g. "06/25/2026(SUPPL-25)" or "06/25/2026 (SUPPL-25)"
+    target_clean = re.sub(r"\(SUPPL[^\)]*\)", "", target, flags=re.IGNORECASE).strip()
+    date_part = target_clean.split(" ")[0].split("T")[0].strip()
+
+    # Try standard formats on date_part
+    for fmt in ("%m/%d/%Y", "%m-%d-%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%b-%Y", "%d-%B-%Y", "%b-%d-%Y", "%B-%d-%Y"):
+        try:
+            return datetime.strptime(date_part, fmt)
+        except ValueError:
+            pass
+
+    # Try full target string on textual formats
+    for fmt in (
+        "%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y",
+        "%d %B %Y", "%d %b %Y", "%d-%b-%Y", "%d-%B-%Y"
+    ):
+        try:
+            return datetime.strptime(target_clean, fmt)
+        except ValueError:
+            pass
+
+    # Fallback to dateutil parser
+    try:
+        import dateutil.parser
+        return dateutil.parser.parse(target_clean)
+    except Exception:
+        pass
+
+    return None
+
+
+def format_fda_date_to_report(date_str: Optional[Any]) -> Optional[str]:
+    """
+    Convert FDA dates (e.g., '12/05/2025', '2025-12-05', '06/25/2026', '6/5/2025')
+    to standard medical report format: '05-Dec-2025' or '25-Jun-2026'.
+    """
+    dt = parse_fda_date(date_str)
+    if dt:
+        return dt.strftime("%d-%b-%Y")
+    return str(date_str) if date_str else None
+
+
+def clean_adverse_reaction_text(raw_text: str) -> str:
+    """
+    Filter and clean adverse reaction text according to report specifications:
+    - Stops immediately if section 17 / PCI/PI/MG / Medication Guide appears.
+    - Strips editorial meta text ('Additions and/or revisions underlined:', '...').
+    - Removes cross-references in brackets like '[see Warnings and Precautions (5.5)]'.
+    - Strips leading section numbering (e.g. '6.2 ').
+    """
+    if not raw_text:
+        return ""
+
+    # Cut off at section 17 / PCI / PI / MG / Patient Counseling Information / Medication Guide
+    stop_regex = re.compile(
+        r"(?i)(?:^|\n)\s*(?:17\b|17\s+17|PCI/PI/MG|Patient\s+Counseling\s+Information|MEDICATION\s+GUIDE|How\s+should\s+I\s+use)",
+    )
+    m = stop_regex.search(raw_text)
+    if m:
+        raw_text = raw_text[:m.start()]
+
+    # Strip cross-references in brackets like "[see Warnings and Precautions (5.5)]" across multiple lines
+    raw_text = re.sub(r"\s*\[\s*see\s+[^\]]+\]", "", raw_text, flags=re.IGNORECASE)
+
+    # Normalize broken subsection headers that have accidental linebreaks
+    raw_text = re.sub(r"(?i)\bPostmarketing\s*\n+\s*Experience\b", "Postmarketing Experience", raw_text)
+    raw_text = re.sub(r"(?i)\bClinical\s*\n+\s*Trials?\s*\n+\s*Experience\b", "Clinical Trials Experience", raw_text)
+
+    cleaned_blocks = []
+    blocks = raw_text.split("\n\n")
+
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        # Skip ellipsis lines
+        if block in ("...", "…") or re.match(r"^[\.\s…]+$", block):
+            continue
+
+        # Skip editorial / guidance lines
+        if re.match(r"(?i)^(additions\s+and/or\s+revisions\s+underlined|newly\s+added|approved\s+drug\s+label)", block):
+            continue
+
+        # Clean individual lines in block
+        lines = block.split("\n")
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Check stop condition per line
+            if re.match(r"(?i)^(17\b|17\s+17|PCI/PI/MG|Patient\s+Counseling|MEDICATION\s+GUIDE|How\s+should\s+I\s+use)", line):
+                break
+
+            if line in ("...", "…") or re.match(r"^[\.\s…]+$", line):
+                continue
+            if re.match(r"(?i)^(additions\s+and/or\s+revisions\s+underlined|newly\s+added)", line):
+                continue
+
+            # Strip section numbers from subheadings: "6.2 Postmarketing Experience" -> "Postmarketing Experience"
+            line = re.sub(r"^\s*6\.\d+\s*", "", line)
+            line = re.sub(r"^\s*6\s+Adverse\s+Reactions", "Adverse Reactions", line, flags=re.IGNORECASE)
+
+            # Strip cross-references in brackets like "[see Warnings and Precautions (5.5)]"
+            line = re.sub(r"\s*\[\s*see\s+[^\]]+\]", "", line, flags=re.IGNORECASE)
+
+            cleaned_lines.append(line)
+
+        if cleaned_lines:
+            merged_lines = []
+            curr = ""
+            for line in cleaned_lines:
+                is_bullet = line.startswith("•") or line.startswith("-") or line.startswith("*")
+                is_heading = len(line) < 60 and ("Experience" in line or "Reactions" in line or "Trials" in line)
+                is_disorder_start = bool(re.match(r"^[A-Z][a-zA-Z\s,\/]+:\s*", line))
+
+                if is_bullet or is_heading:
+                    if curr:
+                        merged_lines.append(curr)
+                        curr = ""
+                    merged_lines.append(line)
+                elif is_disorder_start:
+                    if curr:
+                        merged_lines.append(curr)
+                    curr = line
+                else:
+                    if curr:
+                        curr = f"{curr} {line}"
+                    else:
+                        curr = line
+            if curr:
+                merged_lines.append(curr)
+
+            cleaned_blocks.append("\n\n".join(merged_lines))
+
+    return "\n\n".join(cleaned_blocks).strip()
 
 
 def clean_element_formatted_text(elem) -> str:
@@ -204,13 +367,23 @@ class FDASrLCScraper:
             accordion = soup.find("div", id="accordion") or soup.find("div", class_=lambda c: c and "accordion" in str(c))
             
             if accordion:
-                headers = [h for h in accordion.find_all("h3") if re.search(r"\d{1,2}/\d{1,2}/\d{4}", h.get_text())]
-                for header in headers:
+                for header in accordion.find_all("h3"):
                     header_text = header.get_text(strip=True)
-                    date_match = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", header_text)
-                    suppl_match = re.search(r"\((SUPPL-[^\)]+)\)", header_text, re.IGNORECASE)
+                    dt_obj = parse_fda_date(header_text)
+                    if not dt_obj:
+                        date_match = re.search(
+                            r"(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})",
+                            header_text,
+                            re.IGNORECASE,
+                        )
+                        if date_match:
+                            dt_obj = parse_fda_date(date_match.group(1))
 
-                    change_date = date_match.group(1) if date_match else None
+                    if not dt_obj:
+                        continue
+
+                    change_date = dt_obj.strftime("%m/%d/%Y")
+                    suppl_match = re.search(r"\((SUPPL-[^\)]+)\)", header_text, re.IGNORECASE)
                     suppl_id = suppl_match.group(1) if suppl_match else None
 
                     panel = header.find_next_sibling("div")
@@ -227,9 +400,16 @@ class FDASrLCScraper:
                         # Clean section title (e.g., "5 Warnings and Precautions", "6 Adverse Reactions")
                         raw_section = re.sub(r"\s+", " ", h4.get_text()).strip()
 
-                        # Content is in the sibling div following h4
-                        content_div = h4.find_next_sibling("div")
-                        formatted_text = clean_element_formatted_text(content_div) if content_div else ""
+                        # Collect all sibling elements up to the next h4
+                        section_elements = []
+                        for sib in h4.next_siblings:
+                            if getattr(sib, "name", None) == "h4":
+                                break
+                            if getattr(sib, "name", None):
+                                section_elements.append(sib)
+
+                        elem_texts = [clean_element_formatted_text(elem) for elem in section_elements]
+                        formatted_text = "\n\n".join([t for t in elem_texts if t]).strip()
 
                         # If there's an explicit original text split
                         original_text = None
@@ -243,6 +423,10 @@ class FDASrLCScraper:
                             parts = formatted_text.split("Updated Text:")
                             original_text = parts[0].replace("Original Text:", "").strip()
                             updated_text = parts[1].strip()
+
+                        # Clean adverse reactions text to prevent section 17 or editorial noise leakage
+                        if "adverse reaction" in raw_section.lower() and updated_text:
+                            updated_text = clean_adverse_reaction_text(updated_text)
 
                         change_record = {
                             "section": raw_section,
@@ -297,6 +481,339 @@ class FDASrLCScraper:
     def extract_source_url(self, record: Dict[str, Any]) -> Optional[str]:
         """Extract source URL from record."""
         return record.get("source_url")
+
+    def extract_adverse_reactions_report(
+        self,
+        html_content: str,
+        drug_name: Optional[str] = None,
+        active_ingredient: Optional[str] = None,
+        source_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Extract only the latest Adverse Reactions labeling change for a drug matching the
+        reporting standard:
+        1. Checks all dates/supplements in the accordion, ordered chronologically (newest first).
+        2. Finds the most recent date in which Adverse Reactions is present.
+        3. Strips section 17 PCI/PI/MG, 'Additions and/or revisions underlined', '...',
+           and bracketed cross-references.
+        4. Formats the date as DD-Mon-YYYY (e.g. 05-Dec-2025).
+        5. If no Adverse Reactions found in any date, returns status 'no_data' with message
+           'No data is present on adverse reaction'.
+        """
+        if not html_content:
+            return {
+                "status": "no_data",
+                "drug_name": drug_name,
+                "active_ingredient": active_ingredient,
+                "message": "No data is present on adverse reaction",
+                "formatted_report": "No data is present on adverse reaction",
+            }
+
+        try:
+            soup = BeautifulSoup(html_content, self.parser)
+
+            # 1. Extract Drug Name & Active Ingredient if not provided
+            if not drug_name:
+                for h in soup.find_all(["h2", "h3"]):
+                    text = h.get_text(strip=True)
+                    match = re.search(r"^([^\(]+?)\s*\(\s*([A-Za-z]+[\s\-]?\d+)\s*\)", text)
+                    if match:
+                        drug_name = match.group(1).strip()
+                        break
+                if not drug_name:
+                    title_elem = soup.find(["h1", "h2", "h3"])
+                    if title_elem:
+                        drug_name = title_elem.get_text(strip=True)
+
+            if not active_ingredient:
+                for h in soup.find_all(["h4", "h5"]):
+                    text = h.get_text(strip=True)
+                    if text.startswith("(") and text.endswith(")"):
+                        active_ingredient = text.strip("() \t\n\r")
+                        break
+
+            drug_display = (drug_name or "Drug").title() if (drug_name and drug_name.isupper()) else (drug_name or "Drug")
+            ingr_display = (active_ingredient or "").lower()
+            ingr_clean = re.sub(r"\b(sulfate|hydrochloride|sodium|potassium|acetate)\b", "", ingr_display, flags=re.I).strip()
+            if not ingr_clean:
+                ingr_clean = ingr_display or "active ingredient"
+
+            # 2. Extract Accordion
+            accordion = soup.find("div", id="accordion") or soup.find("div", class_=lambda c: c and "accordion" in str(c))
+            if not accordion:
+                return {
+                    "status": "no_data",
+                    "drug_name": drug_display,
+                    "active_ingredient": ingr_clean,
+                    "message": "No data is present on adverse reaction",
+                    "formatted_report": "No data is present on adverse reaction",
+                }
+
+            date_panels = []
+            for header in accordion.find_all("h3"):
+                header_text = header.get_text(strip=True)
+                dt_obj = parse_fda_date(header_text)
+                if not dt_obj:
+                    date_match = re.search(
+                        r"(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})",
+                        header_text,
+                        re.IGNORECASE,
+                    )
+                    if date_match:
+                        dt_obj = parse_fda_date(date_match.group(1))
+
+                if not dt_obj:
+                    continue
+
+                change_date = dt_obj.strftime("%m/%d/%Y")
+                suppl_match = re.search(r"\((SUPPL-[^\)]+)\)", header_text, re.IGNORECASE)
+                suppl_id = suppl_match.group(1) if suppl_match else None
+
+                panel = header.find_next_sibling("div")
+                if panel:
+                    date_panels.append({
+                        "date_str": change_date,
+                        "date_obj": dt_obj,
+                        "suppl_id": suppl_id,
+                        "panel": panel,
+                    })
+
+            # Sort chronologically descending (newest date first)
+            date_panels.sort(key=lambda p: p["date_obj"], reverse=True)
+
+            # 3. Check each date panel in chronological order for Adverse Reactions
+            selected_panel = None
+            selected_ar_content = None
+
+            for dp in date_panels:
+                panel = dp["panel"]
+                h_elements = panel.find_all(["h4", "h5", "h3"])
+                ar_parts = []
+
+                for h in h_elements:
+                    sec_title = re.sub(r"\s+", " ", h.get_text()).strip()
+
+                    # Skip if section 17 or counseling information
+                    if re.search(r"(?i)\b(?:17\b|17\s+17|PCI/PI/MG|Patient\s+Counseling|Medication\s+Guide)", sec_title):
+                        continue
+
+                    # Check if section title is Adverse Reactions
+                    if re.search(r"(?i)\badverse\s+(?:reactions?|events?)\b", sec_title):
+                        # Collect all content elements between this heading and next heading
+                        section_elements = []
+                        for sib in h.next_siblings:
+                            if getattr(sib, "name", None) in ["h4", "h5", "h3"]:
+                                break
+                            if getattr(sib, "name", None):
+                                section_elements.append(sib)
+
+                        elem_texts = [clean_element_formatted_text(elem) for elem in section_elements]
+                        formatted_text = "\n\n".join([t for t in elem_texts if t]).strip()
+                        if formatted_text:
+                            ar_parts.append(formatted_text)
+
+                if ar_parts:
+                    combined_text = "\n\n".join(ar_parts)
+                    cleaned = clean_adverse_reaction_text(combined_text)
+                    if cleaned:
+                        selected_panel = dp
+                        selected_ar_content = cleaned
+                        break  # Stop at the latest date where adverse reaction is present
+
+            if not selected_panel or not selected_ar_content:
+                return {
+                    "status": "no_data",
+                    "drug_name": drug_display,
+                    "active_ingredient": ingr_clean,
+                    "message": "No data is present on adverse reaction",
+                    "formatted_report": "No data is present on adverse reaction",
+                    "dates_evaluated": [dp["date_str"] for dp in date_panels],
+                }
+
+            # 4. Format into exact report matching Image 2
+            formatted_date = format_fda_date_to_report(selected_panel["date_str"])
+            intro_line = (
+                f"On {formatted_date}, the United States Food and Drug Administration "
+                f"Center for Drug Evaluation and Research approved the following safety labeling "
+                f"changes for {drug_display} ({ingr_clean}; Additions underlined):"
+            )
+
+            report_lines = [
+                "3.1 The United States Food and Drug Administration",
+                "",
+                intro_line,
+                "",
+                "Adverse Reactions",
+                "",
+            ]
+
+            for block in selected_ar_content.split("\n\n"):
+                block = block.strip()
+                if block:
+                    report_lines.append(block)
+                    report_lines.append("")
+
+            formatted_report = "\n".join(report_lines).strip()
+
+            return {
+                "status": "success",
+                "drug_name": drug_display,
+                "active_ingredient": ingr_clean,
+                "selected_date": selected_panel["date_str"],
+                "formatted_date": formatted_date,
+                "supplement_id": selected_panel["suppl_id"],
+                "adverse_reactions_text": selected_ar_content,
+                "intro_sentence": intro_line,
+                "formatted_report": formatted_report,
+                "dates_evaluated": [dp["date_str"] for dp in date_panels],
+            }
+
+        except Exception as e:
+            logger.error(f"Error extracting adverse reactions report: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "drug_name": drug_name,
+                "message": f"Error parsing adverse reactions: {str(e)}",
+                "formatted_report": "No data is present on adverse reaction",
+            }
+
+    def extract_adverse_reactions_from_records(
+        self,
+        drug_name: str,
+        active_ingredient: Optional[str],
+        changes: List[Any],
+    ) -> Dict[str, Any]:
+        """
+        Extract Adverse Reactions report from a list of SafetyLabelingChange database objects or dicts.
+        Finds the latest date where section is 'Adverse Reactions'.
+        """
+        drug_display = (drug_name or "Drug").title() if (drug_name and drug_name.isupper()) else (drug_name or "Drug")
+        ingr_display = (active_ingredient or "").lower()
+        ingr_clean = re.sub(r"\b(sulfate|hydrochloride|sodium|potassium|acetate)\b", "", ingr_display, flags=re.I).strip()
+        if not ingr_clean:
+            ingr_clean = ingr_display or "active ingredient"
+
+        if not changes:
+            return {
+                "status": "no_data",
+                "drug_name": drug_display,
+                "active_ingredient": ingr_clean,
+                "message": "No data is present on adverse reaction",
+                "formatted_report": "No data is present on adverse reaction",
+            }
+
+        def _get_val(obj, attr):
+            if isinstance(obj, dict):
+                return obj.get(attr)
+            return getattr(obj, attr, None)
+
+        # Filter records for Adverse Reactions
+        ar_changes = []
+        for c in changes:
+            sec = _get_val(c, "section") or ""
+            if re.search(r"(?i)\badverse\s+reactions?\b", sec):
+                ar_changes.append(c)
+
+        if not ar_changes:
+            return {
+                "status": "no_data",
+                "drug_name": drug_display,
+                "active_ingredient": ingr_clean,
+                "message": "No data is present on adverse reaction",
+                "formatted_report": "No data is present on adverse reaction",
+            }
+
+        # Group records by parsed date
+        from collections import defaultdict
+        grouped_by_date = defaultdict(list)
+        for c in ar_changes:
+            s_date = _get_val(c, "source_date")
+            dt_obj = parse_fda_date(s_date)
+            if dt_obj:
+                grouped_by_date[dt_obj].append(c)
+
+        if not grouped_by_date:
+            return {
+                "status": "no_data",
+                "drug_name": drug_display,
+                "active_ingredient": ingr_clean,
+                "message": "No data is present on adverse reaction",
+                "formatted_report": "No data is present on adverse reaction",
+            }
+
+        # Sort dates in descending order (latest date first)
+        sorted_dates = sorted(grouped_by_date.keys(), reverse=True)
+
+        selected_dt = None
+        selected_suppl_id = None
+        selected_cleaned_text = None
+
+        for dt in sorted_dates:
+            records_for_date = grouped_by_date[dt]
+            texts = []
+            suppl_id = None
+            for rec in records_for_date:
+                txt = _get_val(rec, "updated_text") or ""
+                if txt:
+                    texts.append(txt)
+                if not suppl_id and _get_val(rec, "source_record_id"):
+                    suppl_id = _get_val(rec, "source_record_id")
+
+            if texts:
+                cleaned = clean_adverse_reaction_text("\n\n".join(texts))
+                if cleaned:
+                    selected_dt = dt
+                    selected_suppl_id = suppl_id
+                    selected_cleaned_text = cleaned
+                    break  # Stop at the latest date where adverse reactions are present
+
+        if not selected_cleaned_text or not selected_dt:
+            return {
+                "status": "no_data",
+                "drug_name": drug_display,
+                "active_ingredient": ingr_clean,
+                "message": "No data is present on adverse reaction",
+                "formatted_report": "No data is present on adverse reaction",
+                "dates_evaluated": [dt.strftime("%m/%d/%Y") for dt in sorted_dates],
+            }
+
+        s_date_str = selected_dt.strftime("%m/%d/%Y")
+        formatted_date = format_fda_date_to_report(selected_dt)
+        intro_line = (
+            f"On {formatted_date}, the United States Food and Drug Administration "
+            f"Center for Drug Evaluation and Research approved the following safety labeling "
+            f"changes for {drug_display} ({ingr_clean}; Additions underlined):"
+        )
+
+        report_lines = [
+            "3.1 The United States Food and Drug Administration",
+            "",
+            intro_line,
+            "",
+            "Adverse Reactions",
+            "",
+        ]
+
+        for block in selected_cleaned_text.split("\n\n"):
+            block = block.strip()
+            if block:
+                report_lines.append(block)
+                report_lines.append("")
+
+        formatted_report = "\n".join(report_lines).strip()
+
+        return {
+            "status": "success",
+            "drug_name": drug_display,
+            "active_ingredient": ingr_clean,
+            "selected_date": s_date_str,
+            "formatted_date": formatted_date,
+            "supplement_id": selected_suppl_id,
+            "adverse_reactions_text": selected_cleaned_text,
+            "intro_sentence": intro_line,
+            "formatted_report": formatted_report,
+            "dates_evaluated": [dt.strftime("%m/%d/%Y") for dt in sorted_dates],
+        }
 
 
 # Create singleton instance

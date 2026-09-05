@@ -7,8 +7,16 @@ import csv
 import io
 import json
 import html
+import re
+from datetime import datetime
 from typing import List, Dict, Any
 from collections import defaultdict
+
+from app.scrapers.fda_srlc_scraper import (
+    clean_adverse_reaction_text,
+    format_fda_date_to_report,
+    parse_fda_date,
+)
 
 
 def _get_val(obj: Any, attr: str, default: Any = "") -> Any:
@@ -166,7 +174,7 @@ def render_homepage_html(query: str = "", results: list = None, error: str = Non
                         </div>
                     </div>
                     <div class="result-action">
-                        <a href="/drugs/{d_id}" class="btn btn-secondary">View Changes &rarr;</a>
+                        <a href="/drugs/{d_id}" class="btn btn-secondary">View Adverse Reactions &rarr;</a>
                         <a href="/drugs/{d_id}/export?format=csv" class="btn btn-outline" title="Download CSV">CSV</a>
                         <a href="/drugs/{d_id}/export?format=json" class="btn btn-outline" title="Download JSON">JSON</a>
                     </div>
@@ -407,133 +415,175 @@ def render_homepage_html(query: str = "", results: list = None, error: str = Non
 
 def render_drug_detail_html(drug: dict, changes: list) -> str:
     """
-    Render drug safety labeling detail page with a clean, simple white background
-    matching the exact layout shown in the user's photos, plus CSV and JSON export buttons.
+    Render drug safety labeling detail page showing ONLY Adverse Reactions.
+    Formats the report exactly as specified in regulatory reporting style:
+    - Displays 3.1 The United States Food and Drug Administration header
+    - Introductory approval sentence with DD-Mon-YYYY date
+    - Adverse Reactions header
+    - Subsection headers (e.g. Postmarketing Experience)
+    - Clean disorder paragraphs
+    - Removes all Section 17 PCI/PI/MG, Medication Guides, Warnings, and noise.
+    - If no adverse reaction data exists, displays 'No data is present on adverse reaction'.
     """
     d_id = drug.get("id") or 1
-    display_name = html.escape(drug.get("display_name") or "")
-    active_ingredient = html.escape(drug.get("active_ingredient") or "Not specified")
-    application_number = html.escape(drug.get("application_number") or "N/A")
+    display_name = drug.get("display_name") or ""
+    display_clean = display_name.title() if display_name.isupper() else display_name
+    active_ingredient = drug.get("active_ingredient") or "Not specified"
+    ingr_clean = re.sub(r"\b(sulfate|hydrochloride|sodium|potassium|acetate)\b", "", active_ingredient.lower(), flags=re.I).strip()
+    if not ingr_clean:
+        ingr_clean = active_ingredient.lower()
 
-    # Group changes by supplement date and ID
-    grouped = defaultdict(list)
-    pdf_links = {}
+    application_number = drug.get("application_number") or "N/A"
 
+    # Filter changes for ONLY Adverse Reactions
+    ar_changes = []
     for c in changes:
-        s_date = c.get("source_date")
-        if s_date:
-            date_str = str(s_date)[:10]
-            if "-" in date_str and len(date_str) == 10:
-                parts = date_str.split("-")
-                date_str = f"{parts[1]}/{parts[2]}/{parts[0]}"
-        else:
-            date_str = "Recent"
+        sec = _get_val(c, "section", "")
+        if re.search(r"(?i)\badverse\s+reactions?\b", sec):
+            ar_changes.append(c)
 
-        s_id = c.get("source_record_id") or "SUPPL"
-        group_key = (date_str, s_id)
+    # Group Adverse Reactions by distinct parsed supplement date
+    grouped = defaultdict(list)
+    for c in ar_changes:
+        s_date = _get_val(c, "source_date")
+        dt_obj = parse_fda_date(s_date)
+        date_str = dt_obj.strftime("%m/%d/%Y") if dt_obj else (str(s_date)[:10] if s_date else "Recent")
+        group_key = (date_str, dt_obj or datetime.min)
         grouped[group_key].append(c)
 
-        # Extract PDF url
-        fda_comment = c.get("fda_comment") or ""
-        source_url = c.get("source_url") or ""
-        if ".pdf" in source_url.lower():
-            pdf_links[group_key] = source_url
-        elif "Approved Drug Label:" in fda_comment and ".pdf" in fda_comment.lower():
-            pdf_links[group_key] = fda_comment.replace("Approved Drug Label:", "").strip()
+    # Sort dates chronologically descending (newest date first)
+    sorted_groups = sorted(grouped.items(), key=lambda item: item[0][1], reverse=True)
 
-    # Build supplement blocks
-    supplements_html = []
+    report_sheets_html = []
+    plain_reports = []
 
-    for (date_str, suppl_id), section_changes in sorted(grouped.items(), key=lambda x: x[0][0], reverse=True):
-        pdf_url = pdf_links.get((date_str, suppl_id))
-        pdf_link_html = ""
-        if pdf_url:
-            pdf_link_html = f"""
-            <div class="pdf-link-container">
-                <a href="{html.escape(pdf_url)}" target="_blank" class="pdf-link">
-                    Approved Drug Label (PDF)
-                </a>
-            </div>
-            """
+    for (date_str, dt_obj), section_changes in sorted_groups:
+        formatted_date = format_fda_date_to_report(dt_obj) if dt_obj else format_fda_date_to_report(date_str)
+        suppl_ids = list(dict.fromkeys([_get_val(c, "source_record_id") for c in section_changes if _get_val(c, "source_record_id")]))
+        suppl_id = ", ".join(suppl_ids) if suppl_ids else None
 
-        sections_html = []
+        seen_texts = set()
+        raw_texts = []
         for chg in section_changes:
-            sec_title = html.escape(chg.get("section") or "Safety Information")
-            up_text = chg.get("updated_text") or ""
+            txt = (_get_val(chg, "updated_text") or "").strip()
+            if txt and txt not in seen_texts:
+                seen_texts.add(txt)
+                raw_texts.append(txt)
 
-            formatted_paragraphs = []
-            for block in up_text.split("\n\n"):
-                block = block.strip()
-                if not block:
-                    continue
+        cleaned_text = clean_adverse_reaction_text("\n\n".join(raw_texts))
+        if not cleaned_text:
+            continue
 
-                if "•" in block:
-                    lines = block.split("\n")
-                    bullets = []
-                    pre = []
-                    for line in lines:
-                        line = line.strip()
-                        if line.startswith("•"):
-                            bullets.append(f"<li>{html.escape(line.lstrip('• ').strip())}</li>")
-                        elif line:
-                            pre.append(f"<p>{html.escape(line)}</p>")
-                    if pre:
-                        formatted_paragraphs.append("".join(pre))
-                    if bullets:
-                        formatted_paragraphs.append(f"<ul class='bullet-list'>{''.join(bullets)}</ul>")
-                elif block.startswith("…") or block == "...":
-                    formatted_paragraphs.append(f"<p class='ellipsis'>{html.escape(block)}</p>")
-                elif any(block.startswith(p) for p in ("Newly added", "Additions and/or")):
-                    formatted_paragraphs.append(f"<p class='meta-note'><em>{html.escape(block)}</em></p>")
-                elif any(block.startswith(p) for p in ("5.", "6.", "8.", "17.", "PATIENT COUNSELING")):
-                    formatted_paragraphs.append(f"<p class='subsection-title'><strong>{html.escape(block)}</strong></p>")
-                else:
-                    formatted_paragraphs.append(f"<p class='text-body'>{html.escape(block)}</p>")
+        intro_sentence = (
+            f"On {formatted_date}, the United States Food and Drug Administration "
+            f"Center for Drug Evaluation and Research approved the following safety labeling "
+            f"changes for {display_clean} ({ingr_clean}; Additions underlined):"
+        )
 
-            body_content = "".join(formatted_paragraphs)
+        body_html_parts = []
+        plain_text_lines = [
+            "3.1 The United States Food and Drug Administration",
+            "",
+            intro_sentence,
+            "",
+            "Adverse Reactions",
+            "",
+        ]
 
-            sections_html.append(f"""
-            <div class="section-item">
-                <h4 class="section-heading">{sec_title}</h4>
-                <div class="section-content">
-                    {body_content}
+        blocks = cleaned_text.split("\n\n")
+        for block in blocks:
+            block = block.strip()
+            if not block:
+                continue
+
+            plain_text_lines.append(block)
+            plain_text_lines.append("")
+
+            # If block is a subsection title (e.g. "Postmarketing Experience")
+            if len(block) < 60 and ("Experience" in block or "Reactions" in block or not ":" in block):
+                body_html_parts.append(f'<h4 class="report-subheading">{html.escape(block)}</h4>')
+            elif ":" in block:
+                # Format disorders line with bold prefix
+                label, desc = block.split(":", 1)
+                body_html_parts.append(
+                    f'<p class="report-disorder"><strong>{html.escape(label.strip())}:</strong> {html.escape(desc.strip())}</p>'
+                )
+            else:
+                body_html_parts.append(f'<p class="report-disorder">{html.escape(block)}</p>')
+
+        single_plain_report = "\n".join(plain_text_lines).strip()
+        plain_reports.append(single_plain_report)
+
+        suppl_label = f"({html.escape(suppl_id)})" if suppl_id else ""
+        report_sheets_html.append(f"""
+        <div class="report-sheet">
+            <div class="report-sheet-top">
+                <span class="suppl-badge">Supplement Date: {html.escape(date_str)} {suppl_label}</span>
+                <button type="button" class="btn-copy-card" onclick="copyText(this)" data-copy="{html.escape(single_plain_report)}">
+                    📋 Copy Text
+                </button>
+            </div>
+
+            <div class="report-sheet-content">
+                <div class="report-sec-num">3.1 The United States Food and Drug Administration</div>
+                <p class="report-intro-p">
+                    On {html.escape(formatted_date)}, the United States Food and Drug Administration Center for Drug Evaluation and Research approved the following safety labeling changes for {html.escape(display_clean)} ({html.escape(ingr_clean)}; <em>Additions underlined</em>):
+                </p>
+
+                <h3 class="report-main-heading">Adverse Reactions</h3>
+
+                <div class="report-body-container">
+                    {"".join(body_html_parts)}
                 </div>
             </div>
-            """)
-
-        supplements_html.append(f"""
-        <div class="supplement-panel">
-            <div class="supplement-header">
-                {date_str} <span class="suppl-id">({html.escape(suppl_id)})</span>
-            </div>
-            <div class="supplement-body">
-                {pdf_link_html}
-                {"".join(sections_html)}
-            </div>
         </div>
         """)
 
-    if not supplements_html:
-        supplements_html.append("""
-        <div style="padding: 20px; color: #6b7280;">
-            No safety-related labeling changes recorded for this drug.
+    if not report_sheets_html:
+        main_content_html = """
+        <div class="no-data-box">
+            <div class="no-data-icon">⚠️</div>
+            <h2 class="no-data-title">No data is present on adverse reaction</h2>
+            <p class="no-data-desc">No Adverse Reactions safety-related labeling changes were approved or recorded for this medicine in the FDA SrLC database.</p>
         </div>
-        """)
+        """
+        top_copy_btn = ""
+    else:
+        latest_sheet = report_sheets_html[0]
+        older_sheets = report_sheets_html[1:]
+        older_html = ""
+        if older_sheets:
+            older_html = f"""
+            <details class="older-revisions-details">
+                <summary class="older-revisions-summary">
+                    📁 Previous Adverse Reactions Labeling Updates ({len(older_sheets)} prior)
+                </summary>
+                <div class="older-revisions-content">
+                    {"".join(older_sheets)}
+                </div>
+            </details>
+            """
+        main_content_html = f"{latest_sheet}\n{older_html}"
+        top_copy_btn = f"""
+        <button type="button" class="btn-export btn-copy-primary" onclick="copyText(this)" data-copy="{html.escape(plain_reports[0])}">
+            📋 Copy Report
+        </button>
+        """
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{display_name} ({application_number}) - FDA Safety Labeling Changes</title>
+    <title>{display_clean} ({application_number}) - Adverse Reactions</title>
     <style>
         body {{
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
             background-color: #ffffff;
-            color: #222222;
+            color: #111827;
             margin: 0;
             padding: 0;
-            line-height: 1.55;
+            line-height: 1.6;
             font-size: 15px;
         }}
         .top-nav {{
@@ -551,17 +601,15 @@ def render_drug_detail_html(drug: dict, changes: list) -> str:
             font-weight: 500;
         }}
         .top-nav a:hover {{ text-decoration: underline; }}
-        .nav-left {{ display: flex; gap: 12px; align-items: center; }}
-        .nav-right {{ display: flex; gap: 10px; align-items: center; }}
         .page-container {{
-            max-width: 980px;
-            margin: 20px auto 60px auto;
+            max-width: 900px;
+            margin: 24px auto 60px auto;
             padding: 0 20px;
         }}
         .drug-header {{
             margin-bottom: 24px;
             padding-bottom: 16px;
-            border-bottom: 1px solid #dee2e6;
+            border-bottom: 1px solid #e5e7eb;
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
@@ -574,21 +622,21 @@ def render_drug_detail_html(drug: dict, changes: list) -> str:
         .drug-name {{
             font-size: 26px;
             font-weight: 700;
-            color: #111;
+            color: #111827;
             margin: 0 0 4px 0;
         }}
         .app-number {{
             font-weight: 400;
-            color: #555;
+            color: #4b5563;
         }}
         .ingredient {{
             font-size: 16px;
             font-weight: 600;
-            color: #333;
-            margin: 0 0 8px 0;
+            color: #374151;
+            margin: 0 0 6px 0;
         }}
         .agency-subtitle {{
-            color: #555;
+            color: #6b7280;
             font-size: 13px;
             margin: 0;
         }}
@@ -597,23 +645,18 @@ def render_drug_detail_html(drug: dict, changes: list) -> str:
             gap: 8px;
             align-items: center;
         }}
-        .export-label {{
-            font-size: 12px;
-            font-weight: 600;
-            color: #6b7280;
-            text-transform: uppercase;
-        }}
         .btn-export {{
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 7px 12px;
+            padding: 7px 14px;
             border: 1px solid #d1d5db;
             border-radius: 4px;
-            background: #f9fafb;
+            background: #ffffff;
             color: #1f2937;
             font-size: 13px;
             font-weight: 600;
+            cursor: pointer;
             text-decoration: none;
             transition: all 0.15s ease-in-out;
         }}
@@ -622,101 +665,145 @@ def render_drug_detail_html(drug: dict, changes: list) -> str:
             color: #ffffff;
             border-color: #0284c7;
         }}
-        .btn-export-csv:hover {{
-            background: #059669;
-            border-color: #059669;
+        .btn-copy-primary {{
+            background: #0284c7;
+            color: #ffffff;
+            border-color: #0284c7;
         }}
-        .supplement-panel {{
-            border: 1px solid #cccccc;
-            border-radius: 4px;
-            margin-bottom: 20px;
+        .btn-copy-primary:hover {{
+            background: #0369a1;
+            border-color: #0369a1;
+        }}
+        .report-sheet {{
             background: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            margin-bottom: 28px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }}
-        .supplement-header {{
-            background: #eef2f5;
-            color: #222222;
-            padding: 12px 18px;
+        .report-sheet-top {{
+            background: #f3f4f6;
+            padding: 10px 20px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .suppl-badge {{
+            font-size: 13px;
+            font-weight: 600;
+            color: #374151;
+        }}
+        .btn-copy-card {{
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #374151;
+            transition: all 0.15s;
+        }}
+        .btn-copy-card:hover {{
+            background: #f9fafb;
+            border-color: #9ca3af;
+        }}
+        .report-sheet-content {{
+            padding: 24px 28px 30px 28px;
+        }}
+        .report-sec-num {{
             font-size: 16px;
             font-weight: 700;
-            border-bottom: 1px solid #cccccc;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            color: #111827;
+            margin-bottom: 16px;
         }}
-        .suppl-id {{
-            color: #555555;
-            font-weight: 500;
-            font-size: 14px;
-        }}
-        .supplement-body {{
-            padding: 18px 24px 24px 24px;
-        }}
-        .pdf-link-container {{
-            margin-bottom: 18px;
-        }}
-        .pdf-link {{
-            color: #0066cc;
-            font-size: 14px;
-            text-decoration: underline;
-            font-weight: 500;
-        }}
-        .pdf-link:hover {{ color: #004499; }}
-        .section-item {{
-            margin-bottom: 24px;
-        }}
-        .section-heading {{
-            font-size: 18px;
-            font-weight: 700;
-            color: #111111;
-            margin: 0 0 10px 0;
-            padding-bottom: 4px;
-            border-bottom: 1px solid #eeeeee;
-        }}
-        .section-content {{
-            padding-left: 2px;
-        }}
-        .meta-note {{
-            color: #444444;
-            font-style: italic;
-            margin: 6px 0;
-            font-size: 14px;
-        }}
-        .subsection-title {{
+        .report-intro-p {{
             font-size: 15px;
-            margin: 14px 0 6px 0;
-            color: #111111;
-        }}
-        .text-body {{
-            margin: 8px 0;
-            color: #222222;
+            color: #1f2937;
+            margin-bottom: 20px;
             line-height: 1.6;
         }}
-        .bullet-list {{
-            margin: 8px 0 14px 20px;
-            padding: 0;
-            list-style-type: disc;
+        .report-main-heading {{
+            font-size: 18px;
+            font-weight: 700;
+            color: #111827;
+            margin: 0 0 12px 0;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #f3f4f6;
         }}
-        .bullet-list li {{
-            margin-bottom: 6px;
-            color: #222222;
-            line-height: 1.55;
+        .report-subheading {{
+            font-size: 16px;
+            font-weight: 700;
+            color: #111827;
+            margin: 16px 0 10px 0;
         }}
-        .ellipsis {{
-            color: #888888;
-            margin: 4px 0;
+        .report-disorder {{
+            font-size: 15px;
+            color: #1f2937;
+            margin: 10px 0;
+            line-height: 1.6;
+        }}
+        .no-data-box {{
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 40px 20px;
+            text-align: center;
+            margin: 30px 0;
+        }}
+        .no-data-icon {{
+            font-size: 32px;
+            margin-bottom: 12px;
+        }}
+        .no-data-heading, .no-data-title {{
+            font-size: 18px;
+            font-weight: 700;
+            color: #374151;
+            margin: 0 0 8px 0;
+        }}
+        .no-data-desc {{
+            color: #6b7280;
+            font-size: 14px;
+            margin: 0;
+        }}
+        .older-revisions-details {{
+            margin-top: 24px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: #f9fafb;
+            overflow: hidden;
+        }}
+        .older-revisions-summary {{
+            padding: 12px 18px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #4b5563;
+            cursor: pointer;
+            outline: none;
+            user-select: none;
+        }}
+        .older-revisions-summary:hover {{
+            color: #0284c7;
+            background: #f3f4f6;
+        }}
+        .older-revisions-content {{
+            padding: 18px;
+            background: #ffffff;
+            border-top: 1px solid #e5e7eb;
         }}
         .footer-note {{
             margin-top: 40px;
             padding-top: 14px;
-            border-top: 1px solid #dee2e6;
+            border-top: 1px solid #e5e7eb;
             font-size: 12px;
-            color: #666666;
+            color: #6b7280;
         }}
     </style>
 </head>
 <body>
     <div class="top-nav">
-        <div class="nav-left">
+        <div>
             <a href="/">&larr; Back to Search</a>
         </div>
     </div>
@@ -725,14 +812,14 @@ def render_drug_detail_html(drug: dict, changes: list) -> str:
         <div class="drug-header">
             <div class="drug-header-main">
                 <h1 class="drug-name">
-                    {display_name} <span class="app-number">({application_number})</span>
+                    {html.escape(display_clean)} <span class="app-number">({html.escape(application_number)})</span>
                 </h1>
-                <div class="ingredient">({active_ingredient})</div>
+                <div class="ingredient">({html.escape(active_ingredient)})</div>
                 <p class="agency-subtitle">Safety-related Labeling Changes Approved by FDA Center for Drug Evaluation and Research (CDER)</p>
             </div>
             <div class="export-actions">
-                <span class="export-label">Download Data:</span>
-                <a href="/drugs/{d_id}/export?format=csv" class="btn-export btn-export-csv" download>
+                {top_copy_btn}
+                <a href="/drugs/{d_id}/export?format=csv" class="btn-export" download>
                     📥 CSV
                 </a>
                 <a href="/drugs/{d_id}/export?format=json" class="btn-export" download>
@@ -741,14 +828,34 @@ def render_drug_detail_html(drug: dict, changes: list) -> str:
             </div>
         </div>
 
-        <div class="supplements-container">
-            {"".join(supplements_html)}
+        <div class="reports-container">
+            {main_content_html}
         </div>
 
         <div class="footer-note">
             Source: U.S. Food and Drug Administration (FDA) Drug Safety-related Labeling Changes database.
         </div>
     </div>
+
+    <script>
+        function copyText(btn) {{
+            var text = btn.getAttribute('data-copy');
+            if (!text) return;
+            navigator.clipboard.writeText(text).then(function() {{
+                var orig = btn.innerHTML;
+                btn.innerHTML = '✓ Copied!';
+                btn.style.backgroundColor = '#16a34a';
+                btn.style.borderColor = '#16a34a';
+                btn.style.color = '#ffffff';
+                setTimeout(function() {{
+                    btn.innerHTML = orig;
+                    btn.style.backgroundColor = '';
+                    btn.style.borderColor = '';
+                    btn.style.color = '';
+                }}, 2000);
+            }});
+        }}
+    </script>
 </body>
 </html>
 """

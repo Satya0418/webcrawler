@@ -64,7 +64,8 @@ class NormalizationService:
         if not section:
             return ""
 
-        section = section.strip().lower()
+        clean = re.sub(r"^\d+[\s\.\-]+", "", section).strip().lower()
+        clean_no_parens = re.sub(r"\(.*?\)", "", clean).strip()
 
         # Map common variations to standard names
         section_mapping = {
@@ -77,12 +78,17 @@ class NormalizationService:
             "drug interactions": "Drug Interactions",
             "use in specific populations": "Use in Specific Populations",
             "patient counseling": "Patient Counseling Information",
+            "patient counseling information": "Patient Counseling Information",
             "patient information": "Patient Information",
             "medication guide": "Medication Guide",
             "pci/pi/mg": "Patient Counseling Information",
         }
 
-        return section_mapping.get(section, section.title())
+        for key, standard in section_mapping.items():
+            if key in clean_no_parens or clean_no_parens in key:
+                return standard
+
+        return section_mapping.get(clean_no_parens, section.strip().title())
 
     @staticmethod
     def build_normalized_record(raw_record: Dict[str, Any]) -> Dict[str, Any]:

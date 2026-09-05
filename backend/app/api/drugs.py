@@ -19,7 +19,7 @@ from app.schemas.drug import (
 )
 from app.services.database_service import DatabaseService
 from app.crawler.fda_crawler import crawler
-from app.scrapers.fda_srlc_scraper import scraper
+from app.scrapers.fda_srlc_scraper import scraper, parse_fda_date
 from app.ui import export_drug_csv, export_drug_json
 
 logger = logging.getLogger(__name__)
@@ -29,65 +29,63 @@ router = APIRouter()
 
 @router.get("/search", response_model=SearchResultResponse)
 async def search_drugs(
-    q: str = Query(..., min_length=1, max_length=255, description="Drug name or active ingredient"),
+    q: str = Query(..., min_length=1, description="Search term for drug name or active ingredient"),
     db: Session = Depends(get_db),
 ):
     """
     Search for drugs by name or active ingredient.
-    Flow:
-    1. Checks local database for matching records.
-    2. If missing or empty, triggers on-demand FDA crawler and scraper.
-    3. Persists new records with content hashing.
-    4. Returns structured search results.
+    Queries local database and verifies against FDA SrLC to ensure the latest supplement dates are captured.
     """
     query_clean = q.strip()
-    logger.info(f"Searching for drug: '{query_clean}'")
 
     # Step 1: Check local DB
     local_drugs = DatabaseService.search_drugs(db, query_clean)
 
-    # Check if local drugs have safety changes
-    has_safety_data = False
-    if local_drugs:
-        for d in local_drugs:
-            changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
-            if changes:
-                has_safety_data = True
-                break
+    # Step 2: Query FDA to discover new drugs or newer supplement revisions
+    try:
+        html = await crawler.search_drug(query_clean)
+        if html:
+            search_results = scraper.parse_search_results(html)
+            logger.info(f"FDA returned {len(search_results)} search candidates for '{query_clean}'")
 
-    # Step 2: If no data locally, query FDA
-    if not local_drugs or not has_safety_data:
-        logger.info(f"No complete local record for '{query_clean}'. Querying FDA SrLC...")
-        try:
-            html = await crawler.search_drug(query_clean)
-            if html:
-                search_results = scraper.parse_search_results(html)
-                logger.info(f"FDA returned {len(search_results)} search candidates for '{query_clean}'")
+            for candidate in search_results[:3]:
+                drug, is_new_drug = DatabaseService.insert_or_update_drug(db, candidate)
+                detail_url = candidate.get("detail_url")
 
-                for candidate in search_results[:3]:  # Process top candidates
-                    drug, _ = DatabaseService.insert_or_update_drug(db, candidate)
-                    detail_url = candidate.get("detail_url")
+                # Check if we need to crawl detail page:
+                # - If new drug
+                # - If drug has no local safety changes
+                # - If candidate has a newer supplement date than what is locally recorded
+                needs_crawl = is_new_drug
+                if not needs_crawl and detail_url:
+                    existing_changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id)
+                    if not existing_changes:
+                        needs_crawl = True
+                    elif candidate.get("source_date"):
+                        cand_dt = parse_fda_date(candidate.get("source_date"))
+                        latest_local_dt = parse_fda_date(existing_changes[0].source_date)
+                        if cand_dt and latest_local_dt and cand_dt > latest_local_dt:
+                            needs_crawl = True
 
-                    if detail_url:
-                        detail_html = await crawler.get_detail_page(detail_url)
-                        if detail_html:
-                            detail_data = scraper.parse_detail_page(detail_html, source_url=detail_url)
-                            if detail_data:
-                                # Update active ingredient or application number if newly extracted
-                                if not drug.active_ingredient and detail_data.get("active_ingredient"):
-                                    drug.active_ingredient = detail_data["active_ingredient"]
-                                if not drug.application_number and detail_data.get("application_number"):
-                                    drug.application_number = detail_data["application_number"]
+                if needs_crawl and detail_url:
+                    crawler.visited_urls.discard(detail_url)
+                    detail_html = await crawler.get_detail_page(detail_url)
+                    if detail_html:
+                        detail_data = scraper.parse_detail_page(detail_html, source_url=detail_url)
+                        if detail_data:
+                            if not drug.active_ingredient and detail_data.get("active_ingredient"):
+                                drug.active_ingredient = detail_data["active_ingredient"]
+                            if not drug.application_number and detail_data.get("application_number"):
+                                drug.application_number = detail_data["application_number"]
 
-                                for change in detail_data.get("safety_changes", []):
-                                    DatabaseService.save_safety_change(db, drug.id, change)
+                            for change in detail_data.get("safety_changes", []):
+                                DatabaseService.save_safety_change(db, drug.id, change)
 
-                db.commit()
-                # Refresh local drugs from DB
-                local_drugs = DatabaseService.search_drugs(db, query_clean)
-        except Exception as e:
-            logger.error(f"Error during FDA crawl for '{query_clean}': {e}", exc_info=True)
-            db.rollback()
+            db.commit()
+            local_drugs = DatabaseService.search_drugs(db, query_clean)
+    except Exception as e:
+        logger.error(f"Error during FDA crawl for '{query_clean}': {e}", exc_info=True)
+        db.rollback()
 
     # Step 3: Build response
     results_items: List[DrugSearchResultItem] = []
@@ -162,6 +160,30 @@ async def get_drug_safety_changes(
 
     changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id)
     return [SafetyLabelingChangeResponse.from_orm(c) for c in changes]
+
+
+@router.get("/{drug_id}/adverse-reactions")
+async def get_drug_adverse_reactions_report(
+    drug_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Get formatted Adverse Reactions report for a specific drug.
+    Selects latest date with Adverse Reactions and strips section 17.
+    """
+    drug = DatabaseService.get_drug_by_id(db, drug_id)
+    if not drug:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Drug with ID {drug_id} not found",
+        )
+
+    changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id)
+    return scraper.extract_adverse_reactions_from_records(
+        drug_name=drug.display_name,
+        active_ingredient=drug.active_ingredient,
+        changes=changes,
+    )
 
 
 @router.get("/{drug_id}/export")
