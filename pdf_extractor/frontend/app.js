@@ -50,6 +50,7 @@ const valTablesCount = document.getElementById('valTablesCount');
 const valBlocksCount = document.getElementById('valBlocksCount');
 
 // Tabs & Panels
+const tabDocView = document.getElementById('tabDocView');
 const tabBlocksView = document.getElementById('tabBlocksView');
 const tabTablesView = document.getElementById('tabTablesView');
 const tabJsonView = document.getElementById('tabJsonView');
@@ -57,11 +58,18 @@ const tabTextView = document.getElementById('tabTextView');
 const tabTreeView = document.getElementById('tabTreeView');
 const tablesTabCount = document.getElementById('tablesTabCount');
 
+const viewDocPanel = document.getElementById('viewDocPanel');
 const viewBlocksPanel = document.getElementById('viewBlocksPanel');
 const viewTablesPanel = document.getElementById('viewTablesPanel');
 const viewJsonPanel = document.getElementById('viewJsonPanel');
 const viewTextPanel = document.getElementById('viewTextPanel');
 const viewTreePanel = document.getElementById('viewTreePanel');
+
+const docPaperContent = document.getElementById('docPaperContent');
+const docPageSpanBadge = document.getElementById('docPageSpanBadge');
+const docElementCountBadge = document.getElementById('docElementCountBadge');
+const docPrintBtn = document.getElementById('docPrintBtn');
+const docCopyBtn = document.getElementById('docCopyBtn');
 
 const blocksFeed = document.getElementById('blocksFeed');
 const tablesContainer = document.getElementById('tablesContainer');
@@ -396,6 +404,12 @@ function displaySingleResult(result) {
   valBlocksCount.textContent = (result.structured_content && result.structured_content.length) || (result.blocks && result.blocks.length) || 0;
   tablesTabCount.textContent = val.tables_included_count || 0;
 
+  // Default to Authentic Document View (PDF Flow)
+  switchViewerTab(tabDocView, viewDocPanel);
+
+  // Render Authentic Document Flow (As present in PDF)
+  renderDocumentFlow(result);
+
   // Render Structured Elements
   renderStructuredFeed(result.structured_content || [], result.blocks || []);
 
@@ -410,6 +424,124 @@ function displaySingleResult(result) {
 
   // Render Hierarchy Tree
   renderHierarchyTree(result.section_tree || [], val.included_sections || []);
+}
+
+// 8b. Authentic Formatted Document Flow View (As present in PDF)
+function renderDocumentFlow(result) {
+  if (!docPaperContent) return;
+  docPaperContent.innerHTML = '';
+
+  const items = (result.structured_content && result.structured_content.length > 0)
+    ? result.structured_content
+    : (result.blocks || []);
+
+  if (items.length === 0) {
+    docPaperContent.innerHTML = '<div class="empty-state-hint">No content available to render in document view.</div>';
+    return;
+  }
+
+  // Header Banner
+  const headerDiv = document.createElement('div');
+  headerDiv.className = 'doc-header-banner';
+  headerDiv.innerHTML = `
+    <div class="doc-header-title">${escapeHtml(result.document || 'Extracted Document')}</div>
+    <div class="doc-header-subtitle">
+      <span>Section: <strong>${escapeHtml(result.requested_section)}${result.requested_subsection ? ' → ' + escapeHtml(result.requested_subsection) : ''}</strong></span>
+      <span>•</span>
+      <span>Pages: <strong>${result.start_page} – ${result.end_page}</strong></span>
+      <span>•</span>
+      <span>Elements: <strong>${items.length}</strong></span>
+    </div>
+  `;
+  docPaperContent.appendChild(headerDiv);
+
+  let currentPage = null;
+
+  items.forEach((item) => {
+    const pageNum = item.page || item.page_num;
+
+    // Page Divider
+    if (pageNum && pageNum !== currentPage) {
+      currentPage = pageNum;
+      const marker = document.createElement('div');
+      marker.className = 'doc-page-marker';
+      marker.innerHTML = `
+        <div class="doc-page-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+          Page ${currentPage}
+        </div>
+        <div class="doc-page-line"></div>
+      `;
+      docPaperContent.appendChild(marker);
+    }
+
+    const type = item.type || item.block_type || 'paragraph';
+
+    if (type === 'heading') {
+      const level = item.level || (item.section_number && item.section_number.includes('.') ? (item.section_number.split('.').length) : 1);
+      const tag = level === 1 ? 'h2' : (level === 2 ? 'h3' : 'h4');
+      const heading = document.createElement(tag);
+      heading.className = `doc-heading doc-h${Math.min(level, 4)}`;
+
+      const numHtml = item.section_number ? `<span class="doc-sec-num">${escapeHtml(item.section_number)}</span>` : '';
+      const titleText = item.title || item.text || '';
+      heading.innerHTML = `${numHtml} ${escapeHtml(titleText)}`;
+      docPaperContent.appendChild(heading);
+    } else if (type === 'table') {
+      const tableWrapper = document.createElement('div');
+      tableWrapper.className = 'doc-table-wrapper';
+      const captionText = item.caption ? `<div class="doc-table-caption">${escapeHtml(item.caption)} (Page ${pageNum})</div>` : '';
+      const tableHtml = buildHtmlTable(item.columns || item.table_columns, item.rows || item.table_rows, item.raw_rows || item.table_data);
+      tableWrapper.innerHTML = `
+        ${captionText}
+        ${tableHtml}
+      `;
+      docPaperContent.appendChild(tableWrapper);
+    } else if (type === 'bullet_list' || type === 'numbered_list') {
+      const listItems = item.items || item.bullet_items || (item.text ? [item.text] : []);
+      const tag = type === 'bullet_list' ? 'ul' : 'ol';
+      const listElem = document.createElement(tag);
+      listElem.className = 'doc-list';
+      listElem.innerHTML = listItems.map(it => `<li>${escapeHtml(it)}</li>`).join('');
+      docPaperContent.appendChild(listElem);
+    } else {
+      // Paragraph or caption
+      const text = item.text || '';
+      if (!text.trim()) return;
+
+      // Detect sub-headers like "Important Identified Risks" or "Important potential risks" or "Missing information"
+      const trimmed = text.trim();
+      const isSubhead = (
+        trimmed.length < 60 && 
+        !trimmed.endsWith('.') && 
+        !trimmed.endsWith(':') &&
+        (
+          /^(important|missing|identified|potential|summary|general|clinical|safety concerns)/i.test(trimmed) ||
+          (/^[A-Z][A-Za-z0-9\s,\/-]+$/.test(trimmed) && trimmed.split(/\s+/).length <= 6)
+        )
+      );
+
+      if (isSubhead) {
+        const subhead = document.createElement('h4');
+        subhead.className = 'doc-subhead';
+        subhead.textContent = trimmed;
+        docPaperContent.appendChild(subhead);
+      } else {
+        const p = document.createElement('p');
+        p.className = 'doc-paragraph';
+        p.textContent = text;
+        docPaperContent.appendChild(p);
+      }
+    }
+  });
+
+  // Update Toolbar Badges
+  if (docPageSpanBadge) {
+    docPageSpanBadge.textContent = result.start_page ? `Pages ${result.start_page} – ${result.end_page}` : 'Single Page';
+  }
+  if (docElementCountBadge) {
+    docElementCountBadge.textContent = `${items.length} Extracted Items`;
+  }
 }
 
 // 9. Structured Elements Feed
@@ -636,6 +768,7 @@ traceModal.addEventListener('click', (e) => {
 });
 
 // 13. Viewer Tabs Navigation
+if (tabDocView) tabDocView.addEventListener('click', () => switchViewerTab(tabDocView, viewDocPanel));
 tabBlocksView.addEventListener('click', () => switchViewerTab(tabBlocksView, viewBlocksPanel));
 tabTablesView.addEventListener('click', () => switchViewerTab(tabTablesView, viewTablesPanel));
 tabJsonView.addEventListener('click', () => switchViewerTab(tabJsonView, viewJsonPanel));
@@ -643,10 +776,31 @@ tabTextView.addEventListener('click', () => switchViewerTab(tabTextView, viewTex
 tabTreeView.addEventListener('click', () => switchViewerTab(tabTreeView, viewTreePanel));
 
 function switchViewerTab(activeBtn, activePanel) {
-  [tabBlocksView, tabTablesView, tabJsonView, tabTextView, tabTreeView].forEach(b => b && b.classList.remove('active'));
-  [viewBlocksPanel, viewTablesPanel, viewJsonPanel, viewTextPanel, viewTreePanel].forEach(p => p && p.classList.remove('active'));
-  activeBtn.classList.add('active');
-  activePanel.classList.add('active');
+  [tabDocView, tabBlocksView, tabTablesView, tabJsonView, tabTextView, tabTreeView].forEach(b => b && b.classList.remove('active'));
+  [viewDocPanel, viewBlocksPanel, viewTablesPanel, viewJsonPanel, viewTextPanel, viewTreePanel].forEach(p => p && p.classList.remove('active'));
+  if (activeBtn) activeBtn.classList.add('active');
+  if (activePanel) activePanel.classList.add('active');
+}
+
+if (docPrintBtn) {
+  docPrintBtn.addEventListener('click', () => {
+    window.print();
+  });
+}
+
+if (docCopyBtn) {
+  docCopyBtn.addEventListener('click', () => {
+    if (!state.activeResult) return;
+    const content = state.activeResult.content || '';
+    navigator.clipboard.writeText(content);
+    docCopyBtn.textContent = 'Copied!';
+    setTimeout(() => {
+      docCopyBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        Copy Text
+      `;
+    }, 2000);
+  });
 }
 
 copyJsonBtn.addEventListener('click', () => {

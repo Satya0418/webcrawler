@@ -232,7 +232,11 @@
           <!-- Tabbed Content Viewers -->
           <div class="results-body card">
             <div class="content-tabs" role="tablist">
-              <button class="content-tab active" id="tabBlocksView">
+              <button class="content-tab active" id="tabDocView">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                Document View (PDF Flow)
+              </button>
+              <button class="content-tab" id="tabBlocksView">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                 Structured Elements
               </button>
@@ -254,8 +258,34 @@
               </button>
             </div>
 
+            <!-- Panel 0: Authentic Formatted Document View (As present in PDF) -->
+            <div id="viewDocPanel" class="viewer-panel active">
+              <div class="doc-toolbar">
+                <div class="doc-toolbar-left">
+                  <span class="doc-toolbar-badge" id="docPageSpanBadge">Pages --</span>
+                  <span class="doc-toolbar-badge" id="docElementCountBadge">0 Elements</span>
+                  <span class="doc-toolbar-badge doc-pill-mode">Authentic PDF Flow</span>
+                </div>
+                <div class="doc-toolbar-right">
+                  <button id="docPrintBtn" class="btn btn-secondary btn-sm" title="Print document or save as clean PDF">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                    Print / PDF
+                  </button>
+                  <button id="docCopyBtn" class="btn btn-secondary btn-sm" title="Copy extracted document text">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    Copy Text
+                  </button>
+                </div>
+              </div>
+              <div class="doc-paper-container">
+                <div class="doc-paper" id="docPaperContent">
+                  <!-- Rendered document flow with proper headings, paragraphs, lists, and inline tables -->
+                </div>
+              </div>
+            </div>
+
             <!-- Panel 1: Block-by-block Traceable View -->
-            <div id="viewBlocksPanel" class="viewer-panel active">
+            <div id="viewBlocksPanel" class="viewer-panel">
               <div id="blocksFeed" class="blocks-feed">
                 <!-- Dynamically rendered blocks -->
               </div>
