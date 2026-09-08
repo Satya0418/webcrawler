@@ -75,6 +75,7 @@ const blocksFeed = document.getElementById('blocksFeed');
 const tablesContainer = document.getElementById('tablesContainer');
 const rawJsonContent = document.getElementById('rawJsonContent');
 const copyJsonBtn = document.getElementById('copyJsonBtn');
+const downloadJsonTabBtn = document.getElementById('downloadJsonTabBtn');
 const rawTextContent = document.getElementById('rawTextContent');
 const copyTextBtn = document.getElementById('copyTextBtn');
 const treeContainer = document.getElementById('treeContainer');
@@ -397,9 +398,31 @@ function displaySingleResult(result) {
   if (result.download_urls) {
     if (downloadHtmlBtn) downloadHtmlBtn.href = result.download_urls.html || '#';
     downloadTxtBtn.href = result.download_urls.txt || '#';
-    downloadJsonBtn.href = result.download_urls.json || '#';
     downloadCsvBtn.href = result.download_urls.csv || '#';
     downloadExcelBtn.href = result.download_urls.excel || '#';
+  }
+
+  // Structured JSON File Download (Always downloads the exact structured JSON shown in UI)
+  const jsonString = JSON.stringify(result, null, 2);
+  const jsonBlob = new Blob([jsonString], { type: 'application/json' });
+  const jsonBlobUrl = URL.createObjectURL(jsonBlob);
+  const cleanDocName = (result.document || 'document').replace(/\.pdf$/i, '');
+  const jsonFileName = `${cleanDocName}_section_${result.requested_section}${result.requested_subsection ? '_' + result.requested_subsection : ''}_structured.json`;
+
+  if (downloadJsonBtn) {
+    downloadJsonBtn.href = jsonBlobUrl;
+    downloadJsonBtn.setAttribute('download', jsonFileName);
+  }
+
+  if (downloadJsonTabBtn) {
+    downloadJsonTabBtn.onclick = () => {
+      const a = document.createElement('a');
+      a.href = jsonBlobUrl;
+      a.download = jsonFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
   }
 
   // Validation Banner

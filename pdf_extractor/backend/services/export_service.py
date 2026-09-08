@@ -159,32 +159,9 @@ class ExportService:
 
     @staticmethod
     def export_json(result: ExtractionResult, output_path: Path) -> Path:
-        """Saves result as complete structured JSON matching schema specifications."""
-        content_items = [item.model_dump(exclude_none=True) for item in result.structured_content]
-        payload = {
-            "document": {
-                "filename": result.document,
-                "total_pages": result.metadata.get("total_pages", result.end_page),
-            },
-            "request": {
-                "main_section": result.requested_section,
-                "target_subsection": result.requested_subsection,
-            },
-            "extraction": {
-                "status": result.status,
-                "start_page": result.start_page,
-                "end_page": result.end_page,
-                "start_section": result.requested_section,
-                "target_section": result.requested_subsection,
-                "stop_section": result.metadata.get("stop_boundary_section"),
-                "confidence": result.validation.confidence_score,
-                "included_sections": result.validation.included_sections,
-                "excluded_sections": result.validation.excluded_sections,
-                "tables_count": result.validation.tables_included_count,
-            },
-            "content": content_items,
-        }
-        output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        """Saves complete structured JSON exactly matching the ExtractionResult schema and UI view."""
+        data = result.model_dump(mode="json", exclude={"download_urls"})
+        output_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         return output_path
 
     @staticmethod
