@@ -1,6 +1,6 @@
 // State Management
 const state = {
-  activeMode: 'folder', // 'folder' | 'upload'
+  activeMode: 'upload', // 'upload' | 'folder'
   discoveredFiles: [],  // [{ filename, full_path, size_formatted, ... }]
   selectedFiles: new Set(),
   activeResult: null,
@@ -140,10 +140,12 @@ browseFolderBtn.addEventListener('click', async () => {
   await fetchDiscoveredFiles('/api/files/browse', { folder_path: path });
 });
 
-loadSamplesBtn.addEventListener('click', async () => {
-  folderPathInput.value = 'sample_reports';
-  await fetchDiscoveredFiles('/api/files/samples');
-});
+if (loadSamplesBtn) {
+  loadSamplesBtn.addEventListener('click', async () => {
+    folderPathInput.value = 'sample_reports';
+    await fetchDiscoveredFiles('/api/files/samples');
+  });
+}
 
 async function fetchDiscoveredFiles(endpoint, payload = null) {
   showLoading('Scanning directory for PDF documents...');
@@ -224,10 +226,16 @@ async function handleFileUpload(files) {
   }
 }
 
-// 6. Render Discovered Files List
+// 6. Render Uploaded / Discovered Files List
 function renderFileList() {
   if (state.discoveredFiles.length === 0) {
-    fileListContainer.innerHTML = '<div class="empty-state-hint">No PDF documents found.</div>';
+    fileListContainer.innerHTML = `
+      <div class="empty-state-hint">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" style="display:block;margin:0 auto 6px;opacity:0.5"><path d="M14 2H6a2 2 0 0 1-2-2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+        No PDF uploaded yet.<br>
+        <span style="font-size:0.72rem;opacity:0.75">Upload a PDF above to begin extraction.</span>
+      </div>
+    `;
     selectedCountBadge.textContent = '0 selected';
     return;
   }
@@ -239,13 +247,20 @@ function renderFileList() {
     item.className = `file-item ${isSelected ? 'selected' : ''}`;
     item.innerHTML = `
       <div class="file-item-left">
-        <input type="checkbox" ${isSelected ? 'checked' : ''} data-path="${file.full_path}">
-        <span class="file-name" title="${file.filename}">${file.filename}</span>
+        <input type="checkbox" ${isSelected ? 'checked' : ''} data-path="${escapeHtml(file.full_path)}">
+        <span class="file-name" title="${escapeHtml(file.filename)}">${escapeHtml(file.filename)}</span>
       </div>
-      <span class="file-size">${file.size_formatted}</span>
+      <div class="file-item-right">
+        <span class="file-size">${escapeHtml(file.size_formatted)}</span>
+        <button class="btn-remove-file" title="Remove PDF" data-path="${escapeHtml(file.full_path)}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
     `;
 
+    // Item click toggles selection (unless clicking the remove button)
     item.addEventListener('click', (e) => {
+      if (e.target.closest('.btn-remove-file')) return;
       if (e.target.tagName !== 'INPUT') {
         const cb = item.querySelector('input[type="checkbox"]');
         cb.checked = !cb.checked;
@@ -261,10 +276,25 @@ function renderFileList() {
       updateSelectedCounter();
     });
 
+    // Remove single file button
+    const removeBtn = item.querySelector('.btn-remove-file');
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeFile(file.full_path);
+    });
+
     fileListContainer.appendChild(item);
   });
 
   updateSelectedCounter();
+}
+
+function removeFile(fullPath) {
+  const filename = fullPath.split('/').pop();
+  fetch(`/api/upload/${encodeURIComponent(filename)}`, { method: 'DELETE' }).catch(() => {});
+  state.discoveredFiles = state.discoveredFiles.filter(f => f.full_path !== fullPath);
+  state.selectedFiles.delete(fullPath);
+  renderFileList();
 }
 
 function updateSelectedCounter() {
@@ -278,6 +308,11 @@ selectAllFilesBtn.addEventListener('click', () => {
 });
 
 clearAllFilesBtn.addEventListener('click', () => {
+  state.discoveredFiles.forEach(f => {
+    const fn = f.full_path.split('/').pop();
+    fetch(`/api/upload/${encodeURIComponent(fn)}`, { method: 'DELETE' }).catch(() => {});
+  });
+  state.discoveredFiles = [];
   state.selectedFiles.clear();
   renderFileList();
 });
@@ -883,7 +918,7 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-// Auto-load sample reports on page load
+// Initialize with clean file list on page load (only show files uploaded by user)
 window.addEventListener('DOMContentLoaded', () => {
-  loadSamplesBtn.click();
+  renderFileList();
 });

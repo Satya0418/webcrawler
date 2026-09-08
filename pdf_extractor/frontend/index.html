@@ -54,30 +54,18 @@
         <section class="card input-mode-card">
           <h2 class="card-title">1. Ingestion Method</h2>
           <div class="tab-group" role="tablist">
-            <button class="tab-btn active" id="tabFolderBtn" role="tab">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-              Mode A: Folder Path
-            </button>
-            <button class="tab-btn" id="tabUploadBtn" role="tab">
+            <button class="tab-btn active" id="tabUploadBtn" role="tab">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
               Mode B: PDF Upload
             </button>
-          </div>
-
-          <!-- Mode A: Folder Browse View -->
-          <div id="modeFolderView" class="mode-view active">
-            <label for="folderPathInput" class="form-label">Directory Location:</label>
-            <div class="input-with-action">
-              <input type="text" id="folderPathInput" class="form-input" placeholder="/path/to/pdf/folder or sample_reports">
-              <button id="browseFolderBtn" class="btn btn-primary">Scan</button>
-            </div>
-            <button id="loadSamplesBtn" class="btn btn-secondary btn-sm full-width mt-2">
-              ⚡ Quick-Load Test Suite Reports (8 Files)
+            <button class="tab-btn" id="tabFolderBtn" role="tab">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              Mode A: Folder Path
             </button>
           </div>
 
-          <!-- Mode B: File Upload View -->
-          <div id="modeUploadView" class="mode-view">
+          <!-- Mode B: File Upload View (Default) -->
+          <div id="modeUploadView" class="mode-view active">
             <div id="dropZone" class="drop-zone">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -90,19 +78,32 @@
               <input type="file" id="fileUploadInput" multiple accept=".pdf" style="display: none;">
             </div>
           </div>
+
+          <!-- Mode A: Folder Browse View -->
+          <div id="modeFolderView" class="mode-view">
+            <label for="folderPathInput" class="form-label">Directory Location:</label>
+            <div class="input-with-action">
+              <input type="text" id="folderPathInput" class="form-input" placeholder="/path/to/pdf/folder">
+              <button id="browseFolderBtn" class="btn btn-primary">Scan</button>
+            </div>
+          </div>
         </section>
 
-        <!-- Discovered PDF Files -->
+        <!-- Discovered / Uploaded PDF Files -->
         <section class="card files-card">
           <div class="card-header-flex">
-            <h2 class="card-title">2. Discovered PDFs</h2>
+            <h2 class="card-title">2. Uploaded PDFs</h2>
             <div class="selection-actions">
               <button id="selectAllFilesBtn" class="btn btn-link">Select All</button>
-              <button id="clearAllFilesBtn" class="btn btn-link">Clear</button>
+              <button id="clearAllFilesBtn" class="btn btn-link btn-danger-link" title="Remove all files from list">Remove All</button>
             </div>
           </div>
           <div id="fileListContainer" class="file-list-container">
-            <div class="empty-state-hint">Scan a folder or upload PDFs to begin.</div>
+            <div class="empty-state-hint">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" style="display:block;margin:0 auto 6px;opacity:0.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+              No PDF uploaded yet.<br>
+              <span style="font-size:0.72rem;opacity:0.75">Upload a PDF above to begin extraction.</span>
+            </div>
           </div>
           <div class="file-selection-footer">
             <span id="selectedCountBadge" class="selection-counter">0 selected</span>

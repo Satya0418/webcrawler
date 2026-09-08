@@ -43,3 +43,18 @@ async def upload_files(files: List[UploadFile] = File(...)):
         "uploaded_count": len(uploaded_files),
         "files": uploaded_files,
     }
+
+
+@router.delete("/{filename}")
+async def delete_uploaded_file(filename: str):
+    """Deletes an uploaded file from UPLOAD_DIR."""
+    safe_name = Path(filename).name
+    file_path = UPLOAD_DIR / safe_name
+    if file_path.exists() and file_path.is_file():
+        try:
+            file_path.unlink()
+            return {"status": "success", "message": f"Deleted {safe_name}"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
+    return {"status": "not_found", "message": "File not found or already deleted"}
+

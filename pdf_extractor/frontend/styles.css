@@ -328,9 +328,43 @@ body {
   max-width: 200px;
 }
 
+.file-item-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .file-size {
   font-size: 0.7rem;
   color: var(--text-muted);
+}
+
+.btn-remove-file {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  opacity: 0.7;
+}
+
+.btn-remove-file:hover {
+  opacity: 1;
+  color: var(--danger);
+  background-color: var(--danger-bg);
+}
+
+.btn-danger-link {
+  color: var(--danger) !important;
+}
+.btn-danger-link:hover {
+  text-decoration: underline;
 }
 
 .file-selection-footer {
