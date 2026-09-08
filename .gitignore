@@ -83,10 +83,13 @@ backups/
 # 6. Crawler Artifacts, Temporary Downloads & Scraped Outputs
 # ------------------------------------------------------------------------------
 output/
+outputs/
 data/
 downloads/
 crawled_data/
 *.pdf
+!pdf_extractor/sample_reports/*.pdf
+!pdf_extractor/tests/fixtures/*.pdf
 temp/
 tmp/
 .cache/

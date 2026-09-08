@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Intelligent PDF Section Extractor | Deterministic Hierarchical Parser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="theme-dark">
+  <div class="app-layout">
+    <!-- Navigation Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-mark">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+        </div>
+        <div class="header-titles">
+          <h1>Intelligent PDF Section Extractor</h1>
+          <span class="subtitle">Deterministic Hierarchical Section Parser & Block Traceability Engine</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="badge badge-engine">Deterministic Engine • No LLM Required</span>
+        <button id="themeToggleBtn" class="btn btn-icon" title="Toggle Light/Dark Theme">
+          <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Grid -->
+    <main class="workspace-grid">
+      <!-- Left Column: Input, File Discovery & Query Parameters -->
+      <aside class="sidebar-panel">
+        <!-- Input Mode Selection -->
+        <section class="card input-mode-card">
+          <h2 class="card-title">1. Ingestion Method</h2>
+          <div class="tab-group" role="tablist">
+            <button class="tab-btn active" id="tabFolderBtn" role="tab">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              Mode A: Folder Path
+            </button>
+            <button class="tab-btn" id="tabUploadBtn" role="tab">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              Mode B: PDF Upload
+            </button>
+          </div>
+
+          <!-- Mode A: Folder Browse View -->
+          <div id="modeFolderView" class="mode-view active">
+            <label for="folderPathInput" class="form-label">Directory Location:</label>
+            <div class="input-with-action">
+              <input type="text" id="folderPathInput" class="form-input" placeholder="/path/to/pdf/folder or sample_reports">
+              <button id="browseFolderBtn" class="btn btn-primary">Scan</button>
+            </div>
+            <button id="loadSamplesBtn" class="btn btn-secondary btn-sm full-width mt-2">
+              ⚡ Quick-Load Test Suite Reports (8 Files)
+            </button>
+          </div>
+
+          <!-- Mode B: File Upload View -->
+          <div id="modeUploadView" class="mode-view">
+            <div id="dropZone" class="drop-zone">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <path d="M12 18v-6"></path>
+                <path d="m9 15 3-3 3 3"></path>
+              </svg>
+              <p class="drop-primary">Drag & drop PDF files here</p>
+              <p class="drop-sub">or click to browse local files</p>
+              <input type="file" id="fileUploadInput" multiple accept=".pdf" style="display: none;">
+            </div>
+          </div>
+        </section>
+
+        <!-- Discovered PDF Files -->
+        <section class="card files-card">
+          <div class="card-header-flex">
+            <h2 class="card-title">2. Discovered PDFs</h2>
+            <div class="selection-actions">
+              <button id="selectAllFilesBtn" class="btn btn-link">Select All</button>
+              <button id="clearAllFilesBtn" class="btn btn-link">Clear</button>
+            </div>
+          </div>
+          <div id="fileListContainer" class="file-list-container">
+            <div class="empty-state-hint">Scan a folder or upload PDFs to begin.</div>
+          </div>
+          <div class="file-selection-footer">
+            <span id="selectedCountBadge" class="selection-counter">0 selected</span>
+          </div>
+        </section>
+
+        <!-- Extraction Query Settings -->
+        <section class="card query-card">
+          <h2 class="card-title">3. Section Query Parameters</h2>
+          <div class="query-grid">
+            <div class="form-group">
+              <label for="mainSectionInput" class="form-label">Main Section:</label>
+              <input type="text" id="mainSectionInput" class="form-input" value="16" placeholder="e.g. 16">
+            </div>
+            <div class="form-group">
+              <label for="subSectionInput" class="form-label">Target Subsection:</label>
+              <input type="text" id="subSectionInput" class="form-input" value="16.1" placeholder="e.g. 16.1">
+            </div>
+          </div>
+
+          <!-- Preset Query Pills -->
+          <div class="preset-pills">
+            <span class="preset-label">Presets:</span>
+            <button class="pill-btn active" data-main="16" data-sub="16.1">16 → 16.1</button>
+            <button class="pill-btn" data-main="5" data-sub="5.1">5 → 5.1</button>
+            <button class="pill-btn" data-main="12" data-sub="12.3">12 → 12.3</button>
+            <button class="pill-btn" data-main="16" data-sub="">16 (All)</button>
+          </div>
+
+          <div class="form-group mt-2">
+            <label for="naturalQueryInput" class="form-label">Or Natural Language Query:</label>
+            <input type="text" id="naturalQueryInput" class="form-input" placeholder="e.g. Extract Section 16 and subsection 16.1">
+          </div>
+
+          <button id="runExtractBtn" class="btn btn-accent full-width mt-3">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            Extract Section Content
+          </button>
+        </section>
+      </aside>
+
+      <!-- Right Column: Results Dashboard, Traceability, Tables & Exports -->
+      <main class="content-panel">
+        <!-- Progress Bar / Spinner -->
+        <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+          <div class="spinner"></div>
+          <p id="loadingStatusText" class="loading-text">Analyzing document layout and hierarchy...</p>
+        </div>
+
+        <!-- Initial Placeholder State -->
+        <div id="placeholderState" class="placeholder-state">
+          <div class="placeholder-illustration">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <circle cx="11.5" cy="14.5" r="2.5"></circle>
+              <line x1="13.5" y1="16.5" x2="17" y2="20"></line>
+            </svg>
+          </div>
+          <h3>Deterministic Section & Subsection Extraction</h3>
+          <p>Select a PDF or batch folder on the left, specify your target section boundary (e.g. <strong>16 → 16.1</strong>), and click <strong>Extract Section Content</strong>.</p>
+          <div class="feature-tags">
+            <span>✓ Recursive 16.1 Subtrees (16.1.1, 16.1.2)</span>
+            <span>✓ Same-Page 16.2 Truncation</span>
+            <span>✓ Table Extraction</span>
+            <span>✓ Page Traceability</span>
+          </div>
+        </div>
+
+        <!-- Single Document Result Container -->
+        <div id="resultContainer" class="result-container" style="display: none;">
+          <!-- Top Results Summary Bar -->
+          <div class="results-header card">
+            <div class="result-meta-top">
+              <div class="document-badge-group">
+                <span class="badge badge-doc" id="resDocName">report.pdf</span>
+                <span class="badge badge-target" id="resTargetBadge">16 → 16.1</span>
+                <span class="badge badge-pages" id="resPagesBadge">Pages 20 – 24</span>
+              </div>
+              <!-- Export Buttons -->
+              <div class="export-btn-group">
+                <a id="downloadHtmlBtn" class="btn btn-export" download="extraction.html">HTML</a>
+                <a id="downloadTxtBtn" class="btn btn-export" download="extraction.txt">TXT</a>
+                <a id="downloadJsonBtn" class="btn btn-export" download="extraction.json">JSON</a>
+                <a id="downloadCsvBtn" class="btn btn-export" download="extraction.csv">CSV</a>
+                <a id="downloadExcelBtn" class="btn btn-export btn-export-excel" download="extraction.xlsx">Excel (.xlsx)</a>
+              </div>
+            </div>
+
+            <!-- Validation Checklist Grid -->
+            <div class="validation-banner" id="validationBanner">
+              <div class="validation-status-row">
+                <div class="status-indicator">
+                  <span class="status-dot success" id="valStatusDot"></span>
+                  <strong id="valStatusMessage">Extraction completed with high confidence</strong>
+                </div>
+                <div class="confidence-badge" id="valConfidenceBadge">Confidence: 100%</div>
+              </div>
+
+              <div class="validation-details-grid">
+                <div class="val-column">
+                  <span class="val-label">Included Sections:</span>
+                  <div class="val-tags" id="includedSectionsTags">
+                    <!-- Populated dynamically -->
+                  </div>
+                </div>
+                <div class="val-column">
+                  <span class="val-label">Excluded Boundaries:</span>
+                  <div class="val-tags" id="excludedSectionsTags">
+                    <!-- Populated dynamically -->
+                  </div>
+                </div>
+                <div class="val-column metrics-col">
+                  <div class="metric-item">
+                    <span class="metric-num" id="valTablesCount">0</span>
+                    <span class="metric-desc">Tables Included</span>
+                  </div>
+                  <div class="metric-item">
+                    <span class="metric-num" id="valBlocksCount">0</span>
+                    <span class="metric-desc">Elements Extracted</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tabbed Content Viewers -->
+          <div class="results-body card">
+            <div class="content-tabs" role="tablist">
+              <button class="content-tab active" id="tabBlocksView">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                Structured Elements
+              </button>
+              <button class="content-tab" id="tabTablesView">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>
+                Extracted Tables (<span id="tablesTabCount">0</span>)
+              </button>
+              <button class="content-tab" id="tabJsonView">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                Structured JSON
+              </button>
+              <button class="content-tab" id="tabTextView">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                Clean TXT
+              </button>
+              <button class="content-tab" id="tabTreeView">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+                Hierarchy Tree
+              </button>
+            </div>
+
+            <!-- Panel 1: Block-by-block Traceable View -->
+            <div id="viewBlocksPanel" class="viewer-panel active">
+              <div id="blocksFeed" class="blocks-feed">
+                <!-- Dynamically rendered blocks -->
+              </div>
+            </div>
+
+            <!-- Panel 2: Extracted Tables View -->
+            <div id="viewTablesPanel" class="viewer-panel">
+              <div id="tablesContainer" class="tables-feed">
+                <!-- Dynamically rendered tables -->
+              </div>
+            </div>
+
+            <!-- Panel 3: Structured JSON View -->
+            <div id="viewJsonPanel" class="viewer-panel">
+              <div class="text-actions-bar">
+                <button id="copyJsonBtn" class="btn btn-secondary btn-sm">Copy JSON</button>
+              </div>
+              <pre id="rawJsonContent" class="formatted-text-area"></pre>
+            </div>
+
+            <!-- Panel 4: Clean TXT View -->
+            <div id="viewTextPanel" class="viewer-panel">
+              <div class="text-actions-bar">
+                <button id="copyTextBtn" class="btn btn-secondary btn-sm">Copy TXT</button>
+              </div>
+              <pre id="rawTextContent" class="formatted-text-area"></pre>
+            </div>
+
+            <!-- Panel 5: Document Hierarchy Tree View -->
+            <div id="viewTreePanel" class="viewer-panel">
+              <div class="tree-legend">
+                <span class="legend-item"><span class="legend-bullet included"></span> Extracted in Subtree</span>
+                <span class="legend-item"><span class="legend-bullet excluded"></span> Excluded Beyond Boundary</span>
+              </div>
+              <div id="treeContainer" class="tree-container">
+                <!-- Dynamically rendered tree -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Batch Results Container -->
+        <div id="batchContainer" class="batch-container card" style="display: none;">
+          <div class="batch-header">
+            <div>
+              <h3>Batch Extraction Complete</h3>
+              <p id="batchSummaryStats" class="batch-stats">Processed 0 files: 0 successful, 0 failed</p>
+            </div>
+            <div class="batch-actions">
+              <a id="downloadBatchCsvBtn" class="btn btn-export">Batch Summary CSV</a>
+              <a id="downloadBatchExcelBtn" class="btn btn-export btn-export-excel">Batch Summary Excel</a>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="batch-results-table">
+              <thead>
+                <tr>
+                  <th>Document</th>
+                  <th>Status</th>
+                  <th>Target</th>
+                  <th>Pages</th>
+                  <th>Confidence</th>
+                  <th>Blocks</th>
+                  <th>Tables</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="batchTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </main>
+  </div>
+
+  <!-- Traceability & Source Page Inspector Modal -->
+  <div id="traceModal" class="modal-backdrop" style="display: none;">
+    <div class="modal-card modal-card-large">
+      <div class="modal-header">
+        <h3 id="modalTitle">Element Source & Traceability Inspector</h3>
+        <button id="closeModalBtn" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body-grid">
+        <div class="modal-left" id="modalContent">
+          <!-- Traceability metadata & text -->
+        </div>
+        <div class="modal-right">
+          <h4 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--text-secondary);">Source PDF Page Preview:</h4>
+          <div class="source-img-container" id="sourceImgContainer">
+            <img id="sourcePageImg" src="" alt="Source Page Preview" class="source-page-preview">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
