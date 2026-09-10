@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enterprise Architecture Diagram - Web Crawler & PDF Section Extractor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0e17;
+      --bg-secondary: #111827;
+      --bg-card: rgba(17, 24, 39, 0.75);
+      --border-card: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(56, 189, 248, 0.35);
+      --accent-cyan: #38bdf8;
+      --accent-blue: #3b82f6;
+      --accent-purple: #a855f7;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+      line-height: 1.5;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 25%, rgba(168, 85, 247, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 50% 80%, rgba(16, 185, 129, 0.06) 0%, transparent 50%),
+        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+    }
+
+    /* Top Navigation Header */
+    header {
+      padding: 1.25rem 2.5rem;
+      border-bottom: 1px solid var(--border-card);
+      backdrop-filter: blur(16px);
+      background: rgba(10, 14, 23, 0.85);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .brand-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.25rem;
+      color: #fff;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.35);
+    }
+
+    .brand-text h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(90deg, #fff, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-text p {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .header-badges {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      font-weight: 500;
+      border: 1px solid;
+    }
+
+    .badge-cyan {
+      background: rgba(56, 189, 248, 0.1);
+      border-color: rgba(56, 189, 248, 0.25);
+      color: var(--accent-cyan);
+    }
+
+    .badge-emerald {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.25);
+      color: var(--accent-emerald);
+    }
+
+    .badge-purple {
+      background: rgba(168, 85, 247, 0.1);
+      border-color: rgba(168, 85, 247, 0.25);
+      color: var(--accent-purple);
+    }
+
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    /* Tab Navigation */
+    .nav-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 1.25rem 2rem 0;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .tab-btn {
+      background: rgba(17, 24, 39, 0.6);
+      border: 1px solid var(--border-card);
+      color: var(--text-secondary);
+      padding: 0.65rem 1.25rem;
+      border-radius: 12px;
+      font-size: 0.88rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.25s ease;
+      backdrop-filter: blur(8px);
+    }
+
+    .tab-btn:hover {
+      color: var(--text-primary);
+      border-color: rgba(255, 255, 255, 0.2);
+      background: rgba(30, 41, 59, 0.6);
+    }
+
+    .tab-btn.active {
+      color: #fff;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(59, 130, 246, 0.2));
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.25);
+    }
+
+    /* Main Container */
+    main {
+      max-width: 1500px;
+      margin: 1.5rem auto 4rem;
+      padding: 0 2rem;
+    }
+
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Diagram Canvas Container */
+    .diagram-canvas {
+      background: var(--bg-card);
+      border: 1px solid var(--border-card);
+      border-radius: 20px;
+      padding: 2.5rem;
+      position: relative;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6);
+      overflow-x: auto;
+    }
+
+    .diagram-header {
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 1.25rem;
+    }
+
+    .diagram-title h2 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.35rem;
+    }
+
+    .diagram-title p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    .diagram-legend {
+      display: flex;
+      gap: 1.25rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .legend-color {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+    }
+
+    /* Interactive Architectural Grid */
+    .arch-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    .arch-layer {
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      padding: 1.5rem;
+      position: relative;
+      background: rgba(15, 23, 42, 0.35);
+    }
+
+    .layer-label {
+      position: absolute;
+      top: -0.75rem;
+      left: 1.5rem;
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+      padding: 0.15rem 0.65rem;
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .cards-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+      margin-top: 0.5rem;
+    }
+
+    .arch-card {
+      background: rgba(30, 41, 59, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 1.25rem;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .arch-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--card-accent, var(--accent-cyan));
+      opacity: 0.8;
+      transition: width 0.2s ease;
+    }
+
+    .arch-card:hover {
+      transform: translateY(-3px);
+      background: rgba(30, 41, 59, 0.8);
+      border-color: var(--card-accent, var(--accent-cyan));
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(56, 189, 248, 0.15);
+    }
+
+    .arch-card:hover::before {
+      width: 6px;
+    }
+
+    .card-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.65rem;
+    }
+
+    .card-icon {
+      font-size: 1.35rem;
+    }
+
+    .card-tag {
+      font-size: 0.68rem;
+      font-family: var(--font-mono);
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+    }
+
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 0.35rem;
+    }
+
+    .card-desc {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      line-height: 1.45;
+      margin-bottom: 0.75rem;
+    }
+
+    .card-footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+    }
+
+    .tech-pill {
+      background: rgba(255, 255, 255, 0.06);
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      color: var(--accent-cyan);
+    }
+
+    /* Data Flow Arrows */
+    .flow-connector {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.5rem 0;
+      color: var(--text-muted);
+      position: relative;
+    }
+
+    .flow-line {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--accent-cyan);
+      background: rgba(15, 23, 42, 0.8);
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+
+    /* Modal / Inspector Drawer */
+    .inspector-drawer {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      width: 440px;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid var(--accent-cyan);
+      border-radius: 16px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 25px rgba(56, 189, 248, 0.2);
+      backdrop-filter: blur(20px);
+      z-index: 200;
+      transform: translateY(120%);
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+
+    .inspector-drawer.open {
+      transform: translateY(0);
+    }
+
+    .drawer-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(30, 41, 59, 0.4);
+    }
+
+    .drawer-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .drawer-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1.25rem;
+      line-height: 1;
+      padding: 0.25rem;
+      transition: color 0.2s;
+    }
+
+    .drawer-close:hover {
+      color: #fff;
+    }
+
+    .drawer-body {
+      padding: 1.25rem;
+      max-height: 480px;
+      overflow-y: auto;
+      font-size: 0.85rem;
+    }
+
+    .drawer-section {
+      margin-bottom: 1rem;
+    }
+
+    .drawer-label {
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+
+    .drawer-code {
+      background: #090d16;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: #38bdf8;
+      overflow-x: auto;
+    }
+
+    /* Page Simulator (Tab 4) */
+    .page-simulator {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+
+    .sim-page {
+      background: #ffffff;
+      color: #1e293b;
+      border-radius: 12px;
+      padding: 2.5rem 2rem;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+      position: relative;
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+
+    .sim-header {
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 0.5rem;
+      margin-bottom: 1rem;
+      font-size: 0.75rem;
+      color: #94a3b8;
+      display: flex;
+      justify-content: space-between;
+      position: relative;
+    }
+
+    .sim-margin-tag {
+      position: absolute;
+      right: 0;
+      top: -1.25rem;
+      background: #ef4444;
+      color: #fff;
+      font-size: 0.65rem;
+      font-family: var(--font-mono);
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+    }
+
+    .sim-box {
+      border: 2px dashed transparent;
+      padding: 0.5rem;
+      margin-bottom: 0.75rem;
+      border-radius: 6px;
+      position: relative;
+      transition: all 0.2s;
+    }
+
+    .sim-box-included {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.06);
+    }
+
+    .sim-box-cutoff {
+      border-color: #ef4444;
+      background: rgba(239, 68, 68, 0.06);
+      opacity: 0.65;
+    }
+
+    .sim-tag {
+      position: absolute;
+      top: -0.65rem;
+      right: 0.5rem;
+      font-size: 0.65rem;
+      font-family: var(--font-mono);
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      color: #fff;
+    }
+
+    .tag-green { background: #10b981; }
+    .tag-red { background: #ef4444; }
+
+    .sim-divider-line {
+      height: 3px;
+      background: repeating-linear-gradient(90deg, #ef4444, #ef4444 8px, transparent 8px, transparent 16px);
+      margin: 1.25rem 0;
+      position: relative;
+    }
+
+    .sim-divider-label {
+      position: absolute;
+      left: 50%;
+      top: -0.75rem;
+      transform: translateX(-50%);
+      background: #ef4444;
+      color: #fff;
+      font-size: 0.68rem;
+      font-family: var(--font-mono);
+      padding: 0.15rem 0.6rem;
+      border-radius: 9999px;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+
+    .sim-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.5rem;
+      font-size: 0.75rem;
+    }
+
+    .sim-table th, .sim-table td {
+      border: 1px solid #cbd5e1;
+      padding: 0.35rem 0.5rem;
+      text-align: left;
+    }
+
+    .sim-table th {
+      background: #f1f5f9;
+      font-weight: 600;
+    }
+
+    /* Infographic Card */
+    .infographic-container {
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border-card);
+      margin-top: 2rem;
+      position: relative;
+    }
+
+    .infographic-container img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-logo">⚡</div>
+      <div class="brand-text">
+        <h1>Enterprise Architecture Diagram</h1>
+        <p>Satya0418/webcrawler • C4 Model Specification</p>
+      </div>
+    </div>
+    <div class="header-badges">
+      <span class="badge badge-cyan"><span class="pulse-dot"></span> FastAPI Core</span>
+      <span class="badge badge-purple">Zero-LLM Deterministic</span>
+      <span class="badge badge-emerald">SHA-256 Audit Trail</span>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="switchTab('tab-unified')">🌐 Complete System Map</button>
+    <button class="tab-btn" onclick="switchTab('tab-crawler')">🕷️ Subsystem A: FDA Crawler</button>
+    <button class="tab-btn" onclick="switchTab('tab-extractor')">📄 Subsystem B: Section Extractor</button>
+    <button class="tab-btn" onclick="switchTab('tab-simulator')">📐 Coordinate Slicing Simulator</button>
+    <button class="tab-btn" onclick="switchTab('tab-infographic')">🎨 High-Res Visual Infographic</button>
+  </div>
+
+  <!-- Main Content Area -->
+  <main>
+
+    <!-- TAB 1: Unified System Architecture -->
+    <div id="tab-unified" class="tab-content active">
+      <div class="diagram-canvas">
+        <div class="diagram-header">
+          <div class="diagram-title">
+            <h2>Unified Enterprise System Architecture (C4 Level 2)</h2>
+            <p>Complete edge-to-storage diagram connecting Client Apps, Reverse Proxy, FastAPI Microservices, and Persistence Engines.</p>
+          </div>
+          <div class="diagram-legend">
+            <div class="legend-item"><div class="legend-color" style="background:#38bdf8"></div> Edge & Ingress</div>
+            <div class="legend-item"><div class="legend-color" style="background:#a855f7"></div> Core Engines</div>
+            <div class="legend-item"><div class="legend-color" style="background:#10b981"></div> Data Stores</div>
+          </div>
+        </div>
+
+        <div class="arch-grid">
+          <!-- Layer 1: Consumers -->
+          <div class="arch-layer">
+            <div class="layer-label">Layer 1: Consumers & Ingress</div>
+            <div class="cards-row">
+              <div class="arch-card" style="--card-accent: #38bdf8" onclick="inspectNode('client_apps')">
+                <div class="card-meta"><span class="card-icon">💻</span><span class="card-tag">External</span></div>
+                <div class="card-title">Client Web Applications</div>
+                <div class="card-desc">Third-party portals with remote buttons ("Extract Section 16.1", "Fetch FDA Alerts").</div>
+                <div class="card-footer"><span class="tech-pill">HTTPS REST</span><span class="tech-pill">X-API-Key</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #38bdf8" onclick="inspectNode('admin_ui')">
+                <div class="card-meta"><span class="card-icon">📊</span><span class="card-tag">Internal</span></div>
+                <div class="card-title">Internal Regulatory Dashboards</div>
+                <div class="card-desc">Dual-mode extraction UI with high-DPI page bounding-box inspector.</div>
+                <div class="card-footer"><span class="tech-pill">Vanilla JS</span><span class="tech-pill">CSS Glassmorphism</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #38bdf8" onclick="inspectNode('nginx')">
+                <div class="card-meta"><span class="card-icon">🛡️</span><span class="card-tag">Gateway</span></div>
+                <div class="card-title">Nginx Reverse Proxy</div>
+                <div class="card-desc">SSL termination (TLS 1.3), rate-limiting (20 req/s), and 100MB multipart body streaming.</div>
+                <div class="card-footer"><span class="tech-pill">Port 443</span><span class="tech-pill">Gzip</span><span class="tech-pill">CORS</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow-connector">
+            <div class="flow-line">▼ Authenticated Reverse Proxy Dispatch (:8000 & :8001) ▼</div>
+          </div>
+
+          <!-- Layer 2: Core Microservices -->
+          <div class="arch-layer">
+            <div class="layer-label">Layer 2: FastAPI Core Microservices</div>
+            <div class="cards-row">
+              <div class="arch-card" style="--card-accent: #3b82f6" onclick="inspectNode('fda_crawler')">
+                <div class="card-meta"><span class="card-icon">🕷️</span><span class="card-tag">:8000</span></div>
+                <div class="card-title">FDA Regulatory Web Crawler</div>
+                <div class="card-desc">Async HTTPX client with desktop header spoofing, session cookies, and multi-regex date parser.</div>
+                <div class="card-footer"><span class="tech-pill">httpx</span><span class="tech-pill">BeautifulSoup4</span><span class="tech-pill">Regex</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #a855f7" onclick="inspectNode('change_detection')">
+                <div class="card-meta"><span class="card-icon">🔒</span><span class="card-tag">Audit</span></div>
+                <div class="card-title">SHA-256 Change Detection</div>
+                <div class="card-desc">Computes canonical cryptographic hashes on medical text. Archives revisions without data loss.</div>
+                <div class="card-footer"><span class="tech-pill">hashlib</span><span class="tech-pill">Versioned ORM</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #a855f7" onclick="inspectNode('pdf_extractor')">
+                <div class="card-meta"><span class="card-icon">📐</span><span class="card-tag">:8001</span></div>
+                <div class="card-title">Intelligent PDF Section Extractor</div>
+                <div class="card-desc">100% Deterministic document compiler slicing section 16.1 down to exact coordinates.</div>
+                <div class="card-footer"><span class="tech-pill">PyMuPDF</span><span class="tech-pill">pdfplumber</span><span class="tech-pill">openpyxl</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow-connector">
+            <div class="flow-line">▼ ACID Transactions & Async Celery Task Distribution ▼</div>
+          </div>
+
+          <!-- Layer 3: Persistence & Storage -->
+          <div class="arch-layer">
+            <div class="layer-label">Layer 3: Data Persistence & Storage</div>
+            <div class="cards-row">
+              <div class="arch-card" style="--card-accent: #10b981" onclick="inspectNode('postgres')">
+                <div class="card-meta"><span class="card-icon">🗄️</span><span class="card-tag">Relational</span></div>
+                <div class="card-title">PostgreSQL / SQLite Database</div>
+                <div class="card-desc">Stores drugs, safety labeling changes, immutable version history, and crawl logs.</div>
+                <div class="card-footer"><span class="tech-pill">SQLAlchemy 2.0</span><span class="tech-pill">ACID</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #f59e0b" onclick="inspectNode('redis')">
+                <div class="card-meta"><span class="card-icon">⚡</span><span class="card-tag">Cache & Queue</span></div>
+                <div class="card-title">Redis 7+ In-Memory Broker</div>
+                <div class="card-desc">High-speed search response caching and Celery message broker for scheduled background crawls.</div>
+                <div class="card-footer"><span class="tech-pill">TTL Cache</span><span class="tech-pill">Celery Queue</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #10b981" onclick="inspectNode('doc_storage')">
+                <div class="card-meta"><span class="card-icon">📁</span><span class="card-tag">Storage</span></div>
+                <div class="card-title">Document File Storage</div>
+                <div class="card-desc">Stores raw PDF uploads, generated multi-tab Excel workbooks, and SQLite audit traces (extractor.db).</div>
+                <div class="card-footer"><span class="tech-pill">uploads/</span><span class="tech-pill">outputs/</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: FDA Crawler Pipeline -->
+    <div id="tab-crawler" class="tab-content">
+      <div class="diagram-canvas">
+        <div class="diagram-header">
+          <div class="diagram-title">
+            <h2>Subsystem A: FDA Regulatory Web Crawler & Scraper Pipeline</h2>
+            <p>Detailed data ingestion pipeline from government ColdFusion servers to versioned SQL storage.</p>
+          </div>
+        </div>
+
+        <div class="arch-grid">
+          <div class="arch-layer">
+            <div class="layer-label">7-Stage Ingestion Pipeline</div>
+            <div class="cards-row">
+              <div class="arch-card" style="--card-accent: #38bdf8" onclick="inspectNode('crawler_step1')">
+                <div class="card-meta"><span class="card-icon">1</span><span class="card-tag">Input</span></div>
+                <div class="card-title">Query Dispatch</div>
+                <div class="card-desc">Receives drug name (e.g. "Ciprofloxacin"). Checks local database first. If stale, dispatches crawler.</div>
+                <div class="card-footer"><span class="tech-pill">app/api/drugs.py</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #38bdf8" onclick="inspectNode('crawler_step2')">
+                <div class="card-meta"><span class="card-icon">2</span><span class="card-tag">Anti-Bot</span></div>
+                <div class="card-title">Browser Emulation</div>
+                <div class="card-desc">Injects desktop Chrome User-Agent, Accept-Encoding, and Referer headers to bypass HTTP 403 blocks.</div>
+                <div class="card-footer"><span class="tech-pill">FDACrawler</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #3b82f6" onclick="inspectNode('crawler_step3')">
+                <div class="card-meta"><span class="card-icon">3</span><span class="card-tag">HTTP POST</span></div>
+                <div class="card-title">ColdFusion Form POST</div>
+                <div class="card-desc">POSTs payload to index.cfm?event=searchResult.page and maintains cookie session.</div>
+                <div class="card-footer"><span class="tech-pill">httpx.AsyncClient</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #a855f7" onclick="inspectNode('crawler_step4')">
+                <div class="card-meta"><span class="card-icon">4</span><span class="card-tag">Parsing</span></div>
+                <div class="card-title">Date & Section Parser</div>
+                <div class="card-desc">Extracts supplement letters (SUPPL-25) and parses 8 date formats via parse_fda_date().</div>
+                <div class="card-footer"><span class="tech-pill">BeautifulSoup4</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #f43f5e" onclick="inspectNode('crawler_step5')">
+                <div class="card-meta"><span class="card-icon">5</span><span class="card-tag">Sanitization</span></div>
+                <div class="card-title">Clinical Noise Filter</div>
+                <div class="card-desc">Hard cutoff stopping before Section 17, PCI, PI, or Medication Guides. Removes [see Warnings] brackets.</div>
+                <div class="card-footer"><span class="tech-pill">clean_adverse_reaction_text</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #f59e0b" onclick="inspectNode('crawler_step6')">
+                <div class="card-meta"><span class="card-icon">6</span><span class="card-tag">Hashing</span></div>
+                <div class="card-title">SHA-256 Checksum</div>
+                <div class="card-desc">Hashes canonical fields. If hash differs from existing record, triggers new version row.</div>
+                <div class="card-footer"><span class="tech-pill">ChangeDetectionService</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #10b981" onclick="inspectNode('crawler_step7')">
+                <div class="card-meta"><span class="card-icon">7</span><span class="card-tag">Storage</span></div>
+                <div class="card-title">ACID Version Archive</div>
+                <div class="card-desc">Bumps version_number, stores previous text into safety_change_versions, updates live record.</div>
+                <div class="card-footer"><span class="tech-pill">DatabaseService</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: PDF Section Extractor Pipeline -->
+    <div id="tab-extractor" class="tab-content">
+      <div class="diagram-canvas">
+        <div class="diagram-header">
+          <div class="diagram-title">
+            <h2>Subsystem B: Intelligent PDF Section Extractor Pipeline</h2>
+            <p>The 10-step deterministic geometric compiler extracting hierarchical sections without LLMs.</p>
+          </div>
+        </div>
+
+        <div class="arch-grid">
+          <div class="arch-layer">
+            <div class="layer-label">The 10-Step Deterministic Slicing Pipeline</div>
+            <div class="cards-row">
+              <div class="arch-card" style="--card-accent: #38bdf8" onclick="inspectNode('ext_step1')">
+                <div class="card-meta"><span class="card-icon">1</span><span class="card-tag">Ingest</span></div>
+                <div class="card-title">PyMuPDF Reader & OCR</div>
+                <div class="card-desc">Loads document. If character density < 50 chars/page, triggers Tesseract OCR fallback.</div>
+                <div class="card-footer"><span class="tech-pill">PDFReader</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #38bdf8" onclick="inspectNode('ext_step2')">
+                <div class="card-meta"><span class="card-icon">2</span><span class="card-tag">Typography</span></div>
+                <div class="card-title">Body Font Mode & Snapping</div>
+                <div class="card-desc">Calculates mode font size. Sorts blocks into reading order: (page, round(y0/4)*4, x0).</div>
+                <div class="card-footer"><span class="tech-pill">PDFParser</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #f43f5e" onclick="inspectNode('ext_step3')">
+                <div class="card-meta"><span class="card-icon">3</span><span class="card-tag">Filter</span></div>
+                <div class="card-title">Margin Noise Cleaner</div>
+                <div class="card-desc">Suppresses running headers (top 12% height) and running footers/page numbers (bottom 10%).</div>
+                <div class="card-footer"><span class="tech-pill">MarginCleaner</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #a855f7" onclick="inspectNode('ext_step4')">
+                <div class="card-meta"><span class="card-icon">4</span><span class="card-tag">Classifier</span></div>
+                <div class="card-title">Multi-Signal Heading Classifier</div>
+                <div class="card-desc">Classifies headings (font size > 1.08x + bold). Discriminates against TOC dot-leaders (...).</div>
+                <div class="card-footer"><span class="tech-pill">HeadingDetector</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #3b82f6" onclick="inspectNode('ext_step5')">
+                <div class="card-meta"><span class="card-icon">5</span><span class="card-tag">Tables</span></div>
+                <div class="card-title">Vector Line Table Engine</div>
+                <div class="card-desc">Detects graphical table lines via pdfplumber. Builds row/col matrices and deduplicates raw text.</div>
+                <div class="card-footer"><span class="tech-pill">TableExtractor</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #a855f7" onclick="inspectNode('ext_step6')">
+                <div class="card-meta"><span class="card-icon">6</span><span class="card-tag">Hierarchy</span></div>
+                <div class="card-title">Prefix Tree Assembler</div>
+                <div class="card-desc">Links section nodes hierarchically: 16 ──► 16.1 ──► [16.1.1, 16.1.2].</div>
+                <div class="card-footer"><span class="tech-pill">SectionTreeBuilder</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #f43f5e" onclick="inspectNode('ext_step7')">
+                <div class="card-meta"><span class="card-icon">7</span><span class="card-tag">Slicer</span></div>
+                <div class="card-title">Strict Sibling Truncator</div>
+                <div class="card-desc">Captures Section 16 & 16.1. TERMINATES immediately upon encountering sibling 16.2.</div>
+                <div class="card-footer"><span class="tech-pill">BoundaryDetector</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #10b981" onclick="inspectNode('ext_step8')">
+                <div class="card-meta"><span class="card-icon">8</span><span class="card-tag">Audit</span></div>
+                <div class="card-title">Automated Quality Auditor</div>
+                <div class="card-desc">Executes 5-point verification checklist. Calculates Confidence Score (1.0 = flawless).</div>
+                <div class="card-footer"><span class="tech-pill">ExtractionValidator</span></div>
+              </div>
+              <div class="arch-card" style="--card-accent: #f59e0b" onclick="inspectNode('ext_step9')">
+                <div class="card-meta"><span class="card-icon">9</span><span class="card-tag">Export</span></div>
+                <div class="card-title">Multi-Format Exporter</div>
+                <div class="card-desc">Builds styled Excel (.xlsx) with header palettes, deep JSON trees, flat CSV, and semantic HTML.</div>
+                <div class="card-footer"><span class="tech-pill">ExportService</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: Coordinate Slicing Simulator -->
+    <div id="tab-simulator" class="tab-content">
+      <div class="diagram-canvas">
+        <div class="diagram-header">
+          <div class="diagram-title">
+            <h2>Intra-Page Sibling Cutoff Simulator</h2>
+            <p>Visualizing how the engine extracts Section 16.1 and stops strictly before 16.2 on the exact same physical page.</p>
+          </div>
+        </div>
+
+        <div class="page-simulator">
+          <!-- Physical PDF Page Mockup -->
+          <div class="sim-page">
+            <div class="sim-header">
+              <span>Periodic Safety Update Report (PSUR) — Confidential</span>
+              <span>Page 42</span>
+              <span class="sim-margin-tag">TOP 12% EXCLUDED</span>
+            </div>
+
+            <!-- Parent Section 16 -->
+            <div class="sim-box sim-box-included">
+              <span class="sim-tag tag-green">INCLUDED (Parent)</span>
+              <h3 style="font-size: 1.1rem; font-weight: 700; color: #0f172a;">16. Signal and Risk Evaluation</h3>
+              <p style="font-size: 0.8rem; color: #475569; margin-top: 0.25rem;">This section presents safety evaluations conducted during the reporting period from clinical and post-marketing surveillance.</p>
+            </div>
+
+            <!-- Target Subsection 16.1 -->
+            <div class="sim-box sim-box-included">
+              <span class="sim-tag tag-green">TARGET (16.1)</span>
+              <h4 style="font-size: 0.95rem; font-weight: 700; color: #0f172a;">16.1 Summary of Safety Concerns</h4>
+              <p style="font-size: 0.8rem; color: #334155; margin-top: 0.25rem;">Table 16.1 summarizes cumulative important identified and potential risks observed during the surveillance period.</p>
+
+              <!-- Extracted Vector Table -->
+              <table class="sim-table">
+                <thead>
+                  <tr>
+                    <th>Risk Category</th>
+                    <th>Identified Term</th>
+                    <th>Cumulative (N)</th>
+                    <th>Reporting Frequency</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Important Identified</td>
+                    <td>QT Prolongation</td>
+                    <td>42</td>
+                    <td>0.03%</td>
+                  </tr>
+                  <tr>
+                    <td>Important Potential</td>
+                    <td>Tendonitis / Tendon Rupture</td>
+                    <td>18</td>
+                    <td>0.01%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- THE SIBLING CUTOFF BOUNDARY LINE -->
+            <div class="sim-divider-line">
+              <span class="sim-divider-label">⛔ STRICT SIBLING BOUNDARY CUTOFF (STOP HERE)</span>
+            </div>
+
+            <!-- Excluded Sibling Section 16.2 -->
+            <div class="sim-box sim-box-cutoff">
+              <span class="sim-tag tag-red">EXCLUDED (Sibling 16.2)</span>
+              <h4 style="font-size: 0.95rem; font-weight: 700; color: #94a3b8;">16.2 Signal Evaluation</h4>
+              <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem;">Detailed narrative evaluations for signals closed or ongoing during the period under review...</p>
+            </div>
+          </div>
+
+          <!-- Technical Explanation Card -->
+          <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid var(--border-card); border-radius: 16px; padding: 2rem;">
+            <h3 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem; color: #38bdf8;">Why Other Tools Fail & How Ours Succeeds</h3>
+            
+            <div style="margin-bottom: 1.5rem;">
+              <h4 style="font-size: 0.9rem; font-weight: 600; color: #f43f5e; margin-bottom: 0.35rem;">❌ The LLM & Naive Regex Failure</h4>
+              <p style="font-size: 0.82rem; color: var(--text-secondary);">LLMs and naive page-splitters operate at the page level. Because Section 16.1 and Section 16.2 share Page 42, an LLM or page extractor either dumps all of 16.2 into the output or hallucinates where the boundary ends.</p>
+            </div>
+
+            <div style="margin-bottom: 1.5rem;">
+              <h4 style="font-size: 0.9rem; font-weight: 600; color: #10b981; margin-bottom: 0.35rem;">✅ Our Coordinate-Level Mathematical Slicer</h4>
+              <p style="font-size: 0.82rem; color: var(--text-secondary);">Our engine parses every text span into its exact Cartesian bounding box: <code style="color:#38bdf8; font-family:var(--font-mono);">(x0, y0, x1, y1)</code>. When the heading detector matches sibling <code style="color:#f43f5e; font-family:var(--font-mono);">16.2</code> at <code style="color:#38bdf8; font-family:var(--font-mono);">y0 = 612.8pt</code>, it truncates immediately. No subsequent bytes are read.</p>
+            </div>
+
+            <div class="drawer-code" style="margin-top: 1.25rem;">
+              # Boundary Detector Rule (boundary_detector.py)<br>
+              if has_started and b.is_heading and b.section_number == stop_section_num:<br>
+              &nbsp;&nbsp;&nbsp;&nbsp;excluded_sections.add(stop_section_num)<br>
+              &nbsp;&nbsp;&nbsp;&nbsp;break # Immediate termination
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: Visual Infographic -->
+    <div id="tab-infographic" class="tab-content">
+      <div class="diagram-canvas">
+        <div class="diagram-header">
+          <div class="diagram-title">
+            <h2>High-Resolution Architecture Infographic</h2>
+            <p>Rendered overview of the system architecture blocks and component hierarchy.</p>
+          </div>
+        </div>
+        <div class="infographic-container">
+          <img src="architecture_diagram.jpg" alt="High-Performance Architecture Diagram" id="infographic-img" style="border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.7);">
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Interactive Node Inspector Drawer -->
+  <div class="inspector-drawer" id="inspector-drawer">
+    <div class="drawer-header">
+      <div class="drawer-title" id="drawer-title">Component Inspector</div>
+      <button class="drawer-close" onclick="closeInspector()">✕</button>
+    </div>
+    <div class="drawer-body" id="drawer-body">
+      <!-- Dynamic details inserted by JS -->
+    </div>
+  </div>
+
+  <script>
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      event.currentTarget.classList.add('active');
+      closeInspector();
+    }
+
+    const nodeData = {
+      client_apps: {
+        title: "Client Web Applications (Remote Button)",
+        desc: "Third-party customer portals communicating with our platform via headless B2B APIs.",
+        file: "CLIENT_INTEGRATION_ARCHITECTURE.md",
+        tech: "HTTPS POST • Multipart / Form-Data • JSON • API Key (X-API-Key)",
+        details: "Customers place a button on their site (e.g., 'Extract Section 16.1' or 'Check Safety Alerts'). Clicking the button triggers an authenticated REST call to our FastAPI endpoint and receives structured JSON and styled Excel downloads in sub-seconds."
+      },
+      nginx: {
+        title: "Nginx Gateway & Reverse Proxy",
+        desc: "Edge security, SSL termination, and high-throughput connection routing.",
+        file: "nginx/medicine_safety.conf",
+        tech: "TLS 1.3 • Rate Limiting (limit_req) • Gzip • 100MB Client Max Body",
+        details: "Terminates HTTPS on Port 443. Forwards /api/drugs to port 8000 and /api/extract to port 8001. Enforces CORS headers and buffers large PDF uploads."
+      },
+      fda_crawler: {
+        title: "FDACrawler (Asynchronous Web Crawler)",
+        desc: "Automated engine for crawling FDA Drug Safety-related Labeling Changes (SrLC).",
+        file: "backend/app/crawler/fda_crawler.py",
+        tech: "httpx.AsyncClient • Chrome 120 Spoofed Headers • Exponential Backoff",
+        details: "Overcomes FDA bot-mitigation via browser impersonation. Performs search POST queries, handles session cookies, and crawls detailed labeling revisions with retry jitter."
+      },
+      change_detection: {
+        title: "ChangeDetectionService (SHA-256 Hasher)",
+        desc: "Cryptographic content hashing engine for non-destructive label versioning.",
+        file: "backend/app/services/change_detection.py",
+        tech: "hashlib • SHA-256 • Canonical Concatenation",
+        details: "Generates an immutable hash: display_name | active_ingredient | section | date | text. If a new crawl hash mismatches the database, an audit-proof version row is inserted without overwriting history."
+      },
+      pdf_extractor: {
+        title: "Intelligent PDF Section Extractor",
+        desc: "100% Deterministic document compiler for clinical and legal reports.",
+        file: "pdf_extractor/backend/extraction/section_extractor.py",
+        tech: "PyMuPDF (fitz) • pdfplumber • openpyxl • Zero-LLM",
+        details: "Parses dense PDFs into 2D Cartesian boxes (x0, y0, x1, y1). Classifies section headings, captures vector tables, and enforces strict sibling cutoffs (stopping at 16.2 on the same page)."
+      },
+      postgres: {
+        title: "PostgreSQL / SQLite Database",
+        desc: "Relational persistence engine with SQLAlchemy ORM models.",
+        file: "backend/app/models/drug.py",
+        tech: "SQLAlchemy 2.0 • Foreign Key Cascades • ACID Transactions",
+        details: "Maintains relational tables for Drugs, SafetyLabelingChanges, SafetyChangeVersions, and CrawlRuns with full audit trails."
+      },
+      redis: {
+        title: "Redis 7+ In-Memory Broker",
+        desc: "Cache layer and Celery message broker.",
+        file: "backend/app/config.py",
+        tech: "Redis 7 • Celery Broker • Query TTL Caching",
+        details: "Caches frequent drug search queries to provide instant sub-millisecond responses and coordinates background scheduled crawling jobs."
+      }
+    };
+
+    function inspectNode(nodeKey) {
+      const data = nodeData[nodeKey];
+      if (!data) return;
+
+      const drawer = document.getElementById('inspector-drawer');
+      const title = document.getElementById('drawer-title');
+      const body = document.getElementById('drawer-body');
+
+      title.innerText = data.title;
+      body.innerHTML = `
+        <div class="drawer-section">
+          <div class="drawer-label">Component Responsibility</div>
+          <p style="color:#cbd5e1">${data.desc}</p>
+        </div>
+        <div class="drawer-section">
+          <div class="drawer-label">Source Implementation</div>
+          <div class="drawer-code">${data.file}</div>
+        </div>
+        <div class="drawer-section">
+          <div class="drawer-label">Technologies & Protocols</div>
+          <p style="color:#38bdf8; font-family:var(--font-mono); font-size:0.75rem">${data.tech}</p>
+        </div>
+        <div class="drawer-section">
+          <div class="drawer-label">Architectural Detail</div>
+          <p style="color:#94a3b8; line-height:1.5">${data.details}</p>
+        </div>
+      `;
+
+      drawer.classList.add('open');
+    }
+
+    function closeInspector() {
+      document.getElementById('inspector-drawer').classList.remove('open');
+    }
+  </script>
+</body>
+</html>
