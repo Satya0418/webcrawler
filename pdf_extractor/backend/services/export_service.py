@@ -1,3 +1,4 @@
+import re
 import json
 import csv
 import io
@@ -14,6 +15,22 @@ from backend.config import OUTPUT_DIR
 class ExportService:
     """Provides exports in HTML, JSON, TXT, CSV, and Excel formats."""
 
+    @staticmethod
+    def _clean_section_heading(text: str) -> str:
+        """
+        Strips leading section numbers (e.g. '16', '16.1', 'Section 16.1:', 'Table 16.1:', '16 Safety Information')
+        from headings, titles, and captions so section numbers are not displayed in the HTML output.
+        """
+        if not text:
+            return ""
+        cleaned = re.sub(
+            r'^(?:(?:section|table)\s+)?\(?\d+(?:\.\d+)*\)?(?:\s*[:\-\.\)]+)*\s*',
+            '',
+            text.strip(),
+            flags=re.IGNORECASE
+        )
+        return cleaned.strip()
+
     @classmethod
     def generate_html_content(cls, result: ExtractionResult, title: Optional[str] = None) -> str:
         """
@@ -22,17 +39,16 @@ class ExportService:
         - Blue (#007BFF) table headers with white bold text
         - Border bottom #ddd, hover effect #f5f5f5, box-shadow on table
         - <h2> headings for tables and sections
+        - Section numbers (e.g. 16, 16.1) omitted from titles, headings, and table headers
         """
-        if result.requested_subsection:
-            if result.requested_subsection.startswith(result.requested_section):
-                sec_display = result.requested_subsection
-            else:
-                sec_display = f"{result.requested_section}.{result.requested_subsection}"
+        if title:
+            clean_t = cls._clean_section_heading(title)
+            page_title = clean_t or "Sample HTML Table"
+        elif result.document and result.document != "document.pdf":
+            stem = Path(result.document).stem.replace("_", " ").title()
+            clean_stem = cls._clean_section_heading(stem)
+            page_title = clean_stem or "Sample HTML Table"
         else:
-            sec_display = result.requested_section
-
-        page_title = title or f"{result.document} - Section {sec_display}"
-        if not page_title.strip():
             page_title = "Sample HTML Table"
 
         body_elements = []
@@ -43,10 +59,17 @@ class ExportService:
         if table_items:
             for item in (result.structured_content or []):
                 if item.type == "heading":
-                    h_text = html.escape(item.title or item.text or "")
-                    body_elements.append(f"<h2>{h_text}</h2>")
+                    raw_h = item.title or item.text or ""
+                    h_text = cls._clean_section_heading(raw_h)
+                    if h_text:
+                        body_elements.append(f"<h2>{html.escape(h_text)}</h2>")
                 elif item.type == "table":
-                    caption = item.caption or f"Table (Page {item.page})"
+                    caption = ""
+                    if item.caption:
+                        caption = cls._clean_section_heading(item.caption)
+                    if not caption:
+                        caption = f"Extracted Table (Page {item.page})" if item.page else "Extracted Table"
+
                     cols = item.columns or []
                     th_cells = "".join(f"<th>{html.escape(str(c))}</th>" for c in cols)
                     thead = f"<thead><tr>{th_cells}</tr></thead>" if th_cells else ""
@@ -72,34 +95,42 @@ class ExportService:
                         body_elements.append(f"<p style=\"margin: 12px 0; color: #333; line-height: 1.6;\">{p_text}</p>")
         else:
             # No explicit table matrices found: create document narrative + structured data table
-            doc_heading = f"{result.document} - Section {sec_display}"
-            body_elements.append(f"<h2>{html.escape(doc_heading)}</h2>")
+            doc_stem = Path(result.document).stem.replace("_", " ").title() if result.document and result.document != "document.pdf" else ""
+            clean_doc_heading = cls._clean_section_heading(doc_stem)
+            if clean_doc_heading:
+                body_elements.append(f"<h2>{html.escape(clean_doc_heading)}</h2>")
 
             table_rows = []
+            idx = 1
             for item in (result.structured_content or []):
                 if item.type == "heading":
-                    h_text = html.escape(item.title or item.text or "")
-                    body_elements.append(f"<h2>{h_text}</h2>")
-                    table_rows.append((item.section_number or result.requested_section, "Heading", str(item.page), item.title or item.text or ""))
+                    raw_h = item.title or item.text or ""
+                    h_text = cls._clean_section_heading(raw_h)
+                    if h_text:
+                        body_elements.append(f"<h2>{html.escape(h_text)}</h2>")
+                        table_rows.append((f"{idx:03d}", "Heading", str(item.page), h_text))
+                        idx += 1
                 else:
                     txt = (item.text or "").strip()
                     if txt:
                         body_elements.append(f"<p style=\"margin: 12px 0; color: #333; line-height: 1.6;\">{html.escape(txt)}</p>")
-                        table_rows.append((item.section_number or result.requested_section, "Content", str(item.page), txt[:150] + ("..." if len(txt) > 150 else "")))
+                        table_rows.append((f"{idx:03d}", "Content", str(item.page), txt[:150] + ("..." if len(txt) > 150 else "")))
+                        idx += 1
 
             # Guarantee that a styled <table> is ALWAYS rendered matching the user's template
             if not table_rows and result.content:
-                table_rows.append((result.requested_section, "Section Text", f"{result.start_page}-{result.end_page}", result.content[:200]))
+                clean_content_sample = result.content[:200].strip()
+                table_rows.append((f"{idx:03d}", "Content", f"{result.start_page}-{result.end_page}", clean_content_sample))
 
             if table_rows:
-                th_cells = "<th>Section</th><th>Type</th><th>Page</th><th>Extracted Information</th>"
+                th_cells = "<th>ID</th><th>Type</th><th>Page</th><th>Extracted Information</th>"
                 tbody_rows = "".join(
-                    f"<tr><td>{html.escape(sec)}</td><td>{html.escape(t)}</td><td>{html.escape(p)}</td><td>{html.escape(info)}</td></tr>"
-                    for sec, t, p, info in table_rows
+                    f"<tr><td>{html.escape(r_id)}</td><td>{html.escape(t)}</td><td>{html.escape(p)}</td><td>{html.escape(info)}</td></tr>"
+                    for r_id, t, p, info in table_rows
                 )
                 body_elements.append(f"<h2>Extracted Information Table</h2><table><thead><tr>{th_cells}</tr></thead><tbody>{tbody_rows}</tbody></table>")
             else:
-                body_elements.append("<h2>Extracted Information Table</h2><table><thead><tr><th>Section</th><th>Status</th></tr></thead><tbody><tr><td>None</td><td>No extracted data available</td></tr></tbody></table>")
+                body_elements.append("<h2>Extracted Information Table</h2><table><thead><tr><th>ID</th><th>Status</th></tr></thead><tbody><tr><td>001</td><td>No extracted data available</td></tr></tbody></table>")
 
         css_styles = (
             "body { font-family: Arial, sans-serif; margin: 40px; background-color: #f9f9f9; } "
