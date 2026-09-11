@@ -54,6 +54,7 @@ const tabDocView = document.getElementById('tabDocView');
 const tabBlocksView = document.getElementById('tabBlocksView');
 const tabTablesView = document.getElementById('tabTablesView');
 const tabJsonView = document.getElementById('tabJsonView');
+const tabHtmlView = document.getElementById('tabHtmlView');
 const tabTextView = document.getElementById('tabTextView');
 const tabTreeView = document.getElementById('tabTreeView');
 const tablesTabCount = document.getElementById('tablesTabCount');
@@ -62,8 +63,17 @@ const viewDocPanel = document.getElementById('viewDocPanel');
 const viewBlocksPanel = document.getElementById('viewBlocksPanel');
 const viewTablesPanel = document.getElementById('viewTablesPanel');
 const viewJsonPanel = document.getElementById('viewJsonPanel');
+const viewHtmlPanel = document.getElementById('viewHtmlPanel');
 const viewTextPanel = document.getElementById('viewTextPanel');
 const viewTreePanel = document.getElementById('viewTreePanel');
+
+const copyHtmlDataBtn = document.getElementById('copyHtmlDataBtn');
+const copyRawHtmlBtn = document.getElementById('copyRawHtmlBtn');
+const openHtmlWindowBtn = document.getElementById('openHtmlWindowBtn');
+const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
+const rawHtmlDataPre = document.getElementById('rawHtmlDataPre');
+const fmtJsonRadio = document.getElementById('fmtJsonRadio');
+const fmtHtmlRadio = document.getElementById('fmtHtmlRadio');
 
 const docPaperContent = document.getElementById('docPaperContent');
 const docPageSpanBadge = document.getElementById('docPageSpanBadge');
@@ -328,6 +338,8 @@ runExtractBtn.addEventListener('click', async () => {
   const mainSec = mainSectionInput.value.trim();
   const subSec = subSectionInput.value.trim();
   const naturalQuery = naturalQueryInput.value.trim();
+  const isHtmlSelected = fmtHtmlRadio && fmtHtmlRadio.checked;
+  const requestedFormat = isHtmlSelected ? 'html' : null;
 
   if (state.selectedFiles.size === 1) {
     const filePath = Array.from(state.selectedFiles)[0];
@@ -345,13 +357,14 @@ runExtractBtn.addEventListener('click', async () => {
           main_section: mainSec,
           target_subsection: subSec || null,
           natural_query: naturalQuery || null,
+          format: requestedFormat,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Extraction failed');
 
       state.activeResult = data;
-      displaySingleResult(data);
+      displaySingleResult(data, filename);
     } catch (err) {
       alert(`Extraction error: ${err.message}`);
     } finally {
@@ -369,6 +382,7 @@ runExtractBtn.addEventListener('click', async () => {
           main_section: mainSec,
           target_subsection: subSec || null,
           natural_query: naturalQuery || null,
+          format: requestedFormat,
         }),
       });
       const data = await res.json();
@@ -385,14 +399,17 @@ runExtractBtn.addEventListener('click', async () => {
 });
 
 // 8. Display Single Document Result
-function displaySingleResult(result) {
+function displaySingleResult(result, fallbackDocName = 'document.pdf') {
   placeholderState.style.display = 'none';
   batchContainer.style.display = 'none';
   resultContainer.style.display = 'block';
 
-  resDocName.textContent = result.document;
-  resTargetBadge.textContent = `${result.requested_section}${result.requested_subsection ? ' → ' + result.requested_subsection : ''}`;
-  resPagesBadge.textContent = result.start_page ? `Pages ${result.start_page} – ${result.end_page}` : 'No Pages';
+  const isHtmlOnly = Boolean(result.Data && !result.document);
+  const docTitle = result.document || fallbackDocName;
+
+  resDocName.textContent = docTitle;
+  resTargetBadge.textContent = isHtmlOnly ? 'HTML Output ("Data")' : `${result.requested_section || ''}${result.requested_subsection ? ' → ' + result.requested_subsection : ''}`;
+  resPagesBadge.textContent = result.start_page ? `Pages ${result.start_page} – ${result.end_page}` : (isHtmlOnly ? 'HTML Document' : 'No Pages');
 
   // Export URLs
   if (result.download_urls) {
@@ -406,8 +423,8 @@ function displaySingleResult(result) {
   const jsonString = JSON.stringify(result, null, 2);
   const jsonBlob = new Blob([jsonString], { type: 'application/json' });
   const jsonBlobUrl = URL.createObjectURL(jsonBlob);
-  const cleanDocName = (result.document || 'document').replace(/\.pdf$/i, '');
-  const jsonFileName = `${cleanDocName}_section_${result.requested_section}${result.requested_subsection ? '_' + result.requested_subsection : ''}_structured.json`;
+  const cleanDocName = (docTitle || 'document').replace(/\.pdf$/i, '');
+  const jsonFileName = `${cleanDocName}_section_${result.requested_section || '16'}${result.requested_subsection ? '_' + result.requested_subsection : ''}_structured.json`;
 
   if (downloadJsonBtn) {
     downloadJsonBtn.href = jsonBlobUrl;
@@ -425,12 +442,22 @@ function displaySingleResult(result) {
     };
   }
 
+  // Populate HTML Output Tab (Preview & Payload)
+  if (result.Data) {
+    if (htmlPreviewFrame) {
+      htmlPreviewFrame.srcdoc = result.Data;
+    }
+    if (rawHtmlDataPre) {
+      rawHtmlDataPre.textContent = JSON.stringify({ Data: result.Data }, null, 2);
+    }
+  }
+
   // Validation Banner
   const val = result.validation || {};
-  valStatusMessage.textContent = val.status_message || result.status;
-  valConfidenceBadge.textContent = `Confidence: ${(val.confidence_score * 100).toFixed(0)}%`;
+  valStatusMessage.textContent = val.status_message || (isHtmlOnly ? 'HTML Table Data successfully extracted and formatted' : result.status);
+  valConfidenceBadge.textContent = `Confidence: ${((val.confidence_score !== undefined ? val.confidence_score : 1.0) * 100).toFixed(0)}%`;
 
-  if (val.confidence_score >= 0.8) {
+  if ((val.confidence_score !== undefined ? val.confidence_score : 1.0) >= 0.8) {
     valStatusDot.className = 'status-dot success';
     valConfidenceBadge.style.color = 'var(--success)';
   } else if (val.confidence_score >= 0.5) {
@@ -462,8 +489,12 @@ function displaySingleResult(result) {
   valBlocksCount.textContent = (result.structured_content && result.structured_content.length) || (result.blocks && result.blocks.length) || 0;
   tablesTabCount.textContent = val.tables_included_count || 0;
 
-  // Default to Authentic Document View (PDF Flow)
-  switchViewerTab(tabDocView, viewDocPanel);
+  // Decide initial active tab: switch to HTML Output if requested
+  if (isHtmlOnly || (fmtHtmlRadio && fmtHtmlRadio.checked)) {
+    switchViewerTab(tabHtmlView, viewHtmlPanel);
+  } else {
+    switchViewerTab(tabDocView, viewDocPanel);
+  }
 
   // Render Authentic Document Flow (As present in PDF)
   renderDocumentFlow(result);
@@ -830,12 +861,13 @@ if (tabDocView) tabDocView.addEventListener('click', () => switchViewerTab(tabDo
 tabBlocksView.addEventListener('click', () => switchViewerTab(tabBlocksView, viewBlocksPanel));
 tabTablesView.addEventListener('click', () => switchViewerTab(tabTablesView, viewTablesPanel));
 tabJsonView.addEventListener('click', () => switchViewerTab(tabJsonView, viewJsonPanel));
+if (tabHtmlView) tabHtmlView.addEventListener('click', () => switchViewerTab(tabHtmlView, viewHtmlPanel));
 tabTextView.addEventListener('click', () => switchViewerTab(tabTextView, viewTextPanel));
 tabTreeView.addEventListener('click', () => switchViewerTab(tabTreeView, viewTreePanel));
 
 function switchViewerTab(activeBtn, activePanel) {
-  [tabDocView, tabBlocksView, tabTablesView, tabJsonView, tabTextView, tabTreeView].forEach(b => b && b.classList.remove('active'));
-  [viewDocPanel, viewBlocksPanel, viewTablesPanel, viewJsonPanel, viewTextPanel, viewTreePanel].forEach(p => p && p.classList.remove('active'));
+  [tabDocView, tabBlocksView, tabTablesView, tabJsonView, tabHtmlView, tabTextView, tabTreeView].forEach(b => b && b.classList.remove('active'));
+  [viewDocPanel, viewBlocksPanel, viewTablesPanel, viewJsonPanel, viewHtmlPanel, viewTextPanel, viewTreePanel].forEach(p => p && p.classList.remove('active'));
   if (activeBtn) activeBtn.classList.add('active');
   if (activePanel) activePanel.classList.add('active');
 }
@@ -866,6 +898,37 @@ copyJsonBtn.addEventListener('click', () => {
   copyJsonBtn.textContent = 'Copied!';
   setTimeout(() => copyJsonBtn.textContent = 'Copy JSON', 2000);
 });
+
+if (copyHtmlDataBtn) {
+  copyHtmlDataBtn.addEventListener('click', () => {
+    if (!state.activeResult || !state.activeResult.Data) return;
+    const payload = JSON.stringify({ Data: state.activeResult.Data }, null, 2);
+    navigator.clipboard.writeText(payload);
+    copyHtmlDataBtn.textContent = 'Copied "Data" JSON!';
+    setTimeout(() => copyHtmlDataBtn.textContent = 'Copy "Data" JSON', 2000);
+  });
+}
+
+if (copyRawHtmlBtn) {
+  copyRawHtmlBtn.addEventListener('click', () => {
+    if (!state.activeResult || !state.activeResult.Data) return;
+    navigator.clipboard.writeText(state.activeResult.Data);
+    copyRawHtmlBtn.textContent = 'Copied Raw HTML!';
+    setTimeout(() => copyRawHtmlBtn.textContent = 'Copy Raw HTML', 2000);
+  });
+}
+
+if (openHtmlWindowBtn) {
+  openHtmlWindowBtn.addEventListener('click', () => {
+    if (!state.activeResult || !state.activeResult.Data) return;
+    const newWindow = window.open();
+    if (newWindow) {
+      newWindow.document.open();
+      newWindow.document.write(state.activeResult.Data);
+      newWindow.document.close();
+    }
+  });
+}
 
 copyTextBtn.addEventListener('click', () => {
   navigator.clipboard.writeText(rawTextContent.textContent);

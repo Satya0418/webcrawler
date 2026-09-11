@@ -33,6 +33,26 @@ class SectionExtractor:
         r"(?:section\s+)?(\d+(?:\.\d+)*)\s*(?:(?:to|and|->|→|\+|,)\s*(?:subsection\s+|section\s+)?(\d+(?:\.\d+)*))?",
         re.IGNORECASE
     )
+    HTML_FORMAT_REGEX = re.compile(
+        r"\b(?:html|htaml)\b",
+        re.IGNORECASE
+    )
+
+    @classmethod
+    def is_html_requested(
+        cls,
+        format_param: Optional[str] = None,
+        response_format_param: Optional[str] = None,
+        natural_query: Optional[str] = None
+    ) -> bool:
+        """Checks whether an HTML formatted response was requested via params or natural language query."""
+        if isinstance(format_param, str) and format_param.strip().lower() in ("html", "htaml"):
+            return True
+        if isinstance(response_format_param, str) and response_format_param.strip().lower() in ("html", "htaml"):
+            return True
+        if isinstance(natural_query, str) and cls.HTML_FORMAT_REGEX.search(natural_query):
+            return True
+        return False
 
     @classmethod
     def parse_query_params(
@@ -260,10 +280,17 @@ class SectionExtractor:
                     except Exception as db_err:
                         res.metadata["db_error"] = str(db_err)
 
+                # Generate formatted HTML data representation
+                try:
+                    from backend.services.export_service import ExportService
+                    res.Data = ExportService.generate_html_content(res)
+                except Exception:
+                    pass
+
                 return res
 
         except Exception as e:
-            return ExtractionResult(
+            err_res = ExtractionResult(
                 document=doc_name,
                 requested_section=main_sec,
                 requested_subsection=target_sub,
@@ -282,6 +309,12 @@ class SectionExtractor:
                 error_message=str(e),
                 metadata={},
             )
+            try:
+                from backend.services.export_service import ExportService
+                err_res.Data = ExportService.generate_html_content(err_res)
+            except Exception:
+                pass
+            return err_res
 
     @staticmethod
     def _persist_to_db(res: ExtractionResult, file_path: Path, total_pages: int):

@@ -135,7 +135,21 @@
 
           <div class="form-group mt-2">
             <label for="naturalQueryInput" class="form-label">Or Natural Language Query:</label>
-            <input type="text" id="naturalQueryInput" class="form-input" placeholder="e.g. Extract Section 16 and subsection 16.1">
+            <input type="text" id="naturalQueryInput" class="form-input" placeholder="e.g. Extract Section 16 in html format">
+          </div>
+
+          <div class="form-group mt-2">
+            <label class="form-label">Response Format:</label>
+            <div style="display: flex; gap: 16px; align-items: center; margin-top: 4px; font-size: 0.85rem;">
+              <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                <input type="radio" name="responseFormat" value="json" checked id="fmtJsonRadio">
+                <span>Structured JSON</span>
+              </label>
+              <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                <input type="radio" name="responseFormat" value="html" id="fmtHtmlRadio">
+                <span style="font-weight: 600; color: #0284c7;">HTML Table ("Data")</span>
+              </label>
+            </div>
           </div>
 
           <button id="runExtractBtn" class="btn btn-accent full-width mt-3">
@@ -249,6 +263,10 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
                 Structured JSON
               </button>
+              <button class="content-tab" id="tabHtmlView">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                HTML Output ("Data")
+              </button>
               <button class="content-tab" id="tabTextView">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                 Clean TXT
@@ -309,6 +327,33 @@
                 <button id="copyJsonBtn" class="btn btn-secondary btn-sm">Copy JSON</button>
               </div>
               <pre id="rawJsonContent" class="formatted-text-area"></pre>
+            </div>
+
+            <!-- Panel HTML: Formatted HTML Output ("Data") -->
+            <div id="viewHtmlPanel" class="viewer-panel">
+              <div class="text-actions-bar">
+                <button id="copyHtmlDataBtn" class="btn btn-primary btn-sm">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  Copy "Data" JSON
+                </button>
+                <button id="copyRawHtmlBtn" class="btn btn-secondary btn-sm">Copy Raw HTML</button>
+                <button id="openHtmlWindowBtn" class="btn btn-secondary btn-sm">Open in New Tab</button>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 14px;">
+                <div style="background: #ffffff; border-radius: 6px; border: 1px solid #cbd5e1; overflow: hidden;">
+                  <div style="background: #f1f5f9; padding: 8px 12px; font-weight: 600; font-size: 0.85rem; color: #334155; border-bottom: 1px solid #cbd5e1; display: flex; justify-content: space-between;">
+                    <span>Interactive HTML Table Preview</span>
+                    <span style="font-weight: normal; color: #64748b; font-size: 0.75rem;">Styled with blue (#007BFF) headers &amp; hover effects</span>
+                  </div>
+                  <iframe id="htmlPreviewFrame" style="width: 100%; height: 420px; border: none; background: #f9f9f9;" sandbox="allow-same-origin allow-popups"></iframe>
+                </div>
+                <div>
+                  <div style="font-weight: 600; font-size: 0.85rem; color: #334155; margin-bottom: 6px;">
+                    JSON Response with "Data":
+                  </div>
+                  <pre id="rawHtmlDataPre" class="formatted-text-area" style="max-height: 250px; overflow: auto;"></pre>
+                </div>
+              </div>
             </div>
 
             <!-- Panel 4: Clean TXT View -->

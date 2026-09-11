@@ -1,7 +1,7 @@
 import uuid
 from pathlib import Path
-from typing import List, Optional
-from fastapi import APIRouter, HTTPException
+from typing import List, Optional, Union, Dict, Any
+from fastapi import APIRouter, HTTPException, Query
 from backend.models.schemas import (
     ExtractionRequest,
     ExtractionResult,
@@ -15,11 +15,16 @@ router = APIRouter(prefix="/api", tags=["extraction"])
 extractor = SectionExtractor()
 
 
-@router.post("/extract", response_model=ExtractionResult)
-async def extract_section(req: ExtractionRequest):
+@router.post("/extract", response_model=Union[ExtractionResult, Dict[str, Any]])
+async def extract_section(
+    req: ExtractionRequest,
+    format: Optional[str] = None,
+    response_format: Optional[str] = None
+):
     """
     Extracts specified parent section and target subsection from a single PDF.
     Stops strictly at the boundary of the next sibling subsection.
+    When HTML format is requested (via format, response_format, or query), returns {"Data": "<!DOCTYPE html>..."}.
     """
     if not req.file_path:
         raise HTTPException(
@@ -46,18 +51,38 @@ async def extract_section(req: ExtractionRequest):
         doc_name=doc_name,
     )
 
-    # Generate multi-format export files
+    # Generate multi-format export files & populate result.Data
     try:
         downloads = ExportService.export_all(result, doc_id)
         result.download_urls = downloads
     except Exception as exp_err:
         result.metadata["export_error"] = str(exp_err)
 
+    if not result.Data:
+        result.Data = ExportService.generate_html_content(result)
+
+    # Check if client asked for HTML response format
+    requested_fmt = format or req.format
+    requested_resp_fmt = response_format or req.response_format
+    if SectionExtractor.is_html_requested(requested_fmt, requested_resp_fmt, req.natural_query):
+        return {"Data": result.Data}
+
     return result
 
 
-@router.post("/extract/batch", response_model=BatchExtractionResponse)
-async def extract_batch(req: BatchExtractionRequest):
+@router.post("/extract/html")
+async def extract_section_html(req: ExtractionRequest):
+    """Convenience endpoint that directly extracts and returns HTML in the format: {"Data": "<!DOCTYPE html>...""}."""
+    req.format = "html"
+    return await extract_section(req, format="html")
+
+
+@router.post("/extract/batch", response_model=Union[BatchExtractionResponse, Dict[str, Any]])
+async def extract_batch(
+    req: BatchExtractionRequest,
+    format: Optional[str] = None,
+    response_format: Optional[str] = None
+):
     """
     Batch processes multiple PDFs using the same extraction criteria.
     Continues processing even if an individual PDF has an error or missing section.
@@ -142,5 +167,11 @@ async def extract_batch(req: BatchExtractionRequest):
         batch_response.summary_excel_url = xlsx_url
     except Exception:
         pass
+
+    requested_fmt = format or req.format
+    requested_resp_fmt = response_format or req.response_format
+    if SectionExtractor.is_html_requested(requested_fmt, requested_resp_fmt, req.natural_query):
+        combined_html = "\n<hr style='margin: 40px 0; border: 1px solid #ddd;'>\n".join(r.Data for r in results if r.Data)
+        batch_response.Data = combined_html
 
     return batch_response

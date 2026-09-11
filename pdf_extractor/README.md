@@ -199,8 +199,18 @@ Extracts a section from a single document.
     "txt": "/api/download/a1b2c3d4_test1_basic.txt",
     "json": "/api/download/a1b2c3d4_test1_basic.json",
     "csv": "/api/download/a1b2c3d4_test1_basic.csv",
-    "excel": "/api/download/a1b2c3d4_test1_basic.xlsx"
-  }
+    "excel": "/api/download/a1b2c3d4_test1_basic.xlsx",
+    "html": "/api/download/a1b2c3d4_test1_basic.html"
+  },
+  "Data": "<!DOCTYPE html><html lang=\"en\"><head>...</head><body><h2>...</h2><table>...</table></body></html>"
+}
+```
+
+### HTML Response Format (`"Data": "<!DOCTYPE html>..."`)
+When requested with `"format": "html"`, `"response_format": "html"`, `?format=html`, via `POST /api/extract/html`, or via natural language query (e.g. *"extract section 16.1 in html format"* or *"i want response in html format"*), the endpoint returns the extracted data in the exact HTML structure:
+```json
+{
+  "Data": "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>test8_tables.pdf - Section 16.1</title><style>body { font-family: Arial, sans-serif; margin: 40px; background-color: #f9f9f9; } h2 { color: #333; } table { width: 100%; border-collapse: collapse; margin-top: 20px; background-color: #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); } th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; } th { background-color: #007BFF; color: white; font-weight: bold; } tr:hover { background-color: #f5f5f5; }</style></head><body><h2>Adverse Reaction Table</h2><table><thead><tr><th>Adverse Reaction</th><th>Drug A (N=100)</th><th>Placebo (N=100)</th></tr></thead><tbody><tr><td>Headache</td><td>12 (12%)</td><td>4 (4%)</td></tr><tr><td>Nausea</td><td>8 (8%)</td><td>2 (2%)</td></tr></tbody></table></body></html>"
 }
 ```
 

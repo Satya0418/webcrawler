@@ -1,6 +1,7 @@
 import json
 import csv
 import io
+import html
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 import pandas as pd
@@ -13,147 +14,117 @@ from backend.config import OUTPUT_DIR
 class ExportService:
     """Provides exports in HTML, JSON, TXT, CSV, and Excel formats."""
 
-    @staticmethod
-    def export_html(result: ExtractionResult, output_path: Path) -> Path:
-        """Generates semantic standalone HTML with styled headings, paragraphs, lists, and tables."""
+    @classmethod
+    def generate_html_content(cls, result: ExtractionResult, title: Optional[str] = None) -> str:
+        """
+        Generates semantic HTML formatted with the exact styling requested:
+        - Arial font, 40px margin, #f9f9f9 body background
+        - Blue (#007BFF) table headers with white bold text
+        - Border bottom #ddd, hover effect #f5f5f5, box-shadow on table
+        - <h2> headings for tables and sections
+        """
+        if result.requested_subsection:
+            if result.requested_subsection.startswith(result.requested_section):
+                sec_display = result.requested_subsection
+            else:
+                sec_display = f"{result.requested_section}.{result.requested_subsection}"
+        else:
+            sec_display = result.requested_section
+
+        page_title = title or f"{result.document} - Section {sec_display}"
+        if not page_title.strip():
+            page_title = "Sample HTML Table"
+
         body_elements = []
 
-        for item in result.structured_content:
-            if item.type == "heading":
-                tag = f"h{min(item.level or 1, 4)}"
-                body_elements.append(
-                    f'<{tag} class="section-heading" data-page="{item.page}" data-sec="{item.section_number or ""}">'
-                    f'<span class="sec-num">{item.section_number or ""}</span> {item.title or item.text or ""}'
-                    f'<span class="page-tag">p. {item.page}</span>'
-                    f'</{tag}>'
-                )
-            elif item.type in ("bullet_list", "numbered_list"):
-                tag = "ul" if item.type == "bullet_list" else "ol"
-                li_items = "".join(f"<li>{it}</li>" for it in (item.items or []))
-                body_elements.append(
-                    f'<{tag} class="content-list" data-page="{item.page}">{li_items}</{tag}>'
-                )
-            elif item.type == "table":
-                cols_html = "".join(f"<th>{col}</th>" for col in (item.columns or []))
-                rows_html = ""
-                for row_dict in (item.rows or []):
-                    cells = "".join(f"<td>{row_dict.get(col, '')}</td>" for col in (item.columns or []))
-                    rows_html += f"<tr>{cells}</tr>\n"
+        # First pass: check if structured tables exist
+        table_items = [it for it in (result.structured_content or []) if it.type == "table"]
 
-                caption = f'<caption>{item.caption} (Page {item.page})</caption>' if item.caption else ''
-                table_html = (
-                    f'<div class="table-wrap" data-page="{item.page}">'
-                    f'<table class="extracted-table">{caption}'
-                    f'<thead><tr>{cols_html}</tr></thead>'
-                    f'<tbody>{rows_html}</tbody>'
-                    f'</table></div>'
+        if table_items:
+            for item in (result.structured_content or []):
+                if item.type == "heading":
+                    h_text = html.escape(item.title or item.text or "")
+                    body_elements.append(f"<h2>{h_text}</h2>")
+                elif item.type == "table":
+                    caption = item.caption or f"Table (Page {item.page})"
+                    cols = item.columns or []
+                    th_cells = "".join(f"<th>{html.escape(str(c))}</th>" for c in cols)
+                    thead = f"<thead><tr>{th_cells}</tr></thead>" if th_cells else ""
+
+                    rows_html = []
+                    if item.rows:
+                        for row_dict in item.rows:
+                            td_cells = "".join(f"<td>{html.escape(str(row_dict.get(c, '')))}</td>" for c in cols)
+                            rows_html.append(f"<tr>{td_cells}</tr>")
+                    elif item.raw_rows:
+                        for r_list in item.raw_rows:
+                            td_cells = "".join(f"<td>{html.escape(str(val))}</td>" for val in r_list)
+                            rows_html.append(f"<tr>{td_cells}</tr>")
+
+                    tbody = f"<tbody>{''.join(rows_html)}</tbody>"
+                    body_elements.append(f"<h2>{html.escape(caption)}</h2><table>{thead}{tbody}</table>")
+                elif item.type in ("bullet_list", "numbered_list"):
+                    lis = "".join(f"<li>{html.escape(str(it))}</li>" for it in (item.items or []))
+                    body_elements.append(f"<ul style=\"margin: 10px 0 10px 24px; color: #333;\">{lis}</ul>")
+                else:
+                    p_text = html.escape(item.text or "").replace("\n", "<br>")
+                    if p_text.strip():
+                        body_elements.append(f"<p style=\"margin: 12px 0; color: #333; line-height: 1.6;\">{p_text}</p>")
+        else:
+            # No explicit table matrices found: create document narrative + structured data table
+            doc_heading = f"{result.document} - Section {sec_display}"
+            body_elements.append(f"<h2>{html.escape(doc_heading)}</h2>")
+
+            table_rows = []
+            for item in (result.structured_content or []):
+                if item.type == "heading":
+                    h_text = html.escape(item.title or item.text or "")
+                    body_elements.append(f"<h2>{h_text}</h2>")
+                    table_rows.append((item.section_number or result.requested_section, "Heading", str(item.page), item.title or item.text or ""))
+                else:
+                    txt = (item.text or "").strip()
+                    if txt:
+                        body_elements.append(f"<p style=\"margin: 12px 0; color: #333; line-height: 1.6;\">{html.escape(txt)}</p>")
+                        table_rows.append((item.section_number or result.requested_section, "Content", str(item.page), txt[:150] + ("..." if len(txt) > 150 else "")))
+
+            # Guarantee that a styled <table> is ALWAYS rendered matching the user's template
+            if not table_rows and result.content:
+                table_rows.append((result.requested_section, "Section Text", f"{result.start_page}-{result.end_page}", result.content[:200]))
+
+            if table_rows:
+                th_cells = "<th>Section</th><th>Type</th><th>Page</th><th>Extracted Information</th>"
+                tbody_rows = "".join(
+                    f"<tr><td>{html.escape(sec)}</td><td>{html.escape(t)}</td><td>{html.escape(p)}</td><td>{html.escape(info)}</td></tr>"
+                    for sec, t, p, info in table_rows
                 )
-                body_elements.append(table_html)
+                body_elements.append(f"<h2>Extracted Information Table</h2><table><thead><tr>{th_cells}</tr></thead><tbody>{tbody_rows}</tbody></table>")
             else:
-                text_clean = (item.text or "").replace("\n", "<br>")
-                body_elements.append(
-                    f'<p class="content-p" data-page="{item.page}">{text_clean}</p>'
-                )
+                body_elements.append("<h2>Extracted Information Table</h2><table><thead><tr><th>Section</th><th>Status</th></tr></thead><tbody><tr><td>None</td><td>No extracted data available</td></tr></tbody></table>")
 
-        html_content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>{result.document} - Section {result.requested_section}</title>
-  <style>
-    body {{
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      line-height: 1.6;
-      color: #1e293b;
-      max-width: 900px;
-      margin: 40px auto;
-      padding: 0 20px;
-      background-color: #f8fafc;
-    }}
-    .document-card {{
-      background: #ffffff;
-      padding: 32px;
-      border-radius: 8px;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-      border: 1px solid #e2e8f0;
-    }}
-    h1, h2, h3, h4 {{
-      color: #0f172a;
-      margin-top: 24px;
-      margin-bottom: 12px;
-      position: relative;
-    }}
-    .sec-num {{
-      color: #4f46e5;
-      font-weight: bold;
-    }}
-    .page-tag {{
-      font-size: 0.75rem;
-      background: #e0e7ff;
-      color: #4338ca;
-      padding: 2px 6px;
-      border-radius: 4px;
-      margin-left: 8px;
-      vertical-align: middle;
-    }}
-    p {{
-      margin-bottom: 16px;
-      color: #334155;
-    }}
-    ul, ol {{
-      margin-bottom: 16px;
-      padding-left: 24px;
-    }}
-    li {{
-      margin-bottom: 6px;
-    }}
-    .table-wrap {{
-      overflow-x: auto;
-      margin: 20px 0;
-    }}
-    table.extracted-table {{
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9rem;
-    }}
-    table.extracted-table th, table.extracted-table td {{
-      border: 1px solid #cbd5e1;
-      padding: 10px 12px;
-      text-align: left;
-    }}
-    table.extracted-table th {{
-      background-color: #f1f5f9;
-      font-weight: 600;
-      color: #0f172a;
-    }}
-    table.extracted-table tr:nth-child(even) td {{
-      background-color: #f8fafc;
-    }}
-    caption {{
-      font-weight: bold;
-      margin-bottom: 8px;
-      text-align: left;
-      color: #475569;
-    }}
-  </style>
-</head>
-<body>
-  <div class="document-card">
-    <header style="border-bottom: 2px solid #e2e8f0; padding-bottom: 16px; margin-bottom: 24px;">
-      <h2>Document: {result.document}</h2>
-      <p style="margin: 0; color: #64748b;">
-        Requested Section: <strong>{result.requested_section}</strong> &rarr; 
-        Target Subsection: <strong>{result.requested_subsection or "All"}</strong> | 
-        Pages: <strong>{result.start_page} &ndash; {result.end_page}</strong>
-      </p>
-    </header>
-    <main>
-      {"".join(body_elements)}
-    </main>
-  </div>
-</body>
-</html>
-"""
+        css_styles = (
+            "body { font-family: Arial, sans-serif; margin: 40px; background-color: #f9f9f9; } "
+            "h2 { color: #333; } "
+            "table { width: 100%; border-collapse: collapse; margin-top: 20px; background-color: #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); } "
+            "th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; } "
+            "th { background-color: #007BFF; color: white; font-weight: bold; } "
+            "tr:hover { background-color: #f5f5f5; }"
+        )
+
+        inner_body = "".join(body_elements)
+        html_content = (
+            f'<!DOCTYPE html><html lang="en"><head>'
+            f'<meta charset="UTF-8">'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+            f'<title>{html.escape(page_title)}</title>'
+            f'<style>{css_styles}</style>'
+            f'</head><body>{inner_body}</body></html>'
+        )
+        return html_content
+
+    @classmethod
+    def export_html(cls, result: ExtractionResult, output_path: Path) -> Path:
+        """Generates semantic standalone HTML with styled headings, paragraphs, lists, and tables."""
+        html_content = cls.generate_html_content(result)
         output_path.write_text(html_content, encoding="utf-8")
         return output_path
 
@@ -340,6 +311,7 @@ class ExportService:
         cls.export_csv(result, csv_path)
         cls.export_excel(result, xlsx_path)
         cls.export_html(result, html_path)
+        result.Data = cls.generate_html_content(result)
 
         return {
             "txt": f"/api/download/{txt_path.name}",

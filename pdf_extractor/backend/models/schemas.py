@@ -82,6 +82,8 @@ class ExtractionRequest(BaseModel):
     main_section: str = "16"
     target_subsection: Optional[str] = "16.1"
     natural_query: Optional[str] = None
+    format: Optional[str] = None  # e.g., 'html' or 'json'
+    response_format: Optional[str] = None
 
 
 class BlockTrace(BaseModel):
@@ -99,6 +101,7 @@ class BlockTrace(BaseModel):
 
 
 class ExtractionResult(BaseModel):
+    Data: Optional[str] = None  # Formatted HTML response string when requested in HTML format
     document: str
     requested_section: str
     requested_subsection: Optional[str] = None
@@ -122,9 +125,12 @@ class BatchExtractionRequest(BaseModel):
     main_section: str = "16"
     target_subsection: Optional[str] = "16.1"
     natural_query: Optional[str] = None
+    format: Optional[str] = None
+    response_format: Optional[str] = None
 
 
 class BatchExtractionResponse(BaseModel):
+    Data: Optional[str] = None
     total_documents: int
     successful: int
     failed: int
