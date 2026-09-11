@@ -211,3 +211,43 @@ def test_extract_html_user_exact_phrase():
     assert '<td>Headache</td>' in html_data
 
 
+def test_html_output_omits_section_numbers_but_extracts_data():
+    """Verify that section numbers 16 and 16.1 are omitted from HTML output elements (titles, headings, tables) while section data is extracted."""
+    # Test 1: Document without tables (narrative + fallback table)
+    sample_basic = SAMPLE_DIR / "test1_basic.pdf"
+    res1 = client.post("/api/extract", json={
+        "file_path": str(sample_basic),
+        "main_section": "16",
+        "target_subsection": "16.1",
+        "format": "html"
+    })
+    assert res1.status_code == 200
+    html1 = res1.json()["Data"]
+    # Check that section numbers 16/16.1 are NOT in title, headings, or table headers/IDs
+    assert "<title>Test1 Basic</title>" in html1
+    assert "16.1" not in html1
+    assert "<h2>16" not in html1
+    assert "<th>Section</th>" not in html1
+    assert "<td>001</td><td>Heading</td><td>1</td><td>Safety Information</td>" in html1
+    assert "Safety Information" in html1
+    assert "Adverse Events" in html1
+
+    # Test 2: Document with tables
+    sample_tables = SAMPLE_DIR / "test8_tables.pdf"
+    res8 = client.post("/api/extract", json={
+        "file_path": str(sample_tables),
+        "main_section": "16",
+        "target_subsection": "16.1",
+        "format": "html"
+    })
+    assert res8.status_code == 200
+    html8 = res8.json()["Data"]
+    assert "<title>Test8 Tables</title>" in html8
+    assert "<h2>Safety Information</h2>" in html8
+    assert "<h2>Adverse Events</h2>" in html8
+    assert "16.1" not in html8
+    assert "<th>Adverse Reaction</th>" in html8
+    assert "<td>Headache</td>" in html8
+
+
+
