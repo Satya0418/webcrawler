@@ -86,6 +86,8 @@ class SectionExtractor:
         main_sec, target_sub = self.parse_query_params(
             main_section, target_subsection, natural_query
         )
+        if (doc_name == "document.pdf" or not doc_name) and isinstance(file_path_or_bytes, (str, Path)):
+            doc_name = Path(file_path_or_bytes).name
 
         try:
             # 1. Open and validate PDF
