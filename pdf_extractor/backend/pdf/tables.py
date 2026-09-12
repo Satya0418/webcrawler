@@ -181,11 +181,14 @@ class TableExtractor:
 
     @staticmethod
     def merge_tables_with_blocks(
-        text_blocks: List[DocumentBlock], table_blocks: List[DocumentBlock]
+        text_blocks: List[DocumentBlock],
+        table_blocks: List[DocumentBlock],
+        include_tables: bool = True
     ) -> List[DocumentBlock]:
         """
         Merges table blocks into the document block list and filters out text blocks
         that fall inside a table's bounding box.
+        If include_tables is False, table blocks are omitted from the combined list.
         """
         if not table_blocks:
             return text_blocks
@@ -205,23 +208,38 @@ class TableExtractor:
 
             # Check if block is inside any table bounding box on the same page
             is_inside_table = False
+            bx0, by0, bx1, by1 = b.bbox
+            b_area = max(1.0, (bx1 - bx0) * (by1 - by0))
+            cx = (bx0 + bx1) / 2
+            cy = (by0 + by1) / 2
+
             for tb in page_tables.get(b.page_num, []):
-                bx0, by0, bx1, by1 = b.bbox
                 tx0, ty0, tx1, ty1 = tb.bbox
 
-                # Center of text block
-                cx = (bx0 + bx1) / 2
-                cy = (by0 + by1) / 2
-
-                # Check overlap
+                # Check 1: Center of text block is inside table bounds (with margin)
                 if (tx0 - 5) <= cx <= (tx1 + 5) and (ty0 - 5) <= cy <= (ty1 + 5):
                     is_inside_table = True
                     break
+
+                # Check 2: Significant bounding box overlap area (>35% of text block)
+                inter_x0 = max(bx0, tx0)
+                inter_y0 = max(by0, ty0)
+                inter_x1 = min(bx1, tx1)
+                inter_y1 = min(by1, ty1)
+                if inter_x1 > inter_x0 and inter_y1 > inter_y0:
+                    inter_area = (inter_x1 - inter_x0) * (inter_y1 - inter_y0)
+                    if (inter_area / b_area) > 0.35:
+                        is_inside_table = True
+                        break
 
             if not is_inside_table:
                 filtered_text_blocks.append(b)
 
         # Combine and sort by reading order: page, y0, x0
-        all_blocks = filtered_text_blocks + table_blocks
+        if include_tables:
+            all_blocks = filtered_text_blocks + table_blocks
+        else:
+            all_blocks = filtered_text_blocks
+
         all_blocks.sort(key=lambda x: (x.page_num, round(x.bbox[1], 1), round(x.bbox[0], 1)))
         return all_blocks
