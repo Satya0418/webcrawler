@@ -70,6 +70,9 @@ class ValidationChecklist(BaseModel):
     included_sections: List[str] = Field(default_factory=list)
     excluded_sections: List[str] = Field(default_factory=list)
     tables_included_count: int = 0
+    tables_detected_count: int = 0
+    tables_neglected_count: int = 0
+    table_mode: str = "add"  # 'add' or 'neglect'
     total_blocks_extracted: int = 0
     confidence_score: float = 0.0
     warnings: List[str] = Field(default_factory=list)
@@ -84,6 +87,9 @@ class ExtractionRequest(BaseModel):
     natural_query: Optional[str] = None
     format: Optional[str] = None  # e.g., 'html' or 'json'
     response_format: Optional[str] = None
+    include_tables: bool = True
+    table_mode: str = "add"  # 'add' (include table) or 'neglect' (text only, neglect table)
+    section_table_mode: Optional[Dict[str, str]] = None  # Optional per-section overrides e.g. {"16.1": "neglect"}
 
 
 class BlockTrace(BaseModel):
@@ -112,6 +118,10 @@ class ExtractionResult(BaseModel):
     structured_content: List[StructuredContentItem] = Field(default_factory=list)
     blocks: List[BlockTrace] = Field(default_factory=list)
     validation: ValidationChecklist = Field(default_factory=ValidationChecklist)
+    table_mode: str = "add"
+    tables_detected: int = 0
+    tables_neglected: int = 0
+    section_table_status: Dict[str, str] = Field(default_factory=dict)
     status: str = "success"
     error_message: Optional[str] = None
     section_tree: Optional[List[SectionSummary]] = None
@@ -127,6 +137,9 @@ class BatchExtractionRequest(BaseModel):
     natural_query: Optional[str] = None
     format: Optional[str] = None
     response_format: Optional[str] = None
+    include_tables: bool = True
+    table_mode: str = "add"
+    section_table_mode: Optional[Dict[str, str]] = None
 
 
 class BatchExtractionResponse(BaseModel):

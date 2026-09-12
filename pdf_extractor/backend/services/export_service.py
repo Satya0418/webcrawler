@@ -53,10 +53,28 @@ class ExportService:
 
         body_elements = []
 
+        is_neglect_mode = getattr(result, "table_mode", "add") == "neglect"
+
         # First pass: check if structured tables exist
         table_items = [it for it in (result.structured_content or []) if it.type == "table"]
 
-        if table_items:
+        if is_neglect_mode:
+            # Text Only mode: Render purely semantic headings, paragraphs, and lists without any table
+            for item in (result.structured_content or []):
+                if item.type == "heading":
+                    raw_h = item.title or item.text or ""
+                    h_text = cls._clean_section_heading(raw_h)
+                    if h_text:
+                        body_elements.append(f"<h2>{html.escape(h_text)}</h2>")
+                elif item.type in ("bullet_list", "numbered_list"):
+                    lis = "".join(f"<li>{html.escape(str(it))}</li>" for it in (item.items or []))
+                    body_elements.append(f"<ul style=\"margin: 10px 0 10px 24px; color: #333;\">{lis}</ul>")
+                elif item.type != "table":
+                    p_text = html.escape(item.text or "").replace("\n", "<br>")
+                    if p_text.strip():
+                        body_elements.append(f"<p style=\"margin: 12px 0; color: #333; line-height: 1.6;\">{p_text}</p>")
+
+        elif table_items:
             for item in (result.structured_content or []):
                 if item.type == "heading":
                     raw_h = item.title or item.text or ""
@@ -183,7 +201,9 @@ class ExportService:
             f"  - Target Subsection Found: {result.validation.was_target_subsection_found}",
             f"  - Included Sections: {', '.join(result.validation.included_sections)}",
             f"  - Excluded Sections: {', '.join(result.validation.excluded_sections[:8])}",
+            f"  - Table Option Mode: {getattr(result, 'table_mode', 'add').upper()}",
             f"  - Tables Included: {result.validation.tables_included_count}",
+            f"  - Tables Neglected: {getattr(result.validation, 'tables_neglected_count', 0)}",
             f"  - Confidence Score: {result.validation.confidence_score * 100:.0f}%",
             "-" * 65,
             "",
@@ -250,7 +270,9 @@ class ExportService:
             ("Confidence Score", f"{result.validation.confidence_score * 100:.0f}%"),
             ("Included Sections", ", ".join(result.validation.included_sections)),
             ("Excluded Boundaries", ", ".join(result.validation.excluded_sections[:10])),
+            ("Table Option Mode", getattr(result, "table_mode", "add").upper()),
             ("Tables Included", result.validation.tables_included_count),
+            ("Tables Neglected", getattr(result.validation, "tables_neglected_count", 0)),
             ("Structured Elements", len(result.structured_content)),
             ("Status Message", result.validation.status_message),
         ]

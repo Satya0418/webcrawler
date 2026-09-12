@@ -49,6 +49,9 @@ async def extract_section(
         target_subsection=req.target_subsection,
         natural_query=req.natural_query,
         doc_name=doc_name,
+        include_tables=req.include_tables,
+        table_mode=req.table_mode,
+        section_table_mode=req.section_table_mode,
     )
 
     # Generate multi-format export files & populate result.Data
@@ -125,6 +128,9 @@ async def extract_batch(
                 target_subsection=req.target_subsection,
                 natural_query=req.natural_query,
                 doc_name=p.name,
+                include_tables=req.include_tables,
+                table_mode=req.table_mode,
+                section_table_mode=req.section_table_mode,
             )
 
             # Export files for this document

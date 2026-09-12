@@ -37,6 +37,14 @@ class SectionExtractor:
         r"\b(?:html|htaml)\b",
         re.IGNORECASE
     )
+    NEGLECT_TABLE_REGEX = re.compile(
+        r"\b(?:neglect(?:ing)?\s+(?:the\s+)?tables?|no\s+tables?|without\s+tables?|text\s+only|only\s+text|strip\s+tables?|exclude\s+tables?|skip\s+tables?|omit\s+tables?|don'?t\s+want\s+tables?)\b",
+        re.IGNORECASE
+    )
+    ADD_TABLE_REGEX = re.compile(
+        r"\b(?:add(?:ing)?\s+(?:the\s+)?tables?|include\s+tables?|with\s+tables?|keep\s+tables?)\b",
+        re.IGNORECASE
+    )
 
     @classmethod
     def is_html_requested(
@@ -80,7 +88,10 @@ class SectionExtractor:
         target_subsection: Optional[str] = "16.1",
         natural_query: Optional[str] = None,
         doc_name: str = "document.pdf",
-        save_to_db: bool = True
+        save_to_db: bool = True,
+        include_tables: bool = True,
+        table_mode: str = "add",
+        section_table_mode: Optional[Dict[str, str]] = None
     ) -> ExtractionResult:
         """Executes full structured extraction pipeline on a PDF."""
         main_sec, target_sub = self.parse_query_params(
@@ -88,6 +99,23 @@ class SectionExtractor:
         )
         if (doc_name == "document.pdf" or not doc_name) and isinstance(file_path_or_bytes, (str, Path)):
             doc_name = Path(file_path_or_bytes).name
+
+        # Resolve effective table mode: "add" or "neglect"
+        effective_table_mode = (table_mode or "add").lower().strip()
+        if not include_tables or effective_table_mode in ("neglect", "exclude", "text_only", "false", "0"):
+            effective_table_mode = "neglect"
+            include_tables = False
+        else:
+            effective_table_mode = "add"
+            include_tables = True
+
+        if natural_query:
+            if self.NEGLECT_TABLE_REGEX.search(natural_query):
+                effective_table_mode = "neglect"
+                include_tables = False
+            elif self.ADD_TABLE_REGEX.search(natural_query):
+                effective_table_mode = "add"
+                include_tables = True
 
         try:
             # 1. Open and validate PDF
@@ -165,7 +193,30 @@ class SectionExtractor:
                 block_traces: List[BlockTrace] = []
                 content_parts: List[str] = []
 
+                total_detected_tables = sum(1 for b in extracted_blocks if b.block_type == BlockType.TABLE)
+                section_table_status: Dict[str, str] = {}
+                tables_neglected_count = 0
+                tables_included_count = 0
+
                 for b in extracted_blocks:
+                    # Determine whether table block should be neglected
+                    if b.block_type == BlockType.TABLE:
+                        sec_key = b.section_number or main_sec
+                        sec_override = (section_table_mode or {}).get(sec_key)
+                        is_neglected = False
+                        if sec_override:
+                            is_neglected = (sec_override.lower().strip() in ("neglect", "exclude", "text_only", "false", "0"))
+                        else:
+                            is_neglected = (effective_table_mode == "neglect")
+
+                        if is_neglected:
+                            tables_neglected_count += 1
+                            section_table_status[sec_key] = "neglected"
+                            continue  # Completely neglect this table! Omit from structured items, traces, and text content
+                        else:
+                            tables_included_count += 1
+                            section_table_status[sec_key] = "included"
+
                     # Build BlockTrace
                     trace = BlockTrace(
                         id=b.block_id,
@@ -245,8 +296,11 @@ class SectionExtractor:
                 subsections_found = [s for s in included_sections if s != main_sec]
                 tree_summaries = [r.to_summary() for r in root_nodes]
 
-                # Update table count in validation based on structured tables
-                validation.tables_included_count = sum(1 for item in structured_items if item.type == "table")
+                # Update table counts in validation
+                validation.tables_included_count = tables_included_count
+                validation.tables_detected_count = total_detected_tables
+                validation.tables_neglected_count = tables_neglected_count
+                validation.table_mode = effective_table_mode
 
                 status = "success" if validation.was_main_section_found else "not_found"
                 err_msg = None
@@ -264,6 +318,10 @@ class SectionExtractor:
                     structured_content=structured_items,
                     blocks=block_traces,
                     validation=validation,
+                    table_mode=effective_table_mode,
+                    tables_detected=total_detected_tables,
+                    tables_neglected=tables_neglected_count,
+                    section_table_status=section_table_status,
                     status=status,
                     error_message=err_msg,
                     section_tree=tree_summaries,
@@ -272,6 +330,10 @@ class SectionExtractor:
                         "is_scanned": is_scanned,
                         "avg_chars_per_page": round(avg_chars, 1),
                         "stop_boundary_section": stop_section_num,
+                        "table_mode": effective_table_mode,
+                        "tables_detected": total_detected_tables,
+                        "tables_neglected": tables_neglected_count,
+                        "section_table_status": section_table_status,
                     },
                 )
 
