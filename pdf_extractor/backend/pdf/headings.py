@@ -1,5 +1,5 @@
 import re
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple
 from backend.models.schemas import DocumentBlock, BlockType
 from backend.config import MAX_HEADING_LENGTH
 

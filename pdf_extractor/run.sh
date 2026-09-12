@@ -12,10 +12,19 @@ if [ ! -d ".venv" ]; then
     .venv/bin/pip install -r requirements.txt
 fi
 
+HOST="${HOST:-127.0.0.1}"
+PORT="${PORT:-8000}"
+WORKERS="${WORKERS:-1}"
+
 echo "=========================================================="
 echo " Starting Intelligent PDF Section Extraction System"
-echo " Dashboard UI: http://127.0.0.1:8000"
-echo " Interactive API Docs: http://127.0.0.1:8000/docs"
+echo " Host: ${HOST} | Port: ${PORT} | Workers: ${WORKERS}"
+echo " Dashboard UI: http://${HOST}:${PORT}"
+echo " Interactive API Docs: http://${HOST}:${PORT}/docs"
 echo "=========================================================="
 
-exec .venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+if [ "$WORKERS" -gt 1 ] || [ "${ENV}" = "production" ]; then
+    exec .venv/bin/uvicorn backend.main:app --host "$HOST" --port "$PORT" --workers "$WORKERS"
+else
+    exec .venv/bin/uvicorn backend.main:app --host "$HOST" --port "$PORT" --reload
+fi

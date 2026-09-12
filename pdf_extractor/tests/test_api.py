@@ -92,7 +92,7 @@ def test_extract_batch_endpoint():
     assert data["summary_excel_url"] is not None
 
 
-def test_upload_endpoint():
+def test_upload_and_delete_endpoint():
     sample_pdf = SAMPLE_DIR / "test1_basic.pdf"
     with open(sample_pdf, "rb") as f:
         res = client.post(
@@ -104,6 +104,12 @@ def test_upload_endpoint():
     assert data["status"] == "success"
     assert data["uploaded_count"] == 1
     assert data["files"][0]["original_filename"] == "uploaded_report.pdf"
+    saved_name = data["files"][0]["saved_filename"]
+
+    # Test file deletion to ensure no leftover artifacts
+    del_res = client.delete(f"/api/upload/{saved_name}")
+    assert del_res.status_code == 200
+    assert del_res.json()["status"] == "success"
 
 
 def test_extract_html_format_explicit():

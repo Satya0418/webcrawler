@@ -1,7 +1,7 @@
 import uuid
 from pathlib import Path
 from typing import List, Optional, Union, Dict, Any
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from backend.models.schemas import (
     ExtractionRequest,
     ExtractionResult,

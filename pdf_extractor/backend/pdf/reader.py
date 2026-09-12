@@ -1,4 +1,3 @@
-import os
 import fitz  # PyMuPDF
 from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path

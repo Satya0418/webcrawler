@@ -12,7 +12,7 @@ class DocumentRecord(Base):
     filename = Column(String(255), nullable=False)
     file_path = Column(String(1024), nullable=False)
     total_pages = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     extractions = relationship("ExtractionRecord", back_populates="document", cascade="all, delete-orphan")
 
@@ -30,7 +30,7 @@ class ExtractionRecord(Base):
     confidence_score = Column(Float, default=1.0)
     included_sections = Column(Text, default="[]")
     excluded_sections = Column(Text, default="[]")
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     document = relationship("DocumentRecord", back_populates="extractions")
     blocks = relationship("ContentBlockRecord", back_populates="extraction", cascade="all, delete-orphan")

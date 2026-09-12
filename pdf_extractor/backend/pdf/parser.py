@@ -1,6 +1,6 @@
 import re
 import fitz
-from typing import List, Dict, Tuple, Any, Optional
+from typing import List, Dict
 from collections import Counter
 from backend.models.schemas import DocumentBlock, BlockType
 from backend.pdf.cleaner import HeaderFooterCleaner

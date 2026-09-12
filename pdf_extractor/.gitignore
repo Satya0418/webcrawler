@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local Database
+*.db
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Outputs and Uploads (keep directory structure via .gitkeep)
+outputs/*
+!outputs/.gitkeep
+uploads/*
+!uploads/.gitkeep
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/

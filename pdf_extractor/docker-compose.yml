@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  pdf-extractor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pdf_section_extractor
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - WORKERS=2
+      - DEBUG=False
+      - ENABLE_OCR=True
+      - OCR_LANGUAGE=eng
+    volumes:
+      - ./uploads:/app/uploads
+      - ./outputs:/app/outputs
+      - ./extractor.db:/app/extractor.db
+    restart: unless-stopped

@@ -1,7 +1,6 @@
 import pdfplumber
 import fitz
-from typing import List, Dict, Any, Tuple, Optional, Set
-from pathlib import Path
+from typing import List, Dict, Any, Optional, Set
 from backend.models.schemas import DocumentBlock, BlockType
 
 

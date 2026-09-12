@@ -1,4 +1,3 @@
-import os
 import fitz
 from pathlib import Path
 from typing import Optional
@@ -121,7 +120,7 @@ async def get_source_page_image(
     candidate_paths = [
         UPLOAD_DIR / safe_name,
         SAMPLE_DIR / safe_name,
-        Path("/Users/satya/Downloads") / safe_name,
+        Path.home() / "Downloads" / safe_name,
     ]
     target_file = None
     for cp in candidate_paths:
@@ -187,6 +186,8 @@ async def download_file(filename: str):
         media_type = "text/plain"
     elif safe_name.endswith(".csv"):
         media_type = "text/csv"
+    elif safe_name.endswith(".xlsx"):
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
     return FileResponse(
         path=file_path,

@@ -16,7 +16,10 @@ A production-quality, **deterministic** document processing engine and web appli
   5. In-text citation suppression (e.g., *"See Section 16.1 for details"*, *"16.1% of patients"*).
   6. PDF bookmark / outline cross-referencing.
 - **Content Preservation**: Preserves headers, paragraphs, bulleted lists, numbered lists, numbers, percentages, dates, and embedded tables.
-- **Table Detection & Linkage**: Associates tables with their parent section; extracts tables into structured JSON, Markdown, and Excel sheets while excluding tables from subsequent sections.
+- **Table Handling Options ("Add Table" vs "Neglect Table")**:
+  - **Add Table (Default)**: Detects, parses, and merges tables into markdown, structured JSON matrices, and Excel sheets alongside narrative text.
+  - **Neglect Table (Text Only)**: Strictly extracts only text paragraphs and headings. The entire table structure and all internal table cell text are omitted from both structured blocks and the raw content stream.
+  - Supports natural language directives (e.g., *"extract 16 to 16.1 text only neglect table"*).
 - **Page-Level Traceability**: Every extracted block retains its original page number, bounding box coordinates `(x0, y0, x1, y1)`, block type, and assigned section.
 - **Validation & Confidence Scoring**: Automatically audits results before returning them: verifies main section existence, target subsection presence, boundary exclusion, and computes a confidence score ($0.0 - 1.0$).
 - **Dual Ingestion Modes**:
@@ -168,12 +171,14 @@ Extracts a section from a single document.
 **Request Body**:
 ```json
 {
-  "file_path": "/Users/satya/Desktop/webcrwler/pdf_extractor/sample_reports/test1_basic.pdf",
-  "filename": "test1_basic.pdf",
+  "file_path": "/Users/satya/Desktop/webcrwler/pdf_extractor/sample_reports/test8_tables.pdf",
+  "filename": "test8_tables.pdf",
   "main_section": "16",
-  "target_subsection": "16.1"
+  "target_subsection": "16.1",
+  "table_mode": "add"
 }
 ```
+*(Note: set `"table_mode": "neglect"` or `"include_tables": false` for text-only extraction without tables).*
 **Response**:
 ```json
 {
