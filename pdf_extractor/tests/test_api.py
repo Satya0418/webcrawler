@@ -51,6 +51,29 @@ def test_extract_endpoint_single():
     assert "excel" in data["download_urls"]
 
 
+def test_extract_endpoint_neglect_table():
+    sample_pdf = SAMPLE_DIR / "test8_tables.pdf"
+    res = client.post("/api/extract", json={
+        "file_path": str(sample_pdf),
+        "filename": "test8_tables.pdf",
+        "main_section": "16",
+        "target_subsection": "16.1",
+        "table_mode": "neglect",
+        "include_tables": False
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert data["table_mode"] == "neglect"
+    assert data["tables_neglected"] >= 1
+    assert data["validation"]["tables_included_count"] == 0
+    assert "Safety information text with clinical event tables below." in data["content"]
+    assert "Table 1 summarizes all treatment-emergent adverse reactions." in data["content"]
+    assert "Headache" not in data["content"]
+    assert "Drug A" not in data["content"]
+
+
+
 def test_extract_batch_endpoint():
     pdf1 = SAMPLE_DIR / "test1_basic.pdf"
     pdf2 = SAMPLE_DIR / "test2_deep_subsections.pdf"

@@ -36,6 +36,15 @@ const batchContainer = document.getElementById('batchContainer');
 const resDocName = document.getElementById('resDocName');
 const resTargetBadge = document.getElementById('resTargetBadge');
 const resPagesBadge = document.getElementById('resPagesBadge');
+const resTableModeBadge = document.getElementById('resTableModeBadge');
+const btnResNeglectTable = document.getElementById('btnResNeglectTable');
+const btnResAddTable = document.getElementById('btnResAddTable');
+const resTableNoticeText = document.getElementById('resTableNoticeText');
+const valNeglectedCount = document.getElementById('valNeglectedCount');
+const optNeglectTable = document.getElementById('optNeglectTable');
+const optAddTable = document.getElementById('optAddTable');
+const optNeglectTableLabel = document.getElementById('optNeglectTableLabel');
+const optAddTableLabel = document.getElementById('optAddTableLabel');
 const downloadHtmlBtn = document.getElementById('downloadHtmlBtn');
 const downloadTxtBtn = document.getElementById('downloadTxtBtn');
 const downloadJsonBtn = document.getElementById('downloadJsonBtn');
@@ -140,6 +149,44 @@ document.querySelectorAll('.pill-btn').forEach(btn => {
     naturalQueryInput.value = '';
   });
 });
+
+// 3b. Table Mode Option Helpers
+function getSelectedTableMode() {
+  const radio = document.querySelector('input[name="tableOptionRadio"]:checked');
+  return radio ? radio.value : 'neglect';
+}
+
+function setSelectedTableMode(mode) {
+  if (mode === 'add') {
+    if (optAddTable) optAddTable.checked = true;
+    if (optAddTableLabel) optAddTableLabel.classList.add('active');
+    if (optNeglectTableLabel) optNeglectTableLabel.classList.remove('active');
+  } else {
+    if (optNeglectTable) optNeglectTable.checked = true;
+    if (optNeglectTableLabel) optNeglectTableLabel.classList.add('active');
+    if (optAddTableLabel) optAddTableLabel.classList.remove('active');
+  }
+}
+
+if (optNeglectTable) {
+  optNeglectTable.addEventListener('change', () => setSelectedTableMode('neglect'));
+}
+if (optAddTable) {
+  optAddTable.addEventListener('change', () => setSelectedTableMode('add'));
+}
+
+if (btnResNeglectTable) {
+  btnResNeglectTable.addEventListener('click', () => {
+    setSelectedTableMode('neglect');
+    runExtractBtn.click();
+  });
+}
+if (btnResAddTable) {
+  btnResAddTable.addEventListener('click', () => {
+    setSelectedTableMode('add');
+    runExtractBtn.click();
+  });
+}
 
 // 4. File Discovery - Folder Mode
 browseFolderBtn.addEventListener('click', async () => {
@@ -340,13 +387,14 @@ runExtractBtn.addEventListener('click', async () => {
   const naturalQuery = naturalQueryInput.value.trim();
   const isHtmlSelected = fmtHtmlRadio && fmtHtmlRadio.checked;
   const requestedFormat = isHtmlSelected ? 'html' : null;
+  const selectedTableMode = getSelectedTableMode();
 
   if (state.selectedFiles.size === 1) {
     const filePath = Array.from(state.selectedFiles)[0];
     const fileObj = state.discoveredFiles.find(f => f.full_path === filePath);
     const filename = fileObj ? fileObj.filename : 'document.pdf';
 
-    showLoading(`Extracting Section ${mainSec}${subSec ? ' → ' + subSec : ''} from ${filename}...`);
+    showLoading(`Extracting Section ${mainSec}${subSec ? ' → ' + subSec : ''} from ${filename} (${selectedTableMode === 'neglect' ? 'Text Only' : 'With Tables'})...`);
     try {
       const res = await fetch('/api/extract', {
         method: 'POST',
@@ -358,6 +406,8 @@ runExtractBtn.addEventListener('click', async () => {
           target_subsection: subSec || null,
           natural_query: naturalQuery || null,
           format: requestedFormat,
+          table_mode: selectedTableMode,
+          include_tables: selectedTableMode === 'add',
         }),
       });
       const data = await res.json();
@@ -372,7 +422,7 @@ runExtractBtn.addEventListener('click', async () => {
     }
   } else {
     // Batch Extraction
-    showLoading(`Processing batch of ${state.selectedFiles.size} PDF files...`);
+    showLoading(`Processing batch of ${state.selectedFiles.size} PDF files (${selectedTableMode === 'neglect' ? 'Text Only' : 'With Tables'})...`);
     try {
       const res = await fetch('/api/extract/batch', {
         method: 'POST',
@@ -383,6 +433,8 @@ runExtractBtn.addEventListener('click', async () => {
           target_subsection: subSec || null,
           natural_query: naturalQuery || null,
           format: requestedFormat,
+          table_mode: selectedTableMode,
+          include_tables: selectedTableMode === 'add',
         }),
       });
       const data = await res.json();
@@ -484,6 +536,47 @@ function displaySingleResult(result, fallbackDocName = 'document.pdf') {
     span.textContent = `✗ Section ${sec}`;
     excludedSectionsTags.appendChild(span);
   });
+
+  // Table Option State Update
+  const currentTableMode = result.table_mode || 'add';
+  if (resTableModeBadge) {
+    if (currentTableMode === 'neglect') {
+      resTableModeBadge.textContent = 'Text Only (No Tables)';
+      resTableModeBadge.className = 'badge badge-table-mode';
+    } else {
+      resTableModeBadge.textContent = 'With Tables';
+      resTableModeBadge.className = 'badge badge-table-mode mode-add';
+    }
+  }
+
+  if (btnResNeglectTable && btnResAddTable) {
+    if (currentTableMode === 'neglect') {
+      btnResNeglectTable.classList.add('active');
+      btnResAddTable.classList.remove('active');
+    } else {
+      btnResAddTable.classList.add('active');
+      btnResNeglectTable.classList.remove('active');
+    }
+  }
+
+  const detectedTables = result.tables_detected !== undefined ? result.tables_detected : (((val.tables_neglected_count || 0) + (val.tables_included_count || 0)));
+  const neglectedTables = result.tables_neglected !== undefined ? result.tables_neglected : (val.tables_neglected_count || 0);
+
+  if (valNeglectedCount) {
+    valNeglectedCount.textContent = neglectedTables;
+  }
+
+  if (resTableNoticeText) {
+    if (detectedTables > 0) {
+      if (currentTableMode === 'neglect') {
+        resTableNoticeText.innerHTML = `⚠️ <strong>${detectedTables} table${detectedTables > 1 ? 's' : ''} detected</strong> in section &mdash; neglected per Text-Only setting`;
+      } else {
+        resTableNoticeText.innerHTML = `✓ <strong>${detectedTables} table${detectedTables > 1 ? 's' : ''} extracted</strong> and included in document flow`;
+      }
+    } else {
+      resTableNoticeText.textContent = 'No tables detected in requested section boundary';
+    }
+  }
 
   valTablesCount.textContent = val.tables_included_count || 0;
   valBlocksCount.textContent = (result.structured_content && result.structured_content.length) || (result.blocks && result.blocks.length) || 0;
@@ -720,6 +813,40 @@ function buildHtmlTable(columns, rows, rawRows) {
 // 10. Extracted Tables Feed
 function renderTablesFeed(structuredItems, rawBlocks) {
   tablesContainer.innerHTML = '';
+  const currentTableMode = (state.activeResult && state.activeResult.table_mode) || getSelectedTableMode();
+
+  if (currentTableMode === 'neglect') {
+    const neglectedCount = (state.activeResult && (state.activeResult.tables_neglected || (state.activeResult.validation && state.activeResult.validation.tables_neglected_count))) || 0;
+    tablesContainer.innerHTML = `
+      <div class="neglected-tables-card">
+        <svg class="neglected-tables-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="3" y1="9" x2="21" y2="9"></line>
+          <line x1="3" y1="15" x2="21" y2="15"></line>
+          <line x1="9" y1="3" x2="9" y2="21"></line>
+          <line x1="15" y1="3" x2="15" y2="21"></line>
+          <line x1="4" y1="4" x2="20" y2="20" stroke="#EF4444" stroke-width="2.5"></line>
+        </svg>
+        <div class="neglected-tables-title">${neglectedCount > 0 ? `${neglectedCount} Table${neglectedCount > 1 ? 's' : ''} Neglected` : 'Neglect Table Option Active'}</div>
+        <div class="neglected-tables-subtitle">
+          The <strong>Neglect Table</strong> option is active. Tables and their internal cell contents are omitted so only pure text paragraphs and headings are extracted.
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" id="btnSwitchToAddTableInFeed">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          Switch to "Add Table" to View
+        </button>
+      </div>
+    `;
+    const btnSwitch = document.getElementById('btnSwitchToAddTableInFeed');
+    if (btnSwitch) {
+      btnSwitch.addEventListener('click', () => {
+        setSelectedTableMode('add');
+        runExtractBtn.click();
+      });
+    }
+    return;
+  }
+
   const tableItems = structuredItems.filter(it => it.type === 'table');
 
   if (tableItems.length === 0) {
