@@ -34,6 +34,11 @@ celery_app.conf.beat_schedule = {
         # Run daily at 02:00 AM UTC
         "schedule": crontab(hour=2, minute=0),
     },
+    "periodic-health-canada-infowatch-sync": {
+        "task": "app.workers.fda_worker.scheduled_health_canada_sync",
+        # Run daily at 03:00 AM UTC (offset from FDA task)
+        "schedule": crontab(hour=3, minute=0),
+    },
 }
 
 
@@ -145,3 +150,56 @@ def scheduled_fda_sync():
         results[name] = _run_crawl_sync(name)
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Health Canada InfoWatch tasks
+# ---------------------------------------------------------------------------
+
+def _run_health_canada_crawl_sync() -> dict:
+    """Synchronous wrapper for Health Canada InfoWatch full crawl."""
+    from app.database import SessionLocal
+    from app.sources.health_canada.infowatch.adapter import HealthCanadaInfowatchAdapter
+
+    db = SessionLocal()
+    hc = HealthCanadaInfowatchAdapter()
+
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        stats = loop.run_until_complete(hc.run_full_crawl(db))
+        loop.close()
+        return stats
+    except Exception as e:
+        logger.error("Health Canada crawl failed: %s", e, exc_info=True)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.workers.fda_worker.scheduled_health_canada_sync")
+def scheduled_health_canada_sync():
+    """
+    Periodic background task: crawl Health Canada Health Product InfoWatch index,
+    discover new/changed articles, extract safety information, and update the DB.
+
+    Runs daily at 03:00 UTC via Celery Beat.
+    """
+    logger.info("[Scheduled Beat] Starting Health Canada InfoWatch sync")
+    stats = _run_health_canada_crawl_sync()
+    logger.info("[Scheduled Beat] Health Canada sync complete: %s", stats)
+    return stats
+
+
+@celery_app.task(name="app.workers.fda_worker.health_canada_crawl_task")
+def health_canada_crawl_task():
+    """
+    On-demand Celery task: trigger a full Health Canada InfoWatch crawl.
+    Can be triggered manually via /api/admin/crawl/health-canada endpoint.
+    """
+    logger.info("[Celery] Health Canada InfoWatch crawl triggered")
+    return _run_health_canada_crawl_sync()
