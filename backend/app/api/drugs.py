@@ -1,6 +1,7 @@
 """
 API routes for drug operations.
 Provides search, detail, and safety labeling changes endpoints.
+Supports multiple data sources: FDA_SRLC and HEALTH_CANADA_INFOWATCH.
 """
 import logging
 from typing import List, Optional
@@ -21,6 +22,7 @@ from app.services.database_service import DatabaseService
 from app.crawler.fda_crawler import crawler
 from app.scrapers.fda_srlc_scraper import scraper, parse_fda_date
 from app.ui import export_drug_csv, export_drug_json
+from app.sources.health_canada.infowatch.adapter import adapter as hc_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +32,112 @@ router = APIRouter()
 @router.get("/search", response_model=SearchResultResponse)
 async def search_drugs(
     q: str = Query(..., min_length=1, description="Search term for drug name or active ingredient"),
+    source: Optional[str] = Query(
+        None,
+        description="Filter by source: FDA_SRLC or HEALTH_CANADA_INFOWATCH. Omit to search all.",
+    ),
     db: Session = Depends(get_db),
 ):
     """
     Search for drugs by name or active ingredient.
-    Queries local database and verifies against FDA SrLC to ensure the latest supplement dates are captured.
+
+    - Without `source`: queries both FDA SrLC (live) and local DB.
+    - With `source=HEALTH_CANADA_INFOWATCH`: searches Health Canada InfoWatch
+      (crawls live data if local DB is stale or empty).
+    - With `source=FDA_SRLC`: original FDA-only behaviour.
     """
     query_clean = q.strip()
+    source_clean = (source or "").strip().upper()
 
+    # ── Multi-Source Search (ALL) ───────────────────────────────────────
+    if source_clean == "ALL":
+        try:
+            await hc_adapter.search(query=query_clean, db=db)
+        except Exception as exc:
+            logger.error("Health Canada search error for '%s': %s", query_clean, exc, exc_info=True)
+            db.rollback()
+
+        try:
+            html = await crawler.search_drug(query_clean)
+            if html:
+                search_results = scraper.parse_search_results(html)
+                for candidate in search_results[:3]:
+                    drug, is_new_drug = DatabaseService.insert_or_update_drug(db, candidate)
+                    detail_url = candidate.get("detail_url")
+                    needs_crawl = is_new_drug
+                    if not needs_crawl and detail_url:
+                        existing_changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id)
+                        if not existing_changes:
+                            needs_crawl = True
+                    if needs_crawl and detail_url:
+                        crawler.visited_urls.discard(detail_url)
+                        detail_html = await crawler.get_detail_page(detail_url)
+                        if detail_html:
+                            detail_data = scraper.parse_detail_page(detail_html, source_url=detail_url)
+                            if detail_data:
+                                if not drug.active_ingredient and detail_data.get("active_ingredient"):
+                                    drug.active_ingredient = detail_data["active_ingredient"]
+                                if not drug.application_number and detail_data.get("application_number"):
+                                    drug.application_number = detail_data["application_number"]
+                                for change in detail_data.get("safety_changes", []):
+                                    DatabaseService.save_safety_change(db, drug.id, change)
+                db.commit()
+        except Exception as exc:
+            logger.error("FDA search error for '%s': %s", query_clean, exc, exc_info=True)
+            db.rollback()
+
+        all_drugs = DatabaseService.search_drugs(db, query_clean)
+        results_items_all: List[DrugSearchResultItem] = []
+        for d in all_drugs:
+            changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
+            last_verified = changes[0].last_verified_at if changes else d.updated_at or d.created_at
+            results_items_all.append(
+                DrugSearchResultItem(
+                    drug_id=d.id,
+                    drug_name=d.display_name,
+                    active_ingredient=d.active_ingredient,
+                    application_number=d.application_number,
+                    safety_change_count=len(changes),
+                    last_verified_at=last_verified,
+                )
+            )
+        return SearchResultResponse(
+            query=query_clean,
+            source="ALL",
+            results=results_items_all,
+        )
+
+    # ── Health Canada InfoWatch path ────────────────────────────────────
+    if source_clean in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA"):
+        try:
+            local_drugs = await hc_adapter.search(query=query_clean, db=db)
+        except Exception as exc:
+            logger.error("Health Canada search error for '%s': %s", query_clean, exc, exc_info=True)
+            db.rollback()
+            local_drugs = DatabaseService.search_drugs(db, query_clean)
+
+        results_items: List[DrugSearchResultItem] = []
+        for d in local_drugs:
+            changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
+            hc_changes = [c for c in changes if c.source == "HEALTH_CANADA_INFOWATCH"]
+            last_verified = hc_changes[0].last_verified_at if hc_changes else d.updated_at or d.created_at
+            results_items.append(
+                DrugSearchResultItem(
+                    drug_id=d.id,
+                    drug_name=d.display_name,
+                    active_ingredient=d.active_ingredient,
+                    application_number=d.application_number,
+                    safety_change_count=len(hc_changes),
+                    last_verified_at=last_verified,
+                )
+            )
+        return SearchResultResponse(
+            query=query_clean,
+            source="HEALTH_CANADA_INFOWATCH",
+            results=results_items,
+        )
+
+    # ── FDA SrLC path (original behaviour) ─────────────────────────────
     # Step 1: Check local DB
     local_drugs = DatabaseService.search_drugs(db, query_clean)
 
@@ -88,12 +188,15 @@ async def search_drugs(
         db.rollback()
 
     # Step 3: Build response
-    results_items: List[DrugSearchResultItem] = []
+    results_items_fda: List[DrugSearchResultItem] = []
     for d in local_drugs:
         changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
+        # Filter by FDA source if source param given
+        if source_clean == "FDA_SRLC":
+            changes = [c for c in changes if c.source == "FDA_SRLC"]
         last_verified = changes[0].last_verified_at if changes else d.updated_at or d.created_at
 
-        results_items.append(
+        results_items_fda.append(
             DrugSearchResultItem(
                 drug_id=d.id,
                 drug_name=d.display_name,
@@ -106,7 +209,57 @@ async def search_drugs(
 
     return SearchResultResponse(
         query=query_clean,
-        source="FDA_SRLC",
+        source=source_clean or "FDA_SRLC",
+        results=results_items_fda,
+    )
+
+
+@router.get("/search/health-canada", response_model=SearchResultResponse)
+async def search_health_canada(
+    q: str = Query(..., min_length=1, description="Medicine name, brand, generic, or molecule"),
+    force_refresh: bool = Query(False, description="Force re-crawl even if local data is fresh"),
+    db: Session = Depends(get_db),
+):
+    """
+    Search Health Canada Health Product InfoWatch for a medicine.
+
+    Checks local database first. If data is stale or missing, crawls the
+    Health Canada published-newsletters index, identifies relevant articles,
+    extracts safety information, and stores results.
+
+    Example: GET /api/drugs/search/health-canada?q=dimethyl+fumarate
+    """
+    query_clean = q.strip()
+    try:
+        local_drugs = await hc_adapter.search(
+            query=query_clean, db=db, force_refresh=force_refresh
+        )
+    except Exception as exc:
+        logger.error("HC search error for '%s': %s", query_clean, exc, exc_info=True)
+        db.rollback()
+        local_drugs = DatabaseService.search_drugs(db, query_clean)
+
+    results_items: List[DrugSearchResultItem] = []
+    for d in local_drugs:
+        changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
+        hc_changes = [c for c in changes if c.source == "HEALTH_CANADA_INFOWATCH"]
+        last_verified = (
+            hc_changes[0].last_verified_at if hc_changes else d.updated_at or d.created_at
+        )
+        results_items.append(
+            DrugSearchResultItem(
+                drug_id=d.id,
+                drug_name=d.display_name,
+                active_ingredient=d.active_ingredient,
+                application_number=d.application_number,
+                safety_change_count=len(hc_changes),
+                last_verified_at=last_verified,
+            )
+        )
+
+    return SearchResultResponse(
+        query=query_clean,
+        source="HEALTH_CANADA_INFOWATCH",
         results=results_items,
     )
 
