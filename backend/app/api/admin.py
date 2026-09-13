@@ -180,3 +180,99 @@ async def get_source_health():
             "target_url": url,
             "timestamp": datetime.utcnow().isoformat(),
         }
+
+
+# ---------------------------------------------------------------------------
+# Health Canada InfoWatch admin endpoints
+# ---------------------------------------------------------------------------
+
+@router.post("/crawl/health-canada")
+async def trigger_health_canada_crawl(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Trigger an immediate full crawl of the Health Canada Health Product InfoWatch index.
+
+    Runs as a background task. Returns crawl run ID for status tracking.
+    """
+    from app.sources.health_canada.infowatch.adapter import HealthCanadaInfowatchAdapter, SOURCE_ID
+    from app.models.drug import CrawlRun
+
+    crawl_run = CrawlRun(
+        source=SOURCE_ID,
+        started_at=datetime.utcnow(),
+        status="pending",
+        pages_requested=0,
+        pages_crawled=0,
+        records_found=0,
+        records_added=0,
+        records_changed=0,
+        records_unchanged=0,
+    )
+    db.add(crawl_run)
+    db.commit()
+    db.refresh(crawl_run)
+    crawl_id = crawl_run.id
+
+    async def _bg_crawl():
+        from app.database import SessionLocal
+        bg_db = SessionLocal()
+        hc = HealthCanadaInfowatchAdapter()
+        try:
+            run = bg_db.get(CrawlRun, crawl_id)
+            if run:
+                run.status = "running"
+                bg_db.commit()
+            stats = await hc.run_full_crawl(bg_db)
+            logger.info("Background HC crawl complete: %s", stats)
+        except Exception as exc:
+            logger.error("Background HC crawl error: %s", exc, exc_info=True)
+        finally:
+            bg_db.close()
+
+    background_tasks.add_task(_bg_crawl)
+
+    return {
+        "message": "Health Canada InfoWatch crawl started",
+        "crawl_run_id": crawl_id,
+        "source": SOURCE_ID,
+        "status": "pending",
+    }
+
+
+@router.get("/health/health-canada")
+async def health_canada_source_health():
+    """
+    Check connectivity to the Health Canada Health Product InfoWatch index.
+    """
+    from app.sources.health_canada.infowatch.crawler import HC_INDEX_URL
+
+    start = time.time()
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (compatible; MedicineSafetyBot/1.0)"
+            ),
+        }
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers=headers) as client:
+            resp = await client.get(HC_INDEX_URL)
+            latency_ms = round((time.time() - start) * 1000, 2)
+            health = "Healthy" if resp.status_code == 200 else (
+                "Warning" if resp.status_code in (403, 429) else "Failed"
+            )
+            return {
+                "source": "HEALTH_CANADA_INFOWATCH",
+                "status": health,
+                "http_status": resp.status_code,
+                "latency_ms": latency_ms,
+                "target_url": HC_INDEX_URL,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+    except Exception as e:
+        latency_ms = round((time.time() - start) * 1000, 2)
+        return {
+            "source": "HEALTH_CANADA_INFOWATCH",
+            "status": "Failed",
+            "error": str(e),
+            "latency_ms": latency_ms,
+            "target_url": HC_INDEX_URL,
+            "timestamp": datetime.utcnow().isoformat(),
+        }

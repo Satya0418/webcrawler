@@ -134,8 +134,13 @@ def export_drug_json(drug: Any, changes: List[Any]) -> str:
     return json.dumps(data, indent=2)
 
 
-def render_homepage_html(query: str = "", results: list = None, error: str = None) -> str:
-    """Render a clean, white-background search homepage with optional results."""
+def render_homepage_html(
+    query: str = "",
+    results: list = None,
+    error: str = None,
+    source: str = "ALL",
+) -> str:
+    """Render a clean search homepage with source selection and multi-authority results."""
     results_html = ""
     if error:
         results_html = f"""
@@ -159,6 +164,11 @@ def render_homepage_html(query: str = "", results: list = None, error: str = Non
                 app_num = html.escape(r.get("application_number") or "N/A")
                 cnt = r.get("safety_change_count", 0)
                 verified = str(r.get("last_verified_at", ""))[:10] if r.get("last_verified_at") else "Recent"
+                d_source = r.get("source") or "FDA_SRLC"
+                is_hc = d_source == "HEALTH_CANADA_INFOWATCH"
+
+                source_badge = '<span class="badge badge-hc">🍁 Health Canada InfoWatch</span>' if is_hc else '<span class="badge badge-fda">🇺🇸 FDA SrLC</span>'
+                action_label = "View Safety Information &rarr;" if is_hc else "View Adverse Reactions &rarr;"
 
                 cards.append(f"""
                 <div class="result-row">
@@ -168,13 +178,13 @@ def render_homepage_html(query: str = "", results: list = None, error: str = Non
                             Active Ingredient: <strong>{ingr}</strong> &bull; Application: <strong>{app_num}</strong>
                         </div>
                         <div class="result-meta">
-                            <span class="badge">{cnt} Labeling Updates</span>
-                            <span class="meta-item">Source: FDA SrLC</span>
+                            {source_badge}
+                            <span class="badge">{cnt} Safety Updates</span>
                             <span class="meta-item">Updated: {verified}</span>
                         </div>
                     </div>
                     <div class="result-action">
-                        <a href="/drugs/{d_id}" class="btn btn-secondary">View Adverse Reactions &rarr;</a>
+                        <a href="/drugs/{d_id}" class="btn btn-secondary">{action_label}</a>
                         <a href="/drugs/{d_id}/export?format=csv" class="btn btn-outline" title="Download CSV">CSV</a>
                         <a href="/drugs/{d_id}/export?format=json" class="btn btn-outline" title="Download JSON">JSON</a>
                     </div>
@@ -192,12 +202,16 @@ def render_homepage_html(query: str = "", results: list = None, error: str = Non
             </div>
             """
 
+    selected_all = "selected" if source in ("ALL", "", None) else ""
+    selected_hc = "selected" if source == "HEALTH_CANADA_INFOWATCH" else ""
+    selected_fda = "selected" if source == "FDA_SRLC" else ""
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Medicine Safety Information - FDA SrLC</title>
+    <title>Medicine Safety Information - Health Canada & FDA</title>
     <style>
         body {{
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
@@ -214,12 +228,35 @@ def render_homepage_html(query: str = "", results: list = None, error: str = Non
             display: flex;
             align-items: center;
             justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
         }}
         .header-title {{
             font-size: 18px;
             font-weight: 700;
             color: #111827;
             text-decoration: none;
+        }}
+        .header-sources {{
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }}
+        .source-tag {{
+            font-size: 12px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 20px;
+        }}
+        .hc-tag {{
+            background: #fef2f2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+        }}
+        .fda-tag {{
+            background: #eff6ff;
+            color: #1d4ed8;
+            border: 1px solid #bfdbfe;
         }}
         .header-links a {{
             color: #4b5563;
@@ -251,11 +288,29 @@ def render_homepage_html(query: str = "", results: list = None, error: str = Non
         .search-box {{
             display: flex;
             gap: 8px;
-            max-width: 650px;
+            max-width: 720px;
             margin: 25px auto 40px auto;
+            flex-wrap: wrap;
+        }}
+        .source-select {{
+            padding: 12px 14px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            background: #f9fafb;
+            color: #374151;
+            outline: none;
+            cursor: pointer;
+            min-width: 190px;
+        }}
+        .source-select:focus {{
+            border-color: #0284c7;
+            box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
         }}
         .search-input {{
             flex: 1;
+            min-width: 240px;
             padding: 12px 16px;
             border: 1px solid #d1d5db;
             border-radius: 6px;
@@ -348,6 +403,7 @@ def render_homepage_html(query: str = "", results: list = None, error: str = Non
             display: flex;
             gap: 12px;
             align-items: center;
+            flex-wrap: wrap;
         }}
         .result-action {{
             display: flex;
@@ -361,6 +417,16 @@ def render_homepage_html(query: str = "", results: list = None, error: str = Non
             border-radius: 4px;
             font-size: 12px;
             font-weight: 600;
+        }}
+        .badge-hc {{
+            background: #fef2f2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+        }}
+        .badge-fda {{
+            background: #eff6ff;
+            color: #1d4ed8;
+            border: 1px solid #bfdbfe;
         }}
         .meta-item {{
             color: #6b7280;
@@ -388,24 +454,33 @@ def render_homepage_html(query: str = "", results: list = None, error: str = Non
 </head>
 <body>
     <header class="header">
-        <a href="/" class="header-title">FDA Drug Safety-related Labeling Changes (SrLC)</a>
+        <a href="/" class="header-title">Medicine Safety Platform</a>
+        <div class="header-sources">
+            <span class="source-tag hc-tag">🍁 Health Canada InfoWatch</span>
+            <span class="source-tag fda-tag">🇺🇸 US FDA SrLC</span>
+        </div>
     </header>
 
     <main class="main">
         <div class="hero">
-            <h1>Search Medicine Safety Labeling Changes</h1>
-            <p>Retrieve authoritative safety information, warnings, and revisions directly from the FDA SrLC database.</p>
+            <h1>Search Medicine Safety Information</h1>
+            <p>Retrieve authoritative safety information, warnings, and revisions from <strong>Health Canada (MedEffect InfoWatch)</strong> and the <strong>U.S. FDA (SrLC)</strong>.</p>
         </div>
 
         <form action="/" method="get" class="search-box">
-            <input type="text" name="q" class="search-input" placeholder="Enter medicine or active ingredient (e.g. ZYVOX, Warfarin)..." required value="{html.escape(query)}">
-            <button type="submit" class="btn btn-primary">Search</button>
+            <select name="source" class="source-select" id="source-select" aria-label="Select Source">
+                <option value="ALL" {selected_all}>🌐 All Sources (Canada + FDA)</option>
+                <option value="HEALTH_CANADA_INFOWATCH" {selected_hc}>🍁 Health Canada InfoWatch</option>
+                <option value="FDA_SRLC" {selected_fda}>🇺🇸 US FDA SrLC</option>
+            </select>
+            <input type="text" name="q" class="search-input" placeholder="Enter medicine or active ingredient (e.g. Tecfidera, Dimethyl fumarate, Warfarin)..." required value="{html.escape(query)}">
+            <button type="submit" class="btn btn-primary" id="search-submit">Search</button>
         </form>
 
         {results_html}
 
         <div class="disclaimer">
-            <strong>Disclaimer:</strong> Regulatory drug safety-related labeling changes provided for informational purposes only. Sourced from the U.S. FDA Center for Drug Evaluation and Research (CDER). Not intended as medical advice.
+            <strong>Disclaimer:</strong> Regulatory drug safety information provided for informational purposes only. Sourced from the U.S. FDA Center for Drug Evaluation and Research (CDER) and Health Canada Marketed Health Products Directorate (MedEffect Canada InfoWatch). Not intended as medical advice.
         </div>
     </main>
 </body>
@@ -413,18 +488,393 @@ def render_homepage_html(query: str = "", results: list = None, error: str = Non
 """
 
 
+def _render_health_canada_drug_detail(drug: dict, changes: list) -> str:
+    """
+    Render Health Canada InfoWatch drug detail page showing all safety updates,
+    monographs, reviews, and advisories with complete source traceability.
+    """
+    d_id = drug.get("id") or 1
+    display_name = drug.get("display_name") or ""
+    display_clean = display_name.title() if display_name.isupper() else display_name
+    active_ingredient = drug.get("active_ingredient") or "Not specified"
+
+    plain_reports = []
+    cards_html = []
+
+    for c in changes:
+        sec = _get_val(c, "section") or "Safety Information"
+        chg_type = _get_val(c, "change_type") or "Labeling Revision"
+        s_date = _get_val(c, "source_date")
+        date_str = str(s_date)[:10] if s_date else "Recent Notice"
+        s_url = _get_val(c, "source_url") or ""
+        rec_id = _get_val(c, "source_record_id") or ""
+        verified = _get_val(c, "last_verified_at")
+        verified_str = str(verified)[:10] if verified else ""
+        text = _get_val(c, "updated_text") or _get_val(c, "original_text") or ""
+        clean_text = text.strip()
+
+        plain_report = (
+            f"Health Canada — Health Product InfoWatch\n"
+            f"Medicine: {display_clean} ({active_ingredient})\n"
+            f"Section: {sec} | Topic: {chg_type}\n"
+            f"Date: {date_str}\n"
+            f"Source URL: {s_url}\n\n"
+            f"{clean_text}"
+        )
+        plain_reports.append(plain_report)
+
+        paragraphs = clean_text.split("\n\n")
+        para_html = "".join(f"<p>{html.escape(p.strip())}</p>" for p in paragraphs if p.strip())
+
+        source_link_html = ""
+        if s_url:
+            source_link_html = f"""
+            <div class="hc-source-link">
+                <a href="{html.escape(s_url)}" target="_blank" rel="noopener noreferrer" class="btn-hc-source">
+                    🔗 View Official Notice on Canada.ca &rarr;
+                </a>
+            </div>
+            """
+
+        meta_bits = []
+        if rec_id:
+            meta_bits.append(f"Record: <code>{html.escape(rec_id)}</code>")
+        if verified_str:
+            meta_bits.append(f"Verified: {html.escape(verified_str)}")
+        meta_html = " &bull; ".join(meta_bits)
+
+        cards_html.append(f"""
+        <div class="hc-card">
+            <div class="hc-card-header">
+                <div class="hc-card-title-group">
+                    <span class="badge badge-hc">🍁 Health Canada</span>
+                    <span class="badge badge-sec">{html.escape(sec)}</span>
+                    <span class="hc-date">{html.escape(date_str)}</span>
+                </div>
+                <button type="button" class="btn-copy-card" onclick="copyText(this)" data-copy="{html.escape(plain_report)}">
+                    📋 Copy Text
+                </button>
+            </div>
+            <div class="hc-card-body">
+                <h3 class="hc-article-title">{html.escape(chg_type)}</h3>
+                <div class="hc-prose">
+                    {para_html}
+                </div>
+                {source_link_html}
+                <div class="hc-card-meta">
+                    {meta_html}
+                </div>
+            </div>
+        </div>
+        """)
+
+    top_copy_text = "\n\n---\n\n".join(plain_reports) if plain_reports else ""
+    top_copy_btn = ""
+    if top_copy_text:
+        top_copy_btn = f"""
+        <button type="button" class="btn-export btn-copy-primary" onclick="copyText(this)" data-copy="{html.escape(top_copy_text)}">
+            📋 Copy All Notices
+        </button>
+        """
+
+    if not cards_html:
+        content_html = """
+        <div class="no-data-box">
+            <div class="no-data-icon">🍁</div>
+            <h2 class="no-data-title">No safety notices found</h2>
+            <p class="no-data-desc">No Health Product InfoWatch safety notices were found for this medicine in the database.</p>
+        </div>
+        """
+    else:
+        content_html = "".join(cards_html)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{html.escape(display_clean)} - Health Canada InfoWatch Safety Information</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background-color: #ffffff;
+            color: #111827;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+            font-size: 15px;
+        }}
+        .top-nav {{
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            padding: 10px 24px;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .top-nav a {{
+            color: #0066cc;
+            text-decoration: none;
+            font-weight: 500;
+        }}
+        .top-nav a:hover {{ text-decoration: underline; }}
+        .page-container {{
+            max-width: 900px;
+            margin: 24px auto 60px auto;
+            padding: 0 20px;
+        }}
+        .drug-header {{
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 16px;
+        }}
+        .drug-header-main {{ flex: 1; }}
+        .drug-name {{
+            font-size: 26px;
+            font-weight: 700;
+            color: #111827;
+            margin: 0 0 4px 0;
+        }}
+        .ingredient {{
+            font-size: 16px;
+            font-weight: 600;
+            color: #374151;
+            margin: 0 0 6px 0;
+        }}
+        .agency-subtitle {{
+            color: #6b7280;
+            font-size: 13px;
+            margin: 0;
+        }}
+        .badge-hc {{
+            background: #fef2f2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }}
+        .badge-sec {{
+            background: #f3f4f6;
+            color: #374151;
+            border: 1px solid #d1d5db;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }}
+        .export-actions {{
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }}
+        .btn-export {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 14px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            background: #ffffff;
+            color: #1f2937;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.15s ease-in-out;
+        }}
+        .btn-export:hover {{
+            background: #b91c1c;
+            color: #ffffff;
+            border-color: #b91c1c;
+        }}
+        .btn-copy-primary {{
+            background: #b91c1c;
+            color: #ffffff;
+            border-color: #b91c1c;
+        }}
+        .btn-copy-primary:hover {{
+            background: #991b1b;
+            border-color: #991b1b;
+        }}
+        .hc-card {{
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+            overflow: hidden;
+        }}
+        .hc-card-header {{
+            background: #fdf2f2;
+            border-bottom: 1px solid #fee2e2;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }}
+        .hc-card-title-group {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }}
+        .hc-date {{
+            font-size: 13px;
+            font-weight: 600;
+            color: #4b5563;
+        }}
+        .btn-copy-card {{
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #374151;
+            transition: all 0.15s;
+        }}
+        .btn-copy-card:hover {{ background: #f9fafb; border-color: #9ca3af; }}
+        .hc-card-body {{
+            padding: 20px 24px;
+        }}
+        .hc-article-title {{
+            font-size: 18px;
+            font-weight: 700;
+            color: #111827;
+            margin: 0 0 14px 0;
+        }}
+        .hc-prose p {{
+            margin: 0 0 12px 0;
+            line-height: 1.6;
+            color: #1f2937;
+        }}
+        .hc-source-link {{
+            margin: 16px 0 12px 0;
+        }}
+        .btn-hc-source {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            background: #fef2f2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.15s;
+        }}
+        .btn-hc-source:hover {{
+            background: #b91c1c;
+            color: #ffffff;
+        }}
+        .hc-card-meta {{
+            font-size: 12px;
+            color: #6b7280;
+            border-top: 1px solid #f3f4f6;
+            padding-top: 10px;
+            margin-top: 12px;
+        }}
+        .no-data-box {{
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 40px 20px;
+            text-align: center;
+            margin: 30px 0;
+        }}
+        .no-data-icon {{ font-size: 32px; margin-bottom: 12px; }}
+        .no-data-title {{ font-size: 18px; font-weight: 700; color: #374151; margin: 0 0 8px 0; }}
+        .no-data-desc {{ color: #6b7280; font-size: 14px; margin: 0; }}
+        .footer-note {{
+            margin-top: 40px;
+            padding-top: 14px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 12px;
+            color: #6b7280;
+        }}
+    </style>
+</head>
+<body>
+    <div class="top-nav">
+        <div>
+            <a href="/">&larr; Back to Search</a>
+        </div>
+    </div>
+
+    <div class="page-container">
+        <div class="drug-header">
+            <div class="drug-header-main">
+                <h1 class="drug-name">{html.escape(display_clean)}</h1>
+                <div class="ingredient">Active Ingredient: <strong>{html.escape(active_ingredient)}</strong></div>
+                <p class="agency-subtitle">Source: Health Canada — MedEffect Canada Health Product InfoWatch</p>
+            </div>
+            <div class="export-actions">
+                {top_copy_btn}
+                <a href="/drugs/{d_id}/export?format=csv" class="btn-export" download>📥 CSV</a>
+                <a href="/drugs/{d_id}/export?format=json" class="btn-export" download>📥 JSON</a>
+            </div>
+        </div>
+
+        <div class="reports-container">
+            {content_html}
+        </div>
+
+        <div class="footer-note">
+            Source: Health Canada Marketed Health Products Directorate &bull; MedEffect Canada &bull; Health Product InfoWatch.
+        </div>
+    </div>
+
+    <script>
+        function copyText(btn) {{
+            var text = btn.getAttribute('data-copy');
+            if (!text) return;
+            navigator.clipboard.writeText(text).then(function() {{
+                var orig = btn.innerHTML;
+                btn.innerHTML = '✓ Copied!';
+                btn.style.backgroundColor = '#16a34a';
+                btn.style.borderColor = '#16a34a';
+                btn.style.color = '#ffffff';
+                setTimeout(function() {{
+                    btn.innerHTML = orig;
+                    btn.style.backgroundColor = '';
+                    btn.style.borderColor = '';
+                    btn.style.color = '';
+                }}, 2000);
+            }});
+        }}
+    </script>
+</body>
+</html>
+"""
+
+
 def render_drug_detail_html(drug: dict, changes: list) -> str:
     """
-    Render drug safety labeling detail page showing ONLY Adverse Reactions.
-    Formats the report exactly as specified in regulatory reporting style:
-    - Displays 3.1 The United States Food and Drug Administration header
-    - Introductory approval sentence with DD-Mon-YYYY date
-    - Adverse Reactions header
-    - Subsection headers (e.g. Postmarketing Experience)
-    - Clean disorder paragraphs
-    - Removes all Section 17 PCI/PI/MG, Medication Guides, Warnings, and noise.
-    - If no adverse reaction data exists, displays 'No data is present on adverse reaction'.
+    Render drug safety labeling detail page.
+    - If Health Canada: displays Health Canada InfoWatch safety reviews, monograph updates, and advisories.
+    - If FDA: displays Adverse Reactions regulatory report formatted to FDA 3.1 specifications.
     """
+    drug_source = drug.get("source") or ""
+    is_hc = (
+        drug_source == "HEALTH_CANADA_INFOWATCH"
+        or any(_get_val(c, "source") == "HEALTH_CANADA_INFOWATCH" for c in changes)
+    )
+    if is_hc:
+        return _render_health_canada_drug_detail(drug, changes)
+
     d_id = drug.get("id") or 1
     display_name = drug.get("display_name") or ""
     display_clean = display_name.title() if display_name.isupper() else display_name
