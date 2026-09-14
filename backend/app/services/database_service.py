@@ -264,6 +264,10 @@ class DatabaseService:
                 conditions.append(Drug.source.in_(["FDA_SRLC", "FDA"]))
             elif source in ("AUSTRALIA_TGA", "TGA"):
                 conditions.append(Drug.source.in_(["AUSTRALIA_TGA", "TGA"]))
+            elif source in ("FDA_MEDWATCH", "MEDWATCH"):
+                conditions.append(Drug.source.in_(["FDA_MEDWATCH", "MEDWATCH"]))
+            elif source in ("UK_MHRA", "MHRA"):
+                conditions.append(Drug.source.in_(["UK_MHRA", "MHRA"]))
             else:
                 conditions.append(Drug.source == source)
 
