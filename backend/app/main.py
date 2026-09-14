@@ -2,6 +2,7 @@
 Main application factory and entry point for the Medicine Safety Backend API.
 Provides REST API endpoints and clean web rendering views for drug safety data.
 """
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -18,6 +19,7 @@ from app.services.database_service import DatabaseService
 from app.crawler.fda_crawler import crawler
 from app.scrapers.fda_srlc_scraper import scraper, parse_fda_date
 from app.sources.health_canada.infowatch.adapter import adapter as hc_adapter
+from app.sources.australia_tga.adapter import tga_adapter
 from app.ui import render_homepage_html, render_drug_detail_html, export_drug_csv, export_drug_json
 
 # Configure logging
@@ -75,17 +77,18 @@ async def homepage(
 
     query_clean = q.strip()
 
-    # Step 1: Health Canada InfoWatch live crawl
-    if source_clean in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA", "ALL"):
+    # Run Health Canada and FDA live crawls concurrently
+    tasks = []
+
+    async def _crawl_hc():
         try:
-            logger.info("Executing Health Canada crawl for '%s'", query_clean)
+            logger.info("Executing Health Canada live search for '%s'", query_clean)
             await hc_adapter.search(query=query_clean, db=db, force_refresh=True)
         except Exception as exc:
             logger.error("Health Canada search crawl error for '%s': %s", query_clean, exc, exc_info=True)
             db.rollback()
 
-    # Step 2: FDA SrLC crawl
-    if source_clean in ("FDA_SRLC", "FDA", "ALL"):
+    async def _crawl_fda():
         try:
             logger.info("Executing FDA search for '%s'", query_clean)
             html_resp = await crawler.search_drug(query_clean)
@@ -123,21 +126,39 @@ async def homepage(
             logger.error(f"FDA search crawl error: {e}", exc_info=True)
             db.rollback()
 
+    async def _crawl_tga():
+        try:
+            logger.info("Executing Australia TGA live search for '%s'", query_clean)
+            await tga_adapter.search(query=query_clean, db=db, force_refresh=True)
+        except Exception as exc:
+            logger.error("Australia TGA search crawl error for '%s': %s", query_clean, exc, exc_info=True)
+            db.rollback()
+
+    if source_clean in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA", "ALL"):
+        tasks.append(_crawl_hc())
+
+    if source_clean in ("FDA_SRLC", "FDA", "ALL"):
+        tasks.append(_crawl_fda())
+
+    if source_clean in ("AUSTRALIA_TGA", "TGA", "ALL"):
+        tasks.append(_crawl_tga())
+
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
     # Step 3: Retrieve local results matching query
-    local_drugs = DatabaseService.search_drugs(db, query_clean)
-    if source_clean in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA"):
-        local_drugs = [d for d in local_drugs if d.source == "HEALTH_CANADA_INFOWATCH"]
-    elif source_clean in ("FDA_SRLC", "FDA"):
-        local_drugs = [d for d in local_drugs if d.source == "FDA_SRLC"]
+    local_drugs = DatabaseService.search_drugs(db, query_clean, source=source_clean)
 
     # Step 4: Build response list
     results_list = []
     for d in local_drugs:
         chgs = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
         if source_clean in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA"):
-            chgs = [c for c in chgs if c.source == "HEALTH_CANADA_INFOWATCH"]
+            chgs = [c for c in chgs if "HEALTH_CANADA" in (c.source or "")]
         elif source_clean in ("FDA_SRLC", "FDA"):
-            chgs = [c for c in chgs if c.source == "FDA_SRLC"]
+            chgs = [c for c in chgs if "FDA" in (c.source or "")]
+        elif source_clean in ("AUSTRALIA_TGA", "TGA"):
+            chgs = [c for c in chgs if "AUSTRALIA_TGA" in (c.source or "") or "TGA" in (c.source or "")]
 
         d_source = d.source or "FDA_SRLC"
         last_verified = chgs[0].last_verified_at if chgs else (d.updated_at or d.created_at)

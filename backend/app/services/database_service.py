@@ -45,8 +45,9 @@ class DatabaseService:
             display_name = drug_data.get("display_name") or drug_data.get("drug_name") or ""
             normalized_name = drug_data.get("normalized_name") or NormalizationService.normalize_drug_name(display_name)
 
-            # Check if drug exists by normalized_name
-            query = select(Drug).where(Drug.normalized_name == normalized_name)
+            # Check if drug exists by normalized_name and source
+            source = drug_data.get("source", "FDA_SRLC")
+            query = select(Drug).where(Drug.normalized_name == normalized_name, Drug.source == source)
             result = session.execute(query)
             existing_drug = result.scalars().first()
 
@@ -65,7 +66,7 @@ class DatabaseService:
                 normalized_name=normalized_name,
                 active_ingredient=drug_data.get("active_ingredient"),
                 application_number=drug_data.get("application_number"),
-                source=drug_data.get("source", "FDA_SRLC"),
+                source=source,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
             )
@@ -73,7 +74,7 @@ class DatabaseService:
             session.add(drug)
             session.flush()
 
-            logger.info(f"Created new drug: {normalized_name} (ID: {drug.id})")
+            logger.info(f"Created new drug ({source}): {normalized_name} (ID: {drug.id})")
             return drug, True
 
         except Exception as e:
@@ -199,9 +200,10 @@ class DatabaseService:
                 return previous_change, True
 
             # 3. Create new safety change record
+            chg_source = change_data.get("source") or (drug.source if drug else "FDA_SRLC")
             safety_change = SafetyLabelingChange(
                 drug_id=drug_id,
-                source=change_data.get("source", "FDA_SRLC"),
+                source=chg_source,
                 source_record_id=source_record_id,
                 section=section_name,
                 change_type=change_data.get("change_type", "Labeling Revision"),
@@ -246,18 +248,27 @@ class DatabaseService:
         return result.scalars().first()
 
     @staticmethod
-    def search_drugs(session: Session, query: str, limit: int = 50) -> List[Drug]:
-        """Search for drugs by name or active ingredient."""
+    def search_drugs(session: Session, query: str, limit: int = 50, source: Optional[str] = None) -> List[Drug]:
+        """Search for drugs by name, active ingredient, or DIN/application number, optionally filtered by source."""
         normalized = NormalizationService.normalize_drug_name(query)
-        result = session.execute(
-            select(Drug)
-            .where(
-                (Drug.normalized_name.like(f"%{normalized}%")) |
-                (Drug.active_ingredient.like(f"%{query}%")) |
-                (Drug.display_name.like(f"%{query}%"))
-            )
-            .limit(limit)
-        )
+        conditions = [
+            (Drug.normalized_name.like(f"%{normalized}%")) |
+            (Drug.active_ingredient.like(f"%{query}%")) |
+            (Drug.display_name.like(f"%{query}%")) |
+            (Drug.application_number.like(f"%{query}%"))
+        ]
+        if source and source != "ALL":
+            if source in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA", "HEALTH_CANADA_DPD"):
+                conditions.append(Drug.source.in_(["HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA", "HEALTH_CANADA_DPD"]))
+            elif source in ("FDA_SRLC", "FDA"):
+                conditions.append(Drug.source.in_(["FDA_SRLC", "FDA"]))
+            elif source in ("AUSTRALIA_TGA", "TGA"):
+                conditions.append(Drug.source.in_(["AUSTRALIA_TGA", "TGA"]))
+            else:
+                conditions.append(Drug.source == source)
+
+        stmt = select(Drug).where(*conditions).limit(limit)
+        result = session.execute(stmt)
         return list(result.scalars().all())
 
     @staticmethod

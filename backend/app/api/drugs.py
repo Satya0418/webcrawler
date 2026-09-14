@@ -23,6 +23,7 @@ from app.crawler.fda_crawler import crawler
 from app.scrapers.fda_srlc_scraper import scraper, parse_fda_date
 from app.ui import export_drug_csv, export_drug_json
 from app.sources.health_canada.infowatch.adapter import adapter as hc_adapter
+from app.sources.australia_tga.adapter import tga_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,12 @@ async def search_drugs(
             await hc_adapter.search(query=query_clean, db=db)
         except Exception as exc:
             logger.error("Health Canada search error for '%s': %s", query_clean, exc, exc_info=True)
+            db.rollback()
+
+        try:
+            await tga_adapter.search(query=query_clean, db=db)
+        except Exception as exc:
+            logger.error("Australia TGA search error for '%s': %s", query_clean, exc, exc_info=True)
             db.rollback()
 
         try:
@@ -97,6 +104,7 @@ async def search_drugs(
                     drug_name=d.display_name,
                     active_ingredient=d.active_ingredient,
                     application_number=d.application_number,
+                    source=d.source or "FDA_SRLC",
                     safety_change_count=len(changes),
                     last_verified_at=last_verified,
                 )
@@ -107,19 +115,50 @@ async def search_drugs(
             results=results_items_all,
         )
 
-    # ── Health Canada InfoWatch path ────────────────────────────────────
+    # ── Australia TGA path ────────────────────────────────────────────
+    if source_clean in ("AUSTRALIA_TGA", "TGA"):
+        try:
+            local_drugs = await tga_adapter.search(query=query_clean, db=db)
+        except Exception as exc:
+            logger.error("Australia TGA search error for '%s': %s", query_clean, exc, exc_info=True)
+            db.rollback()
+            local_drugs = DatabaseService.search_drugs(db, query_clean, source="AUSTRALIA_TGA")
+
+        results_items: List[DrugSearchResultItem] = []
+        for d in local_drugs:
+            changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
+            tga_changes = [c for c in changes if "AUSTRALIA_TGA" in (c.source or "") or "TGA" in (c.source or "")]
+            last_verified = tga_changes[0].last_verified_at if tga_changes else d.updated_at or d.created_at
+            results_items.append(
+                DrugSearchResultItem(
+                    drug_id=d.id,
+                    drug_name=d.display_name,
+                    active_ingredient=d.active_ingredient,
+                    application_number=d.application_number,
+                    source=d.source or "AUSTRALIA_TGA",
+                    safety_change_count=len(tga_changes),
+                    last_verified_at=last_verified,
+                )
+            )
+        return SearchResultResponse(
+            query=query_clean,
+            source="AUSTRALIA_TGA",
+            results=results_items,
+        )
+
+    # ── Health Canada path ─────────────────────────────────────────────
     if source_clean in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA"):
         try:
             local_drugs = await hc_adapter.search(query=query_clean, db=db)
         except Exception as exc:
             logger.error("Health Canada search error for '%s': %s", query_clean, exc, exc_info=True)
             db.rollback()
-            local_drugs = DatabaseService.search_drugs(db, query_clean)
+            local_drugs = DatabaseService.search_drugs(db, query_clean, source="HEALTH_CANADA")
 
         results_items: List[DrugSearchResultItem] = []
         for d in local_drugs:
             changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
-            hc_changes = [c for c in changes if c.source == "HEALTH_CANADA_INFOWATCH"]
+            hc_changes = [c for c in changes if "HEALTH_CANADA" in (c.source or "")]
             last_verified = hc_changes[0].last_verified_at if hc_changes else d.updated_at or d.created_at
             results_items.append(
                 DrugSearchResultItem(
@@ -127,13 +166,14 @@ async def search_drugs(
                     drug_name=d.display_name,
                     active_ingredient=d.active_ingredient,
                     application_number=d.application_number,
+                    source=d.source or "HEALTH_CANADA",
                     safety_change_count=len(hc_changes),
                     last_verified_at=last_verified,
                 )
             )
         return SearchResultResponse(
             query=query_clean,
-            source="HEALTH_CANADA_INFOWATCH",
+            source="HEALTH_CANADA",
             results=results_items,
         )
 
@@ -202,6 +242,7 @@ async def search_drugs(
                 drug_name=d.display_name,
                 active_ingredient=d.active_ingredient,
                 application_number=d.application_number,
+                source=d.source or "FDA_SRLC",
                 safety_change_count=len(changes),
                 last_verified_at=last_verified,
             )

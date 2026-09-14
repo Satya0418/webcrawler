@@ -97,6 +97,7 @@ class DrugSearchResultItem(BaseModel):
     drug_name: str
     active_ingredient: Optional[str] = None
     application_number: Optional[str] = None
+    source: Optional[str] = "FDA_SRLC"
     safety_change_count: int = 0
     last_verified_at: Optional[datetime] = None
 
