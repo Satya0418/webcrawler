@@ -54,6 +54,7 @@ from app.sources.health_canada.infowatch.models import (
     ProductMention,
 )
 from app.sources.health_canada.infowatch.parser import parser
+from app.sources.health_canada.dpd_crawler import dpd_crawler
 
 logger = logging.getLogger(__name__)
 
@@ -234,14 +235,12 @@ def _is_data_fresh(db: Session, query: str) -> bool:
     Returns True if last_verified_at is within STALE_THRESHOLD_DAYS.
     """
     threshold = datetime.utcnow() - timedelta(days=STALE_THRESHOLD_DAYS)
-    norm = NormalizationService.normalize_drug_name(query)
-
-    drugs = DatabaseService.search_drugs(db, query, limit=5)
+    drugs = DatabaseService.search_drugs(db, query, limit=5, source="HEALTH_CANADA")
     for drug in drugs:
         changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id)
         for change in changes:
             if (
-                change.source == SOURCE_ID
+                change.source in (SOURCE_ID, "HEALTH_CANADA", "HEALTH_CANADA_DPD")
                 and change.last_verified_at
                 and change.last_verified_at >= threshold
             ):
@@ -255,7 +254,7 @@ def _is_data_fresh(db: Session, query: str) -> bool:
 
 class HealthCanadaInfowatchAdapter:
     """
-    Orchestrates the end-to-end Health Canada InfoWatch crawl and extraction.
+    Orchestrates the end-to-end Health Canada crawl and extraction.
 
     Usage (on-demand, triggered by user search)::
 
@@ -279,28 +278,20 @@ class HealthCanadaInfowatchAdapter:
         force_refresh: bool = False,
     ) -> List[Drug]:
         """
-        Search for a medicine in Health Canada InfoWatch data.
+        Search for a medicine in Health Canada data.
 
         Steps:
         1. Check local DB.
-        2. If stale or missing, crawl HC index → filter → extract.
+        2. If stale or missing, crawl HC official database + newsletters.
         3. Return matching Drug records.
-
-        Args:
-            query:         Medicine name, brand, generic, or molecule.
-            db:            SQLAlchemy session.
-            force_refresh: Skip freshness check and always re-crawl.
-
-        Returns:
-            List of Drug ORM records matching the query.
         """
         if not force_refresh and _is_data_fresh(db, query):
             logger.info("HC data for '%s' is fresh — returning from DB", query)
-            return DatabaseService.search_drugs(db, query)
+            return DatabaseService.search_drugs(db, query, source="HEALTH_CANADA")
 
         logger.info("HC data for '%s' is stale or missing — crawling", query)
         await self._crawl_for_query(query=query, db=db)
-        return DatabaseService.search_drugs(db, query)
+        return DatabaseService.search_drugs(db, query, source="HEALTH_CANADA")
 
     # ------------------------------------------------------------------
     # Targeted crawl (for a specific search query)
@@ -308,80 +299,98 @@ class HealthCanadaInfowatchAdapter:
 
     async def _crawl_for_query(self, query: str, db: Session) -> dict:
         """
-        Crawl HC index, filter for relevant articles, extract and save.
+        Crawl Health Canada official DPD database, Recalls, and InfoWatch index.
         """
         crawl_run = self._start_crawl_run(db)
         errors = []
+        added = changed = 0
 
+        # Step 1: Live search Health Canada DPD & Safety Alerts for the specific medicine
+        try:
+            logger.info("Executing Health Canada DPD & Safety live search for '%s'", query)
+            dpd_products = await dpd_crawler.search_medicine(query)
+            crawl_run.records_found += len(dpd_products)
+            for prod in dpd_products:
+                drug_data = {
+                    "display_name": prod["display_name"],
+                    "normalized_name": prod["normalized_name"],
+                    "active_ingredient": prod.get("active_ingredient"),
+                    "application_number": prod.get("application_number"),
+                    "source": prod.get("source", "HEALTH_CANADA"),
+                }
+                drug, is_new = DatabaseService.insert_or_update_drug(db, drug_data)
+                if is_new:
+                    added += 1
+                for chg in prod.get("safety_changes", []):
+                    _, is_chg_new = DatabaseService.save_safety_change(db, drug.id, chg)
+                    if is_chg_new:
+                        changed += 1
+            db.flush()
+            logger.info(
+                "Health Canada DPD search for '%s' completed: %d products saved/updated",
+                query, len(dpd_products)
+            )
+        except Exception as exc:
+            msg = f"Error during Health Canada DPD search for '{query}': {exc}"
+            logger.warning(msg)
+            errors.append(msg)
+
+        # Step 2: Cross-reference InfoWatch published newsletters index
         try:
             async with HealthCanadaCrawler() as hc_crawler:
-                # 1. Fetch index
                 index_html = await hc_crawler.fetch_index()
-                if not index_html:
-                    logger.error("Failed to fetch Health Canada index")
-                    self._finish_crawl_run(db, crawl_run, "failed", errors=["Failed to fetch index"])
-                    return {}
-                crawl_run.pages_crawled += 1
-                db.flush()
+                if index_html:
+                    crawl_run.pages_crawled += 1
+                    all_entries = discovery.parse_index(index_html)
+                    crawl_run.records_found += len(all_entries)
 
-                # 2. Discover all entries
-                all_entries = discovery.parse_index(index_html)
-                crawl_run.records_found = len(all_entries)
-                db.flush()
+                    relevant = [e for e in all_entries if _medicine_matches(query, e)]
+                    logger.info(
+                        "InfoWatch newsletter cross-ref for '%s': %d relevant entries",
+                        query, len(relevant),
+                    )
 
-                # 3. Filter for relevant entries
-                relevant = [e for e in all_entries if _medicine_matches(query, e)]
-                logger.info(
-                    "Query '%s': %d/%d entries are relevant",
-                    query, len(relevant), len(all_entries),
-                )
+                    page_urls: dict[str, list] = {}
+                    for entry in relevant:
+                        page_url = entry.article_url.split("#")[0]
+                        page_urls.setdefault(page_url, []).append(entry)
 
-                # 4. Deduplicate article page URLs (one fetch per page)
-                page_urls = {}  # page_url → list of IndexEntries
-                for entry in relevant:
-                    page_url = entry.article_url.split("#")[0]
-                    page_urls.setdefault(page_url, []).append(entry)
-
-                crawl_run.pages_requested = len(page_urls)
-                db.flush()
-
-                # 5. Fetch and process each relevant article page
-                added = changed = 0
-                for page_url, entries in page_urls.items():
-                    try:
-                        result = await self._process_article_page(
-                            page_url=page_url,
-                            entries=entries,
-                            crawler=hc_crawler,
-                            db=db,
-                        )
-                        crawl_run.pages_crawled += 1
-                        added += result.get("added", 0)
-                        changed += result.get("changed", 0)
-                    except Exception as exc:
-                        msg = f"Error processing {page_url}: {exc}"
-                        logger.error(msg, exc_info=True)
-                        errors.append(msg)
-
-                crawl_run.records_added = added
-                crawl_run.records_changed = changed
-                db.commit()
-
-            self._finish_crawl_run(db, crawl_run, "success", errors=errors)
-            return {
-                "pages_crawled": crawl_run.pages_crawled,
-                "records_found": crawl_run.records_found,
-                "records_added": added,
-                "records_changed": changed,
-                "errors": errors,
-            }
-
+                    for page_url, entries in page_urls.items():
+                        try:
+                            result = await self._process_article_page(
+                                page_url=page_url,
+                                entries=entries,
+                                crawler=hc_crawler,
+                                db=db,
+                            )
+                            crawl_run.pages_crawled += 1
+                            added += result.get("added", 0)
+                            changed += result.get("changed", 0)
+                        except Exception as exc:
+                            msg = f"Error processing InfoWatch {page_url}: {exc}"
+                            logger.error(msg, exc_info=True)
+                            errors.append(msg)
         except Exception as exc:
-            logger.error("Crawl failed: %s", exc, exc_info=True)
-            errors.append(str(exc))
+            logger.warning("InfoWatch newsletter cross-ref error: %s", exc)
+
+        crawl_run.records_added = added
+        crawl_run.records_changed = changed
+        try:
+            db.commit()
+            status = "success" if (added > 0 or changed > 0 or not errors) else "failed"
+            self._finish_crawl_run(db, crawl_run, status, errors=errors)
+        except Exception as exc:
+            logger.error("Failed to commit Health Canada crawl: %s", exc, exc_info=True)
             db.rollback()
-            self._finish_crawl_run(db, crawl_run, "failed", errors=errors)
-            return {"errors": errors}
+            self._finish_crawl_run(db, crawl_run, "failed", errors=[str(exc)])
+
+        return {
+            "pages_crawled": crawl_run.pages_crawled,
+            "records_found": crawl_run.records_found,
+            "records_added": added,
+            "records_changed": changed,
+            "errors": errors,
+        }
 
     # ------------------------------------------------------------------
     # Full background crawl
