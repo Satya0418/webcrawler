@@ -20,6 +20,8 @@ from app.crawler.fda_crawler import crawler
 from app.scrapers.fda_srlc_scraper import scraper, parse_fda_date
 from app.sources.health_canada.infowatch.adapter import adapter as hc_adapter
 from app.sources.australia_tga.adapter import tga_adapter
+from app.sources.fda_medwatch.adapter import medwatch_adapter
+from app.sources.uk_mhra.adapter import mhra_adapter
 from app.ui import render_homepage_html, render_drug_detail_html, export_drug_csv, export_drug_json
 
 # Configure logging
@@ -134,6 +136,22 @@ async def homepage(
             logger.error("Australia TGA search crawl error for '%s': %s", query_clean, exc, exc_info=True)
             db.rollback()
 
+    async def _crawl_medwatch():
+        try:
+            logger.info("Executing FDA MedWatch live search for '%s'", query_clean)
+            await medwatch_adapter.search(query=query_clean, db=db, force_refresh=True)
+        except Exception as exc:
+            logger.error("FDA MedWatch search crawl error for '%s': %s", query_clean, exc, exc_info=True)
+            db.rollback()
+
+    async def _crawl_mhra():
+        try:
+            logger.info("Executing UK MHRA live search for '%s'", query_clean)
+            await mhra_adapter.search(query=query_clean, db=db, force_refresh=True)
+        except Exception as exc:
+            logger.error("UK MHRA search crawl error for '%s': %s", query_clean, exc, exc_info=True)
+            db.rollback()
+
     if source_clean in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA", "ALL"):
         tasks.append(_crawl_hc())
 
@@ -142,6 +160,12 @@ async def homepage(
 
     if source_clean in ("AUSTRALIA_TGA", "TGA", "ALL"):
         tasks.append(_crawl_tga())
+
+    if source_clean in ("FDA_MEDWATCH", "MEDWATCH", "ALL"):
+        tasks.append(_crawl_medwatch())
+
+    if source_clean in ("UK_MHRA", "MHRA", "ALL"):
+        tasks.append(_crawl_mhra())
 
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -156,9 +180,13 @@ async def homepage(
         if source_clean in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA"):
             chgs = [c for c in chgs if "HEALTH_CANADA" in (c.source or "")]
         elif source_clean in ("FDA_SRLC", "FDA"):
-            chgs = [c for c in chgs if "FDA" in (c.source or "")]
+            chgs = [c for c in chgs if "FDA_SRLC" in (c.source or "")]
         elif source_clean in ("AUSTRALIA_TGA", "TGA"):
             chgs = [c for c in chgs if "AUSTRALIA_TGA" in (c.source or "") or "TGA" in (c.source or "")]
+        elif source_clean in ("FDA_MEDWATCH", "MEDWATCH"):
+            chgs = [c for c in chgs if "MEDWATCH" in (c.source or "")]
+        elif source_clean in ("UK_MHRA", "MHRA"):
+            chgs = [c for c in chgs if "MHRA" in (c.source or "")]
 
         d_source = d.source or "FDA_SRLC"
         last_verified = chgs[0].last_verified_at if chgs else (d.updated_at or d.created_at)

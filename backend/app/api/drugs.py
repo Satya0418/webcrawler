@@ -24,6 +24,8 @@ from app.scrapers.fda_srlc_scraper import scraper, parse_fda_date
 from app.ui import export_drug_csv, export_drug_json
 from app.sources.health_canada.infowatch.adapter import adapter as hc_adapter
 from app.sources.australia_tga.adapter import tga_adapter
+from app.sources.fda_medwatch.adapter import medwatch_adapter
+from app.sources.uk_mhra.adapter import mhra_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,7 @@ async def search_drugs(
     q: str = Query(..., min_length=1, description="Search term for drug name or active ingredient"),
     source: Optional[str] = Query(
         None,
-        description="Filter by source: FDA_SRLC or HEALTH_CANADA_INFOWATCH. Omit to search all.",
+        description="Filter by source: FDA_SRLC, HEALTH_CANADA_INFOWATCH, AUSTRALIA_TGA, FDA_MEDWATCH, or UK_MHRA. Omit to search all.",
     ),
     db: Session = Depends(get_db),
 ):
@@ -62,6 +64,18 @@ async def search_drugs(
             await tga_adapter.search(query=query_clean, db=db)
         except Exception as exc:
             logger.error("Australia TGA search error for '%s': %s", query_clean, exc, exc_info=True)
+            db.rollback()
+
+        try:
+            await medwatch_adapter.search(query=query_clean, db=db)
+        except Exception as exc:
+            logger.error("FDA MedWatch search error for '%s': %s", query_clean, exc, exc_info=True)
+            db.rollback()
+
+        try:
+            await mhra_adapter.search(query=query_clean, db=db)
+        except Exception as exc:
+            logger.error("UK MHRA search error for '%s': %s", query_clean, exc, exc_info=True)
             db.rollback()
 
         try:
@@ -175,6 +189,68 @@ async def search_drugs(
             query=query_clean,
             source="HEALTH_CANADA",
             results=results_items,
+        )
+
+    # ── FDA MedWatch path ──────────────────────────────────────────────
+    if source_clean in ("FDA_MEDWATCH", "MEDWATCH"):
+        try:
+            local_drugs = await medwatch_adapter.search(query=query_clean, db=db)
+        except Exception as exc:
+            logger.error("FDA MedWatch search error for '%s': %s", query_clean, exc, exc_info=True)
+            db.rollback()
+            local_drugs = DatabaseService.search_drugs(db, query_clean, source="FDA_MEDWATCH")
+
+        results_items: List[DrugSearchResultItem] = []
+        for d in local_drugs:
+            changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
+            mw_changes = [c for c in changes if "MEDWATCH" in (c.source or "")]
+            last_verified = mw_changes[0].last_verified_at if mw_changes else d.updated_at or d.created_at
+            results_items.append(
+                DrugSearchResultItem(
+                    drug_id=d.id,
+                    drug_name=d.display_name,
+                    active_ingredient=d.active_ingredient,
+                    application_number=d.application_number,
+                    source=d.source or "FDA_MEDWATCH",
+                    safety_change_count=len(mw_changes),
+                    last_verified_at=last_verified,
+                )
+            )
+        return SearchResultResponse(
+            query=query_clean,
+            source="FDA_MEDWATCH",
+            results=results_items,
+        )
+
+    # ── UK MHRA path ──────────────────────────────────────────────────
+    if source_clean in ("UK_MHRA", "MHRA"):
+        try:
+            local_drugs = await mhra_adapter.search(query=query_clean, db=db)
+        except Exception as exc:
+            logger.error("UK MHRA search error for '%s': %s", query_clean, exc, exc_info=True)
+            db.rollback()
+            local_drugs = DatabaseService.search_drugs(db, query_clean, source="UK_MHRA")
+
+        results_items_mhra: List[DrugSearchResultItem] = []
+        for d in local_drugs:
+            changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
+            mhra_changes = [c for c in changes if "MHRA" in (c.source or "")]
+            last_verified = mhra_changes[0].last_verified_at if mhra_changes else d.updated_at or d.created_at
+            results_items_mhra.append(
+                DrugSearchResultItem(
+                    drug_id=d.id,
+                    drug_name=d.display_name,
+                    active_ingredient=d.active_ingredient,
+                    application_number=d.application_number,
+                    source=d.source or "UK_MHRA",
+                    safety_change_count=len(mhra_changes),
+                    last_verified_at=last_verified,
+                )
+            )
+        return SearchResultResponse(
+            query=query_clean,
+            source="UK_MHRA",
+            results=results_items_mhra,
         )
 
     # ── FDA SrLC path (original behaviour) ─────────────────────────────
@@ -301,6 +377,96 @@ async def search_health_canada(
     return SearchResultResponse(
         query=query_clean,
         source="HEALTH_CANADA_INFOWATCH",
+        results=results_items,
+    )
+
+
+@router.get("/search/fda-medwatch", response_model=SearchResultResponse)
+async def search_fda_medwatch(
+    q: str = Query(..., min_length=1, description="Medicine name or active ingredient"),
+    force_refresh: bool = Query(False, description="Force re-crawl even if local data is fresh"),
+    db: Session = Depends(get_db),
+):
+    """
+    Search FDA MedWatch Safety Information and Adverse Event Reporting Program for a medicine.
+    """
+    query_clean = q.strip()
+    try:
+        local_drugs = await medwatch_adapter.search(
+            query=query_clean, db=db, force_refresh=force_refresh
+        )
+    except Exception as exc:
+        logger.error("MedWatch search error for '%s': %s", query_clean, exc, exc_info=True)
+        db.rollback()
+        local_drugs = DatabaseService.search_drugs(db, query_clean, source="FDA_MEDWATCH")
+
+    results_items: List[DrugSearchResultItem] = []
+    for d in local_drugs:
+        changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
+        mw_changes = [c for c in changes if "MEDWATCH" in (c.source or "")]
+        last_verified = (
+            mw_changes[0].last_verified_at if mw_changes else d.updated_at or d.created_at
+        )
+        results_items.append(
+            DrugSearchResultItem(
+                drug_id=d.id,
+                drug_name=d.display_name,
+                active_ingredient=d.active_ingredient,
+                application_number=d.application_number,
+                source=d.source or "FDA_MEDWATCH",
+                safety_change_count=len(mw_changes),
+                last_verified_at=last_verified,
+            )
+        )
+
+    return SearchResultResponse(
+        query=query_clean,
+        source="FDA_MEDWATCH",
+        results=results_items,
+    )
+
+
+@router.get("/search/uk-mhra", response_model=SearchResultResponse)
+async def search_uk_mhra(
+    q: str = Query(..., min_length=1, description="Medicine name or active ingredient"),
+    force_refresh: bool = Query(False, description="Force re-crawl even if local data is fresh"),
+    db: Session = Depends(get_db),
+):
+    """
+    Search UK MHRA Drug Safety Update for a medicine.
+    """
+    query_clean = q.strip()
+    try:
+        local_drugs = await mhra_adapter.search(
+            query=query_clean, db=db, force_refresh=force_refresh
+        )
+    except Exception as exc:
+        logger.error("UK MHRA search error for '%s': %s", query_clean, exc, exc_info=True)
+        db.rollback()
+        local_drugs = DatabaseService.search_drugs(db, query_clean, source="UK_MHRA")
+
+    results_items: List[DrugSearchResultItem] = []
+    for d in local_drugs:
+        changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
+        mhra_changes = [c for c in changes if "MHRA" in (c.source or "")]
+        last_verified = (
+            mhra_changes[0].last_verified_at if mhra_changes else d.updated_at or d.created_at
+        )
+        results_items.append(
+            DrugSearchResultItem(
+                drug_id=d.id,
+                drug_name=d.display_name,
+                active_ingredient=d.active_ingredient,
+                application_number=d.application_number,
+                source=d.source or "UK_MHRA",
+                safety_change_count=len(mhra_changes),
+                last_verified_at=last_verified,
+            )
+        )
+
+    return SearchResultResponse(
+        query=query_clean,
+        source="UK_MHRA",
         results=results_items,
     )
 
