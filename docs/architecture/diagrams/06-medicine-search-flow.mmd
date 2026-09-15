@@ -1,0 +1,40 @@
+flowchart TD
+    Start([User enters query: Ozempic & selects Source]) --> APIEntry["GET /search or GET /api/drugs/search<br/>Parameters: q='Ozempic', source='ALL'"]
+
+    APIEntry --> Normalize["NormalizationService.normalize_drug_name('Ozempic')<br/>-> 'ozempic' (trimmed, lowercase)"]
+
+    Normalize --> CheckDB["Query SQLite Database (medicine_safety.db)<br/>DatabaseService.search_drugs(db, 'ozempic', source)"]
+
+    CheckDB --> DecisionCache{"Records exist in DB<br/>and force_refresh=False?"}
+
+    DecisionCache -->|YES: Cache Hit| BuildCached["Build DrugSearchResultItem list<br/>Calculate safety_change_count<br/>Fetch latest last_verified_at"]
+    BuildCached --> ReturnFast["Return Results Immediately<br/>Response Latency: under 15ms"]
+
+    DecisionCache -->|NO: Cache Miss / Refresh| DispatchCrawl["Initialize Parallel Crawl Tasks (asyncio.gather)<br/>Targeting selected sources or ALL"]
+
+    subgraph ParallelExecution ["Parallel Acquisition (4.0s Timeout Ceiling)"]
+        direction TB
+        C_HC["Health Canada Adapter<br/>Search DPD + InfoWatch"]
+        C_FDA["FDA Crawler & Scraper<br/>Search SrLC ASPX"]
+        C_TGA["Australia TGA Adapter<br/>Search tga.gov.au"]
+        C_MW["FDA MedWatch Adapter<br/>Search FAERS + Recalls"]
+        C_MHRA["UK MHRA Adapter<br/>Search gov.uk/drug-safety-update"]
+    end
+
+    DispatchCrawl --> C_HC
+    DispatchCrawl --> C_FDA
+    DispatchCrawl --> C_TGA
+    DispatchCrawl --> C_MW
+    DispatchCrawl --> C_MHRA
+
+    C_HC --> UpsertDB["DatabaseService.insert_or_update_drug()<br/>Unique Key: (source, normalized_name)<br/>Insert safety changes & version history"]
+    C_FDA --> UpsertDB
+    C_TGA --> UpsertDB
+    C_MW --> UpsertDB
+    C_MHRA --> UpsertDB
+
+    UpsertDB --> CommitDB["session.commit()"]
+    CommitDB --> FinalQuery["Re-query DatabaseService.search_drugs(db, 'ozempic')"]
+    FinalQuery --> BuildResponse["Construct SearchResultResponse<br/>Or render_homepage_html with badges"]
+    ReturnFast --> BuildResponse
+    BuildResponse --> Deliver([Deliver HTTP 200 Response to Client])

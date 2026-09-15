@@ -1,0 +1,92 @@
+flowchart TD
+    subgraph ClientTier ["CLIENT TIER"]
+        UserBrowser["Web Browser (End User)"]
+        RESTClient["REST API Client (Third-Party)"]
+    end
+
+    subgraph Service1 ["SUBSYSTEM 1: MEDICINE SAFETY PLATFORM (FastAPI: Port 8000)"]
+        MainApp["app.main:app"]
+        UIModule["app/ui.py (Server-Side Rendered HTML strings)"]
+        DrugsAPI["app/api/drugs.py"]
+        SafetyAPI["app/api/safety_changes.py"]
+        AdminAPI["app/api/admin.py"]
+        
+        DBService["DatabaseService (app/services/database_service.py)"]
+        NormService["NormalizationService (app/services/normalization.py)"]
+        ChangeService["ChangeDetectionService (SHA-256)"]
+        SQLite_Main[("SQLite Database: backend/medicine_safety.db")]
+    end
+
+    subgraph InProcessCrawlers ["IN-PROCESS REGULATORY CRAWLERS"]
+        FDACrawl["FDACrawler and Scraper (ASPX POST)"]
+        HCCrawl["HealthCanadaAdapter (DPD API + InfoWatch)"]
+        TGACrawl["AustraliaTGAAdapter (HTML Scraper)"]
+        MWCrawl["FDAMedWatchAdapter (openFDA REST + RSS)"]
+        MHRACrawl["UKMHRAAdapter (GOV.UK JSON + ATOM)"]
+    end
+
+    subgraph FallbackRegistries ["IN-MEMORY CURATED FALLBACK REGISTRIES"]
+        TGA_Reg["TGA_CURATED_REGISTRY (Ozempic, Warfarin, etc.)"]
+        MW_Reg["MEDWATCH_CURATED_REGISTRY"]
+        MHRA_Reg["MHRA_CURATED_REGISTRY"]
+    end
+
+    subgraph Service2 ["SUBSYSTEM 2: INTELLIGENT PDF SECTION EXTRACTOR (FastAPI: Port 8001)"]
+        PDFApp["backend.main:app"]
+        PDFExtractAPI["backend/api/extraction.py"]
+        PDFUploadAPI["backend/api/upload.py"]
+        PDFStatic["frontend/ (Static HTML/CSS/JS)"]
+
+        SecExtractor["SectionExtractor Engine"]
+        PyMuPDF["PyMuPDF fitz (Text and Bounding Boxes)"]
+        Tesseract["pytesseract (Local OCR Fallback)"]
+        Plumber["pdfplumber (Vector Table Extraction)"]
+
+        SQLite_PDF[("SQLite Database: pdf_extractor/extractor.db")]
+    end
+
+    subgraph ExternalWebsites ["EXTERNAL REGULATORY WEBSITES"]
+        W_FDA["accessdata.fda.gov"]
+        W_HC["health-products.canada.ca"]
+        W_TGA["www.tga.gov.au/search"]
+        W_MW["fda.gov/safety/medwatch"]
+        W_MHRA["www.gov.uk/drug-safety-update"]
+    end
+
+    UserBrowser --> MainApp
+    UserBrowser --> PDFStatic
+    RESTClient --> DrugsAPI
+
+    MainApp --> UIModule
+    MainApp --> DrugsAPI
+    MainApp --> SafetyAPI
+    MainApp --> AdminAPI
+
+    DrugsAPI --> DBService
+    DrugsAPI --> NormService
+    DrugsAPI --> ChangeService
+
+    DrugsAPI --> FDACrawl
+    DrugsAPI --> HCCrawl
+    DrugsAPI --> TGACrawl
+    DrugsAPI --> MWCrawl
+    DrugsAPI --> MHRACrawl
+
+    FDACrawl -.-> W_FDA
+    HCCrawl -.-> W_HC
+    TGACrawl -.-> W_TGA
+    MWCrawl -.-> W_MW
+    MHRACrawl -.-> W_MHRA
+
+    TGACrawl -.-> TGA_Reg
+    MWCrawl -.-> MW_Reg
+    MHRACrawl -.-> MHRA_Reg
+
+    HCCrawl --> PDFExtractAPI
+    
+    DBService --> SQLite_Main
+    PDFExtractAPI --> SecExtractor
+    SecExtractor --> PyMuPDF
+    SecExtractor --> Tesseract
+    SecExtractor --> Plumber
+    SecExtractor --> SQLite_PDF

@@ -1,0 +1,89 @@
+flowchart TD
+    subgraph ClientLayer ["CLIENT & INTEGRATION TIER"]
+        WebUsers["Web & Mobile Users"]
+        PharmaReviewers["Pharma Compliance Reviewers"]
+        B2BClients["Enterprise B2B API Integrators"]
+    end
+
+    subgraph GatewayLayer ["API GATEWAY & REVERSE PROXY (Nginx / Traefik)"]
+        Gateway["API Gateway / Ingress Controller<br/>• Rate Limiting (Token Bucket)<br/>• Centralized SSL / TLS Termination<br/>• JWT & API Key Authentication<br/>• Request Routing & CORS Enforcement"]
+    end
+
+    ClientLayer --> Gateway
+
+    subgraph CoreServices ["MICROSERVICES TIER"]
+        SearchService["Medicine Search Microservice<br/>(FastAPI - Read-Optimized API)"]
+        CrawlerManager["Regulatory Crawler Coordinator<br/>(Scheduled & Event-Driven Triggers)"]
+        ExtractionService["Clinical Document Extraction Service<br/>(Dedicated PDF / OCR Worker Pool)"]
+        ChangeDetectionService["Audit & Change Tracking Service<br/>(Cryptographic Hashing & Versioning)"]
+        ExportService["Reporting & Export Service<br/>(Async PDF / Excel / CSV Generator)"]
+    end
+
+    Gateway --> SearchService
+    Gateway --> ExtractionService
+    Gateway --> ExportService
+
+    subgraph MessageBrokerTier ["ASYNCHRONOUS EVENT BUS & TASK QUEUES"]
+        Broker["Message Broker & Event Bus<br/>(RabbitMQ / Apache Kafka)"]
+        Q_FDA["Queue: fda.crawl.jobs"]
+        Q_HC["Queue: hc.crawl.jobs"]
+        Q_TGA["Queue: tga.crawl.jobs"]
+        Q_MW["Queue: medwatch.crawl.jobs"]
+        Q_MHRA["Queue: mhra.crawl.jobs"]
+        Q_PDF["Queue: pdf.extraction.jobs"]
+
+        Broker --> Q_FDA
+        Broker --> Q_HC
+        Broker --> Q_TGA
+        Broker --> Q_MW
+        Broker --> Q_MHRA
+        Broker --> Q_PDF
+    end
+
+    CrawlerManager --> Broker
+    SearchService -.->|Cache Miss Trigger| Broker
+
+    subgraph WorkerPoolTier ["DISTRIBUTED WORKER CLUSTERS (Celery / Ray)"]
+        W_FDA_Cluster["FDA Scraper Workers (Headless Browser / Scraping Pool)"]
+        W_HC_Cluster["Health Canada Workers (DPD & InfoWatch)"]
+        W_TGA_Cluster["Australia TGA Workers (Akamai Evasion & Proxy Mesh)"]
+        W_MW_Cluster["MedWatch Workers (openFDA Bulk Streamer)"]
+        W_MHRA_Cluster["UK MHRA Workers (JSON Feed Consumers)"]
+        W_PDF_Cluster["GPU/CPU Scaled PDF OCR Workers (PyMuPDF + Tesseract)"]
+    end
+
+    Q_FDA --> W_FDA_Cluster
+    Q_HC --> W_HC_Cluster
+    Q_TGA --> W_TGA_Cluster
+    Q_MW --> W_MW_Cluster
+    Q_MHRA --> W_MHRA_Cluster
+    Q_PDF --> W_PDF_Cluster
+
+    subgraph DataTier ["ENTERPRISE PERSISTENCE & CACHE TIER"]
+        RedisCluster[("Redis Cluster (Tiered Caching & Rate Limits)<br/>• Hot Drug Record Cache (TTL: 24h)<br/>• Crawl Lock Mutexes (Redlock)")]
+        PgBouncer["PgBouncer Connection Pooler"]
+        PostgresDB[("PostgreSQL 16 High-Availability Cluster<br/>• drugs, safety_changes, audit_versions<br/>• pgvector for Semantic Medicine Matching<br/>• Read Replicas for High-Throughput Search")]
+        ObjectStorage[("S3 / MinIO Object Storage<br/>• Regulatory PDF Archive<br/>• Product Monographs<br/>• Generated Export Bundles")]
+    end
+
+    SearchService <--> RedisCluster
+    SearchService --> PgBouncer
+    PgBouncer --> PostgresDB
+    WorkerPoolTier --> PgBouncer
+    W_PDF_Cluster <--> ObjectStorage
+    ExportService <--> ObjectStorage
+
+    subgraph ObservabilityTier ["MONITORING & OBSERVABILITY"]
+        Prometheus["Prometheus Metrics Collection"]
+        Grafana["Grafana Real-time Architecture Dashboards"]
+        OpenTelemetry["OpenTelemetry Distributed Tracing"]
+        Sentry["Sentry Automated Error & Crash Tracking"]
+    end
+
+    CoreServices -.-> Prometheus
+    CoreServices -.-> OpenTelemetry
+    CoreServices -.-> Sentry
+    WorkerPoolTier -.-> Prometheus
+    WorkerPoolTier -.-> OpenTelemetry
+    WorkerPoolTier -.-> Sentry
+    Prometheus --> Grafana

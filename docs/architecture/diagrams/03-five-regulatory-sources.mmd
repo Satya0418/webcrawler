@@ -1,0 +1,63 @@
+flowchart TD
+    Hub(["MEDICINE SAFETY MULTI-AUTHORITY PLATFORM<br/>(5 Global Regulatory Sources)"])
+
+    Hub --> S1
+    Hub --> S2
+    Hub --> S3
+    Hub --> S4
+    Hub --> S5
+
+    subgraph S1 ["1. US FDA SrLC"]
+        S1_Name["Official: FDA Safety-related Labeling Changes (SrLC)"]
+        S1_URL["URL: accessdata.fda.gov/scripts/cder/safetylabelingchanges"]
+        S1_Code["Code: app/crawler/fda_crawler.py<br/>app/scrapers/fda_srlc_scraper.py"]
+        S1_Proto["Protocol: HTTPS POST (ViewState session) + BeautifulSoup"]
+        S1_Key["Key Identifier: NDA / BLA Application Number"]
+        S1_Data["Data: Boxed Warnings, Warnings & Precautions, Adverse Reactions"]
+    end
+
+    subgraph S2 ["2. Health Canada"]
+        S2_Name["Official: Drug Product Database (DPD) & Health Product InfoWatch"]
+        S2_URL["URL: health-products.canada.ca/dpd-bdpp & recalls-rappels.canada.ca"]
+        S2_Code["Code: app/sources/health_canada/dpd_crawler.py<br/>infowatch/adapter.py"]
+        S2_Proto["Protocol: DPD REST API + InfoWatch Scraper + PDF Extractor"]
+        S2_Key["Key Identifier: 8-digit Drug Identification Number (DIN)"]
+        S2_Data["Data: Product Monographs, Marketed Status, Recall Advisories"]
+    end
+
+    subgraph S3 ["3. Australia TGA"]
+        S3_Name["Official: Therapeutic Goods Administration (TGA)"]
+        S3_URL["URL: www.tga.gov.au/search?keywords="]
+        S3_Code["Code: app/sources/australia_tga/tga_crawler.py<br/>adapter.py"]
+        S3_Proto["Protocol: HTTPS GET (Akamai-resilient browser headers)"]
+        S3_Key["Key Identifier: ARTG Number (AUST R / AUST L)"]
+        S3_Data["Data: Product Information (PI), Consumer Medicine Info (CMI), Alerts"]
+    end
+
+    subgraph S4 ["4. FDA MedWatch"]
+        S4_Name["Official: FDA MedWatch Adverse Event Reporting Program"]
+        S4_URL["URL: www.fda.gov/safety/medwatch & api.fda.gov/drug/event.json"]
+        S4_Code["Code: app/sources/fda_medwatch/medwatch_crawler.py<br/>adapter.py"]
+        S4_Proto["Protocol: openFDA FAERS REST API + MedWatch RSS XML feed"]
+        S4_Key["Key Identifier: MW-FAERS-XXXXXX / MW-RECALL-XXXXXX"]
+        S4_Data["Data: Serious Patient Reactions, Hospitalizations, Class I/II Recalls"]
+    end
+
+    subgraph S5 ["5. UK MHRA"]
+        S5_Name["Official: UK Medicines and Healthcare products Regulatory Agency"]
+        S5_URL["URL: www.gov.uk/drug-safety-update & yellowcard.mhra.gov.uk"]
+        S5_Code["Code: app/sources/uk_mhra/mhra_crawler.py<br/>adapter.py"]
+        S5_Proto["Protocol: GOV.UK Open JSON API + ATOM Feed + Yellow Card Scheme"]
+        S5_Key["Key Identifier: UK Product Licence (PL / PLGB)"]
+        S5_Data["Data: Monthly Drug Safety Updates, CHM Advice, Yellow Card CTA"]
+    end
+
+    S1 --> IngestionHub["Canonical Data Normalization<br/>Standard dictionary with normalized metadata"]
+    S2 --> IngestionHub
+    S3 --> IngestionHub
+    S4 --> IngestionHub
+    S5 --> IngestionHub
+
+    IngestionHub --> DBService["DatabaseService Engine<br/>(app/services/database_service.py)"]
+    DBService --> Storage[("SQLite Relational Store<br/>Scoped by source and drug_name")]
+    Storage --> Delivery["Unified Delivery: Web UI (app/ui.py) & REST API (app/api/drugs.py)"]

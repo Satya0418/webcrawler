@@ -1,0 +1,29 @@
+flowchart TD
+    Operation([Crawling, Extraction, or Search Operation]) --> FailurePoint{"Failure Condition"}
+
+    FailurePoint -->|Network Timeout >4.0s / >30s| E_Timeout["httpx.TimeoutException<br/>(Slow upstream government portal)"]
+    E_Timeout --> H_Timeout["Timeout Handling<br/>1. Log timeout with logger.error<br/>2. Discard URL from visited set<br/>3. Activate pre-indexed Curated Reference Registry<br/>4. Ensure sibling crawlers complete uninterrupted"]
+
+    FailurePoint -->|HTTP 403 / 429 / WAF Block| E_Block["HTTPStatusError (403 Forbidden / 429 Too Many Requests)<br/>(Akamai / Cloudflare Edge Protection)"]
+    E_Block --> H_Block["Anti-Bot Resilience<br/>1. Rotate browser headers (User-Agent, Accept-Language)<br/>2. Apply exponential backoff (0.3s * 2^retry)<br/>3. If persistent, return curated benchmark dataset<br/>4. Mark CrawlRun status as partial"]
+
+    FailurePoint -->|DOM Structure Altered / Malformed HTML| E_Parse["BeautifulSoup Parse Error / Missing Tags"]
+    E_Parse --> H_Parse["Fail-Safe Scraping<br/>1. Log warning: 'Failed to extract section'<br/>2. Return None for missing fields without crash<br/>3. Fall back to textual date/section regex<br/>4. Store partial record with fda_comment flag"]
+
+    FailurePoint -->|SQLAlchemy DB Error / IntegrityError| E_DB["SQLAlchemyError / Constraint Violation"]
+    E_DB --> H_DB["Transaction Isolation<br/>1. db.rollback() to clear poisoned session<br/>2. Log full traceback with exc_info=True<br/>3. Prevent cascading failure to other sources<br/>4. Return existing cached records if present"]
+
+    FailurePoint -->|PDF Extractor Port 8001 Unreachable| E_PDF["httpx.ConnectError / ConnectTimeout (Port 8001)"]
+    E_PDF --> H_PDF["Graceful Degradation<br/>1. Catch ConnectError in _route_pdf_to_extractor()<br/>2. Log: 'PDF extractor not reachable — skipping PDF'<br/>3. Proceed with HTML advisory text only<br/>4. Zero impact on user response latency"]
+
+    FailurePoint -->|Unreadable Scanned PDF| E_OCR["Tesseract OCR Failure / Low Confidence"]
+    E_OCR --> H_OCR["OCR Fallback Pipeline<br/>1. PyMuPDF extracts embedded vector text if any<br/>2. Flag extraction confidence_score < 0.5<br/>3. Record status='partial' in ExtractionRecord<br/>4. Include raw text stream in download files"]
+
+    H_Timeout --> RecoveryLog["Structured Audit Logging<br/>(structlog / standard logging -> CrawlRun.errors)"]
+    H_Block --> RecoveryLog
+    H_Parse --> RecoveryLog
+    H_DB --> RecoveryLog
+    H_PDF --> RecoveryLog
+    H_OCR --> RecoveryLog
+
+    RecoveryLog --> SafeResponse["Return Graceful Partial Response to User<br/>HTTP 200 with available authority records"]

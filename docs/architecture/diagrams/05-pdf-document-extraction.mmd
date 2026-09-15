@@ -1,0 +1,65 @@
+flowchart TD
+    SourceTrigger([Regulatory Document Trigger or User Upload]) --> IngestionPath{Ingestion Source}
+
+    IngestionPath -->|Health Canada InfoWatch| HC_Adapter["HealthCanadaAdapter route_pdf_to_extractor<br/>(app/sources/health_canada/infowatch/adapter.py)"]
+    IngestionPath -->|User UI Upload| WebUpload["POST /api/upload<br/>(pdf_extractor/backend/api/upload.py)"]
+    IngestionPath -->|API Request| APICall["POST /api/extract<br/>(pdf_extractor/backend/api/extraction.py)"]
+
+    HC_Adapter -.->|HTTP POST JSON: url, source| APICall
+    WebUpload --> SaveFile["Save PDF to uploads directory<br/>Generate UUID doc_id"]
+    APICall --> SaveFile
+
+    SaveFile --> Orchestrator["SectionExtractor.extract<br/>(pdf_extractor/backend/extraction/section_extractor.py)"]
+
+    subgraph EnginePipeline ["Deterministic Extraction Pipeline (Deterministic, Zero LLM)"]
+        direction TB
+        
+        Step1["1. PDFReader (pdf/reader.py)<br/>Open via PyMuPDF fitz<br/>Extract text blocks with coordinates and font stats"]
+        
+        Step2{"2. OCR Detector (pdf/ocr.py)<br/>Text density under 50 chars per page?"}
+        
+        Step2_Yes["Run Tesseract OCR on page pixmap<br/>pytesseract.image_to_string"]
+        
+        Step3["3. Margin and Noise Cleaner (pdf/cleaner.py)<br/>Identify recurring headers and footers<br/>Filter page margins by coordinate thresholds"]
+        
+        Step4["4. HeadingDetector (pdf/headings.py)<br/>Multi-signal classifier: numbering regex 16.1<br/>Relative font size clustering and bold flags"]
+        
+        Step5["5. TableExtractor (pdf/tables.py)<br/>pdfplumber graphical vector line detection<br/>Extract structured 2D table matrices"]
+        
+        Step6["6. SectionTreeBuilder (pdf/sections.py)<br/>Build prefix tree hierarchy (16 to 16.1 to 16.1.1)"]
+        
+        Step7["7. BoundaryDetector (extraction/boundary_detector.py)<br/>Strict coordinate boundary cutoff<br/>STOPS strictly before sibling section (16.2) on same page"]
+        
+        Step8["8. ExtractionValidator (extraction/validator.py)<br/>Verify section bounds, table completeness, reading order"]
+    end
+
+    Orchestrator --> Step1
+    Step1 --> Step2
+    Step2 -->|YES: Scanned Page| Step2_Yes
+    Step2_Yes --> Step3
+    Step2 -->|NO: Native Digital| Step3
+    Step3 --> Step4
+    Step4 --> Step5
+    Step5 --> Step6
+    Step6 --> Step7
+    Step7 --> Step8
+
+    Step8 --> ExportEngine["ExportService (pdf_extractor/backend/services/export_service.py)"]
+
+    subgraph Exports ["Multi-Format Output Generation"]
+        E_JSON[".json: Full AST with block bounding boxes"]
+        E_CSV[".csv: Tabular section content"]
+        E_XLSX[".xlsx: Excel workbook with formatted tables"]
+        E_HTML[".html: Renderable report snippet"]
+        E_TXT[".txt: Plaintext extraction"]
+    end
+
+    ExportEngine --> E_JSON
+    ExportEngine --> E_CSV
+    ExportEngine --> E_XLSX
+    ExportEngine --> E_HTML
+    ExportEngine --> E_TXT
+
+    Step8 --> DBStore[("SQLite: extractor.db<br/>(DocumentRecord, ExtractionRecord, ContentBlockRecord)")]
+    Step8 --> ReturnResult["ExtractionResult Payload<br/>Returns to caller or Health Canada adapter"]
+    ReturnResult -.->|Appended to Advisory| SafetyRecord["Stored in medicine_safety.db<br/>as safety_labeling_changes.updated_text"]

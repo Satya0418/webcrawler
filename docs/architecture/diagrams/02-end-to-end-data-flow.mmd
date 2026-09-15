@@ -1,0 +1,52 @@
+flowchart TD
+    Start([User submits Search Query: Ozempic]) --> Step1[1. Clean and Normalize Query<br/>NormalizationService.normalize_drug_name]
+    Step1 --> Step2[2. Check Local Database Cache<br/>DatabaseService.search_drugs]
+    Step2 --> Decision1{"Cached records exist<br/>and fresh within 24h?"}
+
+    Decision1 -->|YES| ReturnCache[Return Cached Records<br/>Response latency under 15ms]
+    Decision1 -->|NO or Force Refresh| Step3[3. Evaluate Source Parameter<br/>source=ALL or specific authority]
+
+    Step3 --> Step4[4. Launch Concurrent Crawling Tasks<br/>asyncio.gather with return_exceptions=True]
+
+    subgraph ParallelCrawl ["5. Parallel Ingestion Streams"]
+        direction TB
+        Stream1["FDA Crawler: ASPX POST searchResult.page<br/>Extract candidate detail URLs"]
+        Stream2["Health Canada: DPD API query + InfoWatch discovery<br/>Fetch monographs and advisories"]
+        Stream3["Australia TGA: Search keywords endpoint<br/>Extract AUST R/L and PI/CMI links"]
+        Stream4["FDA MedWatch: openFDA FAERS REST query<br/>Ingest adverse events and Class I/II recalls"]
+        Stream5["UK MHRA: Query GOV.UK JSON search endpoint<br/>Extract PL/PLGB licences and CHM advice"]
+    end
+
+    Step4 --> Stream1
+    Step4 --> Stream2
+    Step4 --> Stream3
+    Step4 --> Stream4
+    Step4 --> Stream5
+
+    Stream2 -.->|Discovers Monograph PDF Link| PDFRouting{PDF link present?}
+    PDFRouting -.->|YES| PDFCall["POST /api/extract to PDF Extractor<br/>Timeout: 120s"]
+    PDFCall -.-> PDFExtract["Extract structured sections and tables<br/>Append PDF content to advisory"]
+    PDFCall -.->|Connection Error or Timeout| PDFFallback["Fallback gracefully to HTML content"]
+
+    Stream1 --> Step6["6. Ingestion into Canonical Dictionary<br/>dict: name, ingredient, app_num, source, changes"]
+    Stream2 --> Step6
+    Stream3 --> Step6
+    Stream4 --> Step6
+    Stream5 --> Step6
+    PDFExtract --> Step6
+    PDFFallback --> Step6
+
+    Step6 --> Step7["7. Validate Record Structure<br/>ValidationService.validate_record"]
+    Step7 --> Step8["8. Resolve and Upsert Drug Entity<br/>DatabaseService.insert_or_update_drug<br/>Unique Scope: source + drug_name"]
+
+    Step8 --> Step9["9. Change Detection and Audit Log<br/>Compute SHA-256 Hash of content fields"]
+    Step9 --> Decision2{"Content Hash<br/>differs from latest?"}
+
+    Decision2 -->|YES| Step10["Create SafetyChangeVersion row<br/>Increment version_number by 1"]
+    Decision2 -->|NO| Step11["Update last_verified_at timestamp"]
+
+    Step10 --> Step12["10. Commit Database Transaction<br/>session.commit()"]
+    Step11 --> Step12
+    Step12 --> Step13["11. Format Output Payload<br/>SearchResultResponse / Glassmorphic UI HTML"]
+    ReturnCache --> Step13
+    Step13 --> End([Render Response to User / Client])

@@ -1,0 +1,54 @@
+flowchart TD
+    User([User in Web Browser]) --> WebRoute{"URL Navigation"}
+
+    subgraph MainAppUI ["Medicine Safety Frontend (app/ui.py - Server-Side Rendered)"]
+        WebRoute -->|GET / or /search| HomeView["render_homepage_html()"]
+        WebRoute -->|GET /drugs/id| DetailView["render_drug_detail_html()"]
+        WebRoute -->|GET /drugs/id/export| ExportEndpoint["web_drug_export()"]
+        WebRoute -->|GET /architecture| ArchView["architecture_diagram_view()"]
+
+        subgraph HomeComponents ["Homepage View Components"]
+            Header["Global Header: Platform Title and Source Badges<br/>US FDA • Canada DPD • Australia TGA • FDA MedWatch • UK MHRA"]
+            SearchForm["Search Form: Input Field and Source Dropdown Filter<br/>ALL, UK_MHRA, FDA_MEDWATCH, AUSTRALIA_TGA, HEALTH_CANADA, FDA_SRLC"]
+            ResultList["Search Results Grid: Drug Cards with Status Badges<br/>• Drug Brand and Normalized Name<br/>• Active Ingredient and Formulation<br/>• Authority Application and Licence Number<br/>• Safety Changes Count and Last Verified Date<br/>• View Complete History Action Button"]
+        end
+
+        HomeView --> Header
+        Header --> SearchForm
+        SearchForm --> ResultList
+
+        subgraph DetailComponents ["Specialized Detail Page Renderers"]
+            DetailRouter{"Drug Source Dispatcher"}
+            RenderMHRA["render_uk_mhra_drug_detail<br/>• PL/PLGB Licence Tag<br/>• Yellow Card ADR Reporting Scheme Button<br/>• Clinical Advice and Drug Safety Update Bulletins"]
+            RenderMW["render_fda_medwatch_drug_detail<br/>• MedWatch Event and Recall ID Tag<br/>• Post-Marketing Reaction Signals<br/>• Form FDA 3500 Voluntary Reporting Guidelines"]
+            RenderTGA["render_australia_tga_drug_detail<br/>• ARTG AUST R and AUST L Badge<br/>• Sponsor Information and PI/CMI Leaflet Links<br/>• Product Defect and Safety Alerts"]
+            RenderHC["render_health_canada_drug_detail<br/>• DIN Tag and Marketed Status<br/>• Product Monograph PDF Link<br/>• Health Product InfoWatch Advisories"]
+            RenderFDA["render_fda_srlc_drug_detail<br/>• NDA/BLA Application Number<br/>• Boxed Warnings and Labeling Revisions<br/>• Chronological Change Version History"]
+
+            DetailRouter -->|source is UK_MHRA| RenderMHRA
+            DetailRouter -->|source is FDA_MEDWATCH| RenderMW
+            DetailRouter -->|source is AUSTRALIA_TGA| RenderTGA
+            DetailRouter -->|source is HEALTH_CANADA| RenderHC
+            DetailRouter -->|source is FDA_SRLC| RenderFDA
+        end
+
+        DetailView --> DetailRouter
+
+        subgraph ExportActions ["Data Export Functions"]
+            CSVAction["export_drug_csv: RFC 4180 CSV attachment"]
+            JSONAction["export_drug_json: Canonical formatted JSON"]
+        end
+
+        ExportEndpoint --> CSVAction
+        ExportEndpoint --> JSONAction
+    end
+
+    subgraph PDFExtractorUI ["PDF Extractor Subsystem Frontend (pdf_extractor/frontend/)"]
+        WebRoute -->|GET http://localhost:8001/| PDFIndex["index.html Dashboard"]
+        PDFIndex --> Dropzone["Drag-and-Drop PDF Upload Zone"]
+        PDFIndex --> SectionInputs["Main Section and Subsection Selectors (e.g. 16 to 16.1)"]
+        PDFIndex --> TableToggle["Include or Strip Tables Mode Selector"]
+        PDFIndex --> AppJS["app.js Client Orchestration (Fetch API)"]
+        AppJS --> ExtractionAST["Interactive Tree View and Structured Viewer"]
+        AppJS --> Downloads["Direct Download Buttons: XLSX, CSV, JSON, HTML, TXT"]
+    end

@@ -1,0 +1,96 @@
+flowchart TD
+    User([User / Web Browser / API Client]) --> PresentationLayer
+
+    subgraph PresentationLayer ["1. Presentation Layer"]
+        UI["Medicine Safety Web Dashboard<br/>(app/ui.py - Glassmorphic SSR HTML/CSS/JS)"]
+        PDFUI["PDF Extractor Dashboard<br/>(pdf_extractor/frontend - HTML/JS/CSS)"]
+    end
+
+    PresentationLayer --> APILayer
+
+    subgraph APILayer ["2. Application & API Layer (FastAPI)"]
+        MainApp["Medicine Safety API<br/>(app/main.py: Port 8000)"]
+        DrugsRouter["Drugs Router<br/>(app/api/drugs.py)"]
+        SafetyRouter["Safety Changes Router<br/>(app/api/safety_changes.py)"]
+        AdminRouter["Admin Router<br/>(app/api/admin.py)"]
+        PDFApp["PDF Extractor API<br/>(pdf_extractor/backend/main.py: Port 8001)"]
+        ExtractionRouter["Extraction Router<br/>(backend/api/extraction.py)"]
+        UploadRouter["Upload Router<br/>(backend/api/upload.py)"]
+        
+        MainApp --> DrugsRouter
+        MainApp --> SafetyRouter
+        MainApp --> AdminRouter
+        PDFApp --> ExtractionRouter
+        PDFApp --> UploadRouter
+    end
+
+    APILayer --> ServiceLayer
+
+    subgraph ServiceLayer ["3. Core Services & Normalization Layer"]
+        DBService["DatabaseService<br/>(app/services/database_service.py)"]
+        NormService["NormalizationService<br/>(app/services/normalization.py)"]
+        ValidService["ValidationService<br/>(app/services/validation.py)"]
+        ChangeService["ChangeDetectionService<br/>(app/services/change_detection.py - SHA-256)"]
+        CacheService["CacheService<br/>(app/services/cache.py)"]
+        ExportService["ExportService<br/>(app/ui.py - CSV & JSON Generation)"]
+    end
+
+    APILayer --> Orchestrator
+
+    subgraph Orchestrator ["4. Concurrent Ingestion Coordinator (asyncio.gather)"]
+        AsyncGather{"asyncio.gather parallel tasks<br/>4.0s Timeout Ceiling & Error Isolation"}
+    end
+
+    Orchestrator --> RegulatoryAdapters
+
+    subgraph RegulatoryAdapters ["5. Regulatory Source Adapters & Crawlers"]
+        FDAEngine["FDA SrLC Crawler & Scraper<br/>(app/crawler/fda_crawler.py<br/>app/scrapers/fda_srlc_scraper.py)"]
+        HCEngine["Health Canada DPD & InfoWatch<br/>(app/sources/health_canada/dpd_crawler.py<br/>infowatch/adapter.py)"]
+        TGAEngine["Australia TGA Adapter & Crawler<br/>(app/sources/australia_tga/adapter.py<br/>tga_crawler.py)"]
+        MWEngine["FDA MedWatch Adapter & Crawler<br/>(app/sources/fda_medwatch/adapter.py<br/>medwatch_crawler.py)"]
+        MHRAEngine["UK MHRA Adapter & Crawler<br/>(app/sources/uk_mhra/adapter.py<br/>mhra_crawler.py)"]
+    end
+
+    RegulatoryAdapters --> ExternalWebsites
+
+    subgraph ExternalWebsites ["6. External Regulatory Portals (The 5 Sources)"]
+        ExtFDA["US FDA SrLC Portal<br/>(accessdata.fda.gov)"]
+        ExtHC["Health Canada DPD & InfoWatch<br/>(health-products.canada.ca)"]
+        ExtTGA["Australia TGA Portal<br/>(www.tga.gov.au/search)"]
+        ExtMW["FDA MedWatch & openFDA<br/>(fda.gov/safety/medwatch & api.fda.gov)"]
+        ExtMHRA["UK MHRA Drug Safety Update<br/>(www.gov.uk/drug-safety-update)"]
+    end
+
+    FDAEngine -.->|ASPX Form POST| ExtFDA
+    HCEngine -.->|DPD API & Scrape| ExtHC
+    TGAEngine -.->|Akamai-Resilient GET| ExtTGA
+    MWEngine -.->|openFDA JSON & RSS| ExtMW
+    MHRAEngine -.->|JSON API & ATOM| ExtMHRA
+
+    HCEngine -->|HTTP POST /api/extract| PDFSubsystem
+
+    subgraph PDFSubsystem ["7. Intelligent PDF/Document Extraction Subsystem"]
+        SecExtractor["SectionExtractor<br/>(pdf_extractor/backend/extraction/)"]
+        PDFReader["PDFReader & Layout Engine<br/>(PyMuPDF fitz)"]
+        OCREngine["OCRDetector & Tesseract Fallback<br/>(pdf/ocr.py)"]
+        HeadingDet["HeadingDetector<br/>(pdf/headings.py)"]
+        TableExt["TableExtractor<br/>(pdfplumber graphical tables)"]
+        BoundaryDet["BoundaryDetector<br/>(Coordinate-level Sibling Cutoff)"]
+
+        SecExtractor --> PDFReader
+        PDFReader --> HeadingDet
+        HeadingDet --> TableExt
+        TableExt --> BoundaryDet
+        PDFReader -.->|Low Text Density| OCREngine
+    end
+
+    ServiceLayer --> PersistenceLayer
+    PDFSubsystem --> PersistenceLayer
+
+    subgraph PersistenceLayer ["8. Persistence Layer (SQLite Relational Databases)"]
+        DBMain[("medicine_safety.db<br/>(drugs, safety_labeling_changes,<br/>safety_change_versions, crawl_runs)")]
+        DBExtractor[("extractor.db<br/>(documents, extractions,<br/>content_blocks)")]
+    end
+
+    DBService --> DBMain
+    PDFSubsystem --> DBExtractor

@@ -1,0 +1,77 @@
+flowchart TD
+    ClientReq([Search Request / Scheduled Trigger]) --> Manager["FastAPI Controller<br/>(app/main.py / app/api/drugs.py)"]
+    Manager --> WorkerPool{"asyncio.gather parallel tasks<br/>Timeout: 4.0s - 12.0s per engine"}
+
+    subgraph IngestionAdapters ["Source Adapter Layer"]
+        A_FDA["FDACrawler (app/crawler/fda_crawler.py)"]
+        A_HC["HealthCanadaAdapter (app/sources/health_canada/)"]
+        A_TGA["AustraliaTGAAdapter (app/sources/australia_tga/)"]
+        A_MW["FDAMedWatchAdapter (app/sources/fda_medwatch/)"]
+        A_MHRA["UKMHRAAdapter (app/sources/uk_mhra/)"]
+    end
+
+    WorkerPool --> A_FDA
+    WorkerPool --> A_HC
+    WorkerPool --> A_TGA
+    WorkerPool --> A_MW
+    WorkerPool --> A_MHRA
+
+    subgraph DiscoveryMechanism ["URL and Endpoint Discovery"]
+        D_FDA["POST searchResult.page (ViewState)"]
+        D_HC["DPD API query + InfoWatch index"]
+        D_TGA["GET search keywords endpoint"]
+        D_MW["openFDA FAERS JSON + RSS feed"]
+        D_MHRA["GOV.UK JSON API + ATOM feed"]
+    end
+
+    A_FDA --> D_FDA
+    A_HC --> D_HC
+    A_TGA --> D_TGA
+    A_MW --> D_MW
+    A_MHRA --> D_MHRA
+
+    subgraph TransportLayer ["HTTP Fetcher and Resilience (httpx.AsyncClient)"]
+        Fetcher["Async HTTP Fetcher<br/>Browser Headers, SSL Context, Backoff"]
+        RateLimit{"Status Code Check"}
+        RawContent["Raw HTML / JSON / XML / PDF"]
+        FallbackRegistry["Curated Reference Registry<br/>Resilience against CDN blocks and rate limits"]
+        Fetcher --> RateLimit
+        RateLimit -->|200 OK| RawContent
+        RateLimit -->|403 or 429 or Timeout| FallbackRegistry
+    end
+
+    D_FDA --> Fetcher
+    D_HC --> Fetcher
+    D_TGA --> Fetcher
+    D_MW --> Fetcher
+    D_MHRA --> Fetcher
+
+    subgraph ParserLayer ["Document Parsers and Content Extractors"]
+        P_FDA["FDASRLCScraper: Table parser"]
+        P_HC["DPD Parser + InfoWatch Classifier"]
+        P_TGA["TGA HTML Document Parser"]
+        P_MW["openFDA JSON Parser + XML"]
+        P_MHRA["GOV.UK JSON and ATOM Parser"]
+    end
+
+    RawContent --> P_FDA
+    RawContent --> P_HC
+    RawContent --> P_TGA
+    RawContent --> P_MW
+    RawContent --> P_MHRA
+
+    Normalizer["NormalizationService<br/>(app/services/normalization.py)"]
+    Validator["ValidationService<br/>(app/services/validation.py)"]
+    Hasher["ChangeDetectionService<br/>SHA-256 Content Hash"]
+    Storage[("DatabaseService to SQLite Storage<br/>(medicine_safety.db)")]
+
+    P_FDA --> Normalizer
+    P_HC --> Normalizer
+    P_TGA --> Normalizer
+    P_MW --> Normalizer
+    P_MHRA --> Normalizer
+    FallbackRegistry --> Normalizer
+
+    Normalizer --> Validator
+    Validator --> Hasher
+    Hasher --> Storage

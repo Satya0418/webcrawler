@@ -1,0 +1,48 @@
+flowchart TD
+    ClientReq([Inbound Client Request or Outbound Crawler Request]) --> SecurityCheck{"Traffic Classification"}
+
+    SecurityCheck -->|Inbound Web or API Request| CORSCheck{"CORS Validation (CORSMiddleware)"}
+    CORSCheck -->|Origin in CORS_ORIGINS| AllowCORS["Allow Request Headers"]
+    CORSCheck -->|Wildcard or Web Portal| AllowPublic["Allow Public Search Navigation"]
+
+    InputValidation{"Parameter Validation (Pydantic and FastAPI Query)"}
+    SanitizeQuery["Sanitize Search Query<br/>Prevent SQL Injection via SQLAlchemy ORM Param Binding"]
+    FormatCheck["Validate Export Format String (CSV or JSON)"]
+    Reject422["HTTP 422 Unprocessable Entity"]
+
+    AllowCORS --> InputValidation
+    AllowPublic --> InputValidation
+    InputValidation -->|Valid query string| SanitizeQuery
+    InputValidation -->|Valid format flag| FormatCheck
+    InputValidation -->|Invalid Input| Reject422
+
+    APIKeyCheck{"Endpoint Protected? (e.g. PDF Extractor B2B)"}
+    ValidateKey["Validate Token against Config"]
+    AllowExecution["Proceed to Controller Execution"]
+    Reject401["HTTP 401 Unauthorized"]
+
+    SanitizeQuery --> APIKeyCheck
+    FormatCheck --> APIKeyCheck
+    APIKeyCheck -->|X-API-Key Header Present| ValidateKey
+    APIKeyCheck -->|Public Medicine Search| AllowExecution
+    ValidateKey -->|Valid| AllowExecution
+    ValidateKey -->|Invalid| Reject401
+
+    SecurityCheck -->|Outbound Regulatory Crawl| InspectPortal{"Target Authority Site"}
+    ApplyHeaders["Apply Compliant Browser Headers<br/>• Realistic User-Agent<br/>• Accept and Language Headers<br/>• Strict Read-Only GET and POST"]
+    InspectPortal -->|US FDA, TGA, MHRA, Health Canada| ApplyHeaders
+
+    DispatchHTTP["httpx.AsyncClient Execution"]
+    ApplyHeaders --> DispatchHTTP
+
+    DetectChallenge{"WAF or Bot Challenge Detected?<br/>(Akamai / Cloudflare / CAPTCHA)"}
+    DispatchHTTP --> DetectChallenge
+
+    ProcessData["Process Regulatory Data"]
+    DetectChallenge -->|NO: Standard HTML or JSON| ProcessData
+
+    DetectChallenge -->|YES: Human Verification or CAPTCHA Detected| Step1["1. DO NOT attempt automated CAPTCHA bypass<br/>(Strict Regulatory Compliance)"]
+    Step1 --> Step2["2. Log security challenge event with timestamp and URL"]
+    Step2 --> Step3["3. Mark source temporarily restricted in CrawlRun"]
+    Step3 --> Step4["4. Fallback to Verified Curated Reference Registry<br/>(Pre-indexed authoritative government data)"]
+    Step4 --> Step5["5. Serve verified regulatory dataset to user without outage"]

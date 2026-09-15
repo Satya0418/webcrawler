@@ -1,0 +1,51 @@
+flowchart TD
+    ClientReq([Client HTTP Request]) --> AppEntry["app.main:app (FastAPI)"]
+
+    AppEntry --> Middleware["Middleware Stack<br/>- CORSMiddleware (allow_origins)<br/>- Exception Handlers<br/>- Request Logging"]
+
+    Middleware --> RouterHub{"API / Web Router Hub"}
+
+    subgraph Routers ["API Routers (backend/app/api/)"]
+        RouterHub --> R_Drugs["drugs.py: /api/drugs<br/>- /search, /sync<br/>- /{id}, /{id}/safety-changes<br/>- /search/{source}"]
+        RouterHub --> R_Safety["safety_changes.py: /api/safety-changes<br/>- /changes, /{id}/versions<br/>- /verify, /diff"]
+        RouterHub --> R_Admin["admin.py: /api/admin<br/>- /crawl, /crawl-status<br/>- /stats, /health"]
+        RouterHub --> R_Web["main.py Web Routes<br/>- GET / (homepage search)<br/>- GET /drugs/{id} (detail view)<br/>- GET /drugs/{id}/export (CSV/JSON)<br/>- GET /architecture (diagram view)"]
+    end
+
+    subgraph ServiceLayer ["Service Layer (backend/app/services/)"]
+        R_Drugs --> DBService["DatabaseService<br/>- insert_or_update_drug()<br/>- save_safety_change()<br/>- search_drugs()<br/>- get_safety_changes_by_drug_id()"]
+        R_Safety --> DBService
+        R_Admin --> DBService
+        R_Web --> DBService
+        R_Drugs --> NormService["NormalizationService<br/>- normalize_drug_name()<br/>- normalize_text()<br/>- clean_html()"]
+        R_Safety --> NormService
+        R_Drugs --> ValidService["ValidationService<br/>- validate_record()<br/>- validate_dates()"]
+        R_Safety --> ValidService
+        DBService --> ChangeService["ChangeDetectionService<br/>- generate_content_hash()<br/>- detect_changes() (SHA-256)"]
+        R_Drugs --> CacheServ["CacheService<br/>- Redis / Memory Cache"]
+        R_Admin --> CacheServ
+    end
+
+    subgraph AdaptersLayer ["Regulatory Ingestion Adapters (backend/app/sources/)"]
+        AdapterHub{"Source Orchestrator<br/>asyncio.gather"}
+        R_Drugs --> AdapterHub
+        R_Web --> AdapterHub
+        AdapterHub --> A_FDA["FDACrawler (app/crawler/fda_crawler.py)<br/>scraper (app/scrapers/fda_srlc_scraper.py)"]
+        AdapterHub --> A_HC["hc_adapter (app/sources/health_canada/infowatch/adapter.py)<br/>dpd_crawler (dpd_crawler.py)"]
+        AdapterHub --> A_TGA["tga_adapter (app/sources/australia_tga/adapter.py)<br/>tga_crawler (tga_crawler.py)"]
+        AdapterHub --> A_MW["medwatch_adapter (app/sources/fda_medwatch/adapter.py)<br/>medwatch_crawler (medwatch_crawler.py)"]
+        AdapterHub --> A_MHRA["mhra_adapter (app/sources/uk_mhra/adapter.py)<br/>mhra_crawler (mhra_crawler.py)"]
+    end
+
+    subgraph BackgroundLayer ["Background Workers & Schedulers"]
+        Worker["Celery Worker (app/workers/fda_worker.py)<br/>- crawl_fda_task<br/>- scheduled_crawl_task"]
+        Scheduler["Celery Beat / Systemd Scheduler<br/>(systemd/medicine-scheduler.service)"]
+        Scheduler -.-> Worker
+    end
+
+    subgraph ExternalServices ["External Subsystem Integration"]
+        A_HC -->|HTTP POST /api/extract| ExtPDF["PDF Extractor Microservice<br/>(pdf_extractor/backend/main.py: Port 8001)"]
+    end
+
+    DBService --> SessionFactory["SQLAlchemy SessionLocal (app/database.py)"]
+    SessionFactory --> SQLiteDB[("SQLite Database<br/>backend/medicine_safety.db")]

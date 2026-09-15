@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multi-Authority Medicine Safety: Complete Workflow Architecture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        darkMode: true,
+        background: '#0a0e17',
+        primaryColor: '#1e293b',
+        primaryBorderColor: '#38bdf8',
+        primaryTextColor: '#f8fafc',
+        lineColor: '#38bdf8',
+        textColor: '#e2e8f0'
+      }
+    });
+  </script>
+  <style>
+    :root {
+      --bg-primary: #0a0e17;
+      --bg-secondary: #111827;
+      --bg-card: rgba(17, 24, 39, 0.85);
+      --border-card: rgba(255, 255, 255, 0.1);
+      --border-glow: rgba(56, 189, 248, 0.4);
+      --accent-cyan: #38bdf8;
+      --accent-blue: #3b82f6;
+      --accent-purple: #a855f7;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      line-height: 1.6;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 25%, rgba(168, 85, 247, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 50% 80%, rgba(16, 185, 129, 0.06) 0%, transparent 50%),
+        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+    }
+
+    header {
+      padding: 1.25rem 2.5rem;
+      border-bottom: 1px solid var(--border-card);
+      backdrop-filter: blur(16px);
+      background: rgba(10, 14, 23, 0.9);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      font-weight: 800;
+      font-size: 1.25rem;
+      letter-spacing: -0.025em;
+      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .header-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      padding: 0.45rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border-card);
+      background: rgba(255, 255, 255, 0.03);
+      transition: all 0.2s ease;
+      margin-left: 0.5rem;
+    }
+
+    .header-links a:hover {
+      color: var(--text-primary);
+      border-color: var(--accent-cyan);
+      background: rgba(56, 189, 248, 0.1);
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2.5rem 2rem;
+    }
+
+    .hero-section {
+      text-align: center;
+      margin-bottom: 3.5rem;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 1rem;
+      border-radius: 9999px;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: var(--accent-cyan);
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-size: 2.75rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-subtitle {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      max-width: 850px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-card);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 2.5rem;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+      transition: border-color 0.3s ease;
+    }
+
+    .card:hover {
+      border-color: var(--border-glow);
+    }
+
+    .card-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text-primary);
+    }
+
+    .card-title .icon {
+      font-size: 1.5rem;
+    }
+
+    .diagram-image-container {
+      text-align: center;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      margin-bottom: 1.5rem;
+      background: #000;
+    }
+
+    .diagram-image-container img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+      border-radius: 12px;
+    }
+
+    .mermaid-container {
+      background: rgba(10, 14, 23, 0.95);
+      border-radius: 12px;
+      padding: 2rem;
+      border: 1px solid var(--border-card);
+      overflow-x: auto;
+      margin-bottom: 1.5rem;
+    }
+
+    /* Grid of 5 Authorities */
+    .authorities-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.25rem;
+      margin-top: 1.5rem;
+    }
+
+    .auth-item {
+      background: rgba(17, 24, 39, 0.6);
+      border: 1px solid var(--border-card);
+      border-radius: 12px;
+      padding: 1.25rem;
+      transition: all 0.25s ease;
+    }
+
+    .auth-item:hover {
+      transform: translateY(-3px);
+      border-color: var(--accent-cyan);
+      background: rgba(56, 189, 248, 0.05);
+    }
+
+    .auth-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+
+    .badge-fda { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); }
+    .badge-hc { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+    .badge-tga { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
+    .badge-mw { background: rgba(244, 63, 94, 0.2); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.4); }
+    .badge-mhra { background: rgba(0, 48, 120, 0.4); color: #93c5fd; border: 1px solid rgba(29, 112, 184, 0.6); }
+
+    .auth-title {
+      font-weight: 700;
+      font-size: 1.05rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .auth-domain {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--accent-cyan);
+      margin-bottom: 0.65rem;
+    }
+
+    .auth-desc {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      line-height: 1.45;
+    }
+
+    .auth-key {
+      margin-top: 0.75rem;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    footer {
+      text-align: center;
+      padding: 2.5rem;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border-card);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">
+      <span>🌐</span> Medicine Safety Architecture
+    </div>
+    <div class="header-links">
+      <a href="/">🔍 Back to Live Search</a>
+      <a href="/docs">📚 API Swagger Docs</a>
+    </div>
+  </header>
+
+  <main class="container">
+    
+    <div class="hero-section">
+      <div class="badge-pill">⚡ Enterprise Multi-Authority Architecture</div>
+      <h1>How All 5 Websites Are Crawled & Processed</h1>
+      <p class="hero-subtitle">
+        A deterministic, non-blocking asynchronous pipeline that concurrently crawls international regulatory databases, normalizes heterogenous clinical advisories, detects revisions, and stores harmonized intelligence into SQLite.
+      </p>
+    </div>
+
+    <!-- Master Architecture Visual Diagram -->
+    <section class="card">
+      <h2 class="card-title"><span class="icon">🖼️</span> High-Resolution System Architecture Schematic</h2>
+      <div class="diagram-image-container">
+        <img src="/architecture/multi_authority_architecture.jpg" alt="Multi-Authority System Architecture Diagram" onerror="this.src='/docs/architecture/multi_authority_architecture.jpg'; this.onerror=function(){this.style.display='none';};" />
+      </div>
+      <p style="color: var(--text-secondary); font-size: 0.95rem; text-align: center;">
+        Figure 1: Full-stack pipeline connecting 5 international regulatory streams, asynchronous extraction adapters, relational SQLite persistence, and multi-country drug safety dashboard.
+      </p>
+    </section>
+
+    <!-- Interactive 5-Way System Flowchart -->
+    <section class="card">
+      <h2 class="card-title"><span class="icon">🔄</span> End-to-End Processing Workflow (Mermaid Diagram)</h2>
+      <div class="mermaid-container">
+        <pre class="mermaid">
+flowchart TD
+    User([User Search: 'Ozempic' / 'Warfarin' / 'Aspirin']) --> Router[FastAPI Orchestration Controller<br/>app/api/drugs.py & app/main.py]
+
+    subgraph ParallelEngines [Concurrent Crawler Streams: asyncio.gather]
+        Router -->|Live Query| FDA[🇺🇸 US FDA SrLC<br/>accessdata.fda.gov]
+        Router -->|Live Query| HC[🍁 Health Canada<br/>health-products.canada.ca]
+        Router -->|Live Query| TGA[🇦🇺 Australia TGA<br/>tga.gov.au/search]
+        Router -->|Live Query| MW[🚨 FDA MedWatch<br/>fda.gov/safety/medwatch & openFDA]
+        Router -->|Live Query| MHRA[🇬🇧 UK MHRA<br/>gov.uk/drug-safety-update & Yellow Card]
+    end
+
+    subgraph ExtractionLayer [Specialized Extraction & Parsing Layer]
+        FDA --> P1[ASPX Form & ViewState Scraper<br/>Extracts: NDA/BLA, Boxed Warnings,<br/>Warnings & Precautions, Adverse Reactions]
+        HC --> P2[DPD Table & InfoWatch Scraper<br/>Extracts: 8-digit DIN, Dosage Form,<br/>Product Monographs, Canadian Advisories]
+        TGA --> P3[TGA Register Search Scraper<br/>Extracts: AUST R/L, Sponsor Name,<br/>PI / CMI Leaflets, Australian Alerts]
+        MW --> P4[MedWatch Multi-Stream Scraper<br/>Extracts: FAERS Post-Marketing Reactions,<br/>Recalls, Form 3500 Direct Guidelines]
+        MHRA --> P5[GOV.UK JSON & ATOM Scraper<br/>Extracts: PL/PLGB Licences, Clinical Updates,<br/>Yellow Card Adverse Reporting Portal]
+    end
+
+    subgraph AdapterLayer [Data Normalization & Adapters Layer]
+        P1 --> A1[FDA Adapter<br/>source: FDA_SRLC<br/>Key: NDA-209637]
+        P2 --> A2[Canada Adapter<br/>source: HEALTH_CANADA<br/>Key: DIN 02471469]
+        P3 --> A3[TGA Adapter<br/>source: AUSTRALIA_TGA<br/>Key: AUST R 308323]
+        P4 --> A4[MedWatch Adapter<br/>source: FDA_MEDWATCH<br/>Key: MW-FAERS-209637]
+        P5 --> A5[UK MHRA Adapter<br/>source: UK_MHRA<br/>Key: PLGB 16950/0333]
+    end
+
+    subgraph StorageLayer [Relational Persistence: SQLite medicine_safety.db]
+        A1 & A2 & A3 & A4 & A5 --> DBService[DatabaseService Engine<br/>app/services/database_service.py]
+        DBService --> DrugsTbl[(drugs Table<br/>Scoped by source + drug_name)]
+        DBService --> ChangesTbl[(safety_labeling_changes Table<br/>Clinical advisories & warnings)]
+        ChangesTbl --> AuditTbl[(safety_change_versions Table<br/>SHA-256 audit revision tracking)]
+    end
+
+    subgraph DeliveryLayer [Unified Delivery]
+        DrugsTbl & ChangesTbl --> WebApp[Interactive Web Dashboard<br/>Country Badges & Detail Cards]
+        DrugsTbl & ChangesTbl --> RestAPI[REST API Endpoints<br/>GET /api/drugs/search?q=query&source=ALL]
+        DrugsTbl & ChangesTbl --> Export[Instant Structured Export<br/>CSV & JSON Downloads]
+    end
+        </pre>
+      </div>
+    </section>
+
+    <!-- Asynchronous Execution Sequence Diagram -->
+    <section class="card">
+      <h2 class="card-title"><span class="icon">⏱️</span> Non-Blocking Asynchronous Sequence Flow</h2>
+      <div class="mermaid-container">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Client as User / REST Client
+    participant API as FastAPI Orchestrator (app/api/drugs.py)
+    participant Cache as Local SQLite Cache
+    participant FDA as 🇺🇸 US FDA SrLC
+    participant HC as 🍁 Health Canada
+    participant TGA as 🇦🇺 Australia TGA
+    participant MW as 🚨 FDA MedWatch
+    participant MHRA as 🇬🇧 UK MHRA
+    participant DB as SQLite (medicine_safety.db)
+
+    Client->>API: GET /api/drugs/search?q=Ozempic&source=ALL
+    API->>Cache: Query cached entries for 'Ozempic' across all 5 authorities
+
+    alt All Sources Cached and Fresh (<24h TTL)
+        Cache-->>API: Return cached records for all 5 authorities
+        API-->>Client: 200 OK (Instant JSON Response in <15ms)
+    else Cache Miss or Partial
+        par Concurrent Live Crawling (asyncio.gather)
+            API->>FDA: Async crawl accessdata.fda.gov (POST ViewState)
+            API->>HC: Async query health-products.canada.ca (DPD + InfoWatch)
+            API->>TGA: Async search tga.gov.au/search?keywords=Ozempic
+            API->>MW: Async query openFDA FAERS API & RSS feeds
+            API->>MHRA: Async query gov.uk/drug-safety-update.json
+        end
+
+        par Parallel Response Parsing & Normalization
+            FDA-->>API: 200 OK: NDA-209637, 27 Safety Changes
+            HC-->>API: 200 OK: DIN 02471469, 7 Safety Advisories
+            TGA-->>API: 200 OK: AUST R 308323, 3 PI Leaflets & Alerts
+            MW-->>API: 200 OK: MW-FAERS-209637, 7 Adverse Event Signals
+            MHRA-->>API: 200 OK: PLGB 16950/0333, 5 Drug Safety Updates
+        end
+
+        API->>DB: Begin Database Transaction
+        API->>DB: Upsert 'drugs' rows (scoped by source + drug_name)
+        API->>DB: Insert 'safety_labeling_changes' (warnings, clinical advice)
+        API->>DB: Compute SHA-256 and archive new 'safety_change_versions'
+        DB-->>API: Commit Transaction
+        
+        API-->>Client: 200 OK: Consolidated 5-authority JSON payload
+    end
+        </pre>
+      </div>
+    </section>
+
+    <!-- The 5 Integrated Authorities Details -->
+    <section class="card">
+      <h2 class="card-title"><span class="icon">🏛️</span> Detailed Breakdown of All 5 Website Data Sources</h2>
+      <div class="authorities-grid">
+        
+        <div class="auth-item">
+          <span class="auth-badge badge-fda">🇺🇸 US FDA SrLC</span>
+          <div class="auth-title">Drugs@FDA & SrLC</div>
+          <div class="auth-domain">accessdata.fda.gov</div>
+          <p class="auth-desc">Crawls ASPX form search results, maintains session ViewState, extracts approval dates, active ingredients, and parses Boxed Warnings and Adverse Reactions.</p>
+          <div class="auth-key">Key ID: NDA-XXXXXX / BLA-XXXXXX</div>
+        </div>
+
+        <div class="auth-item">
+          <span class="auth-badge badge-hc">🍁 Health Canada</span>
+          <div class="auth-title">DPD & InfoWatch</div>
+          <div class="auth-domain">health-products.canada.ca</div>
+          <p class="auth-desc">Queries Canada Drug Product Database (DPD) for active DINs, dosage forms, routes, Product Monograph links, and pairs with InfoWatch safety advisories.</p>
+          <div class="auth-key">Key ID: DIN XXXXXXXX</div>
+        </div>
+
+        <div class="auth-item">
+          <span class="auth-badge badge-tga">🇦🇺 Australia TGA</span>
+          <div class="auth-title">Therapeutic Goods Admin</div>
+          <div class="auth-domain">tga.gov.au/search</div>
+          <p class="auth-desc">Crawls TGA search portal with Akamai-resilient browser headers, extracts registered goods, sponsor information, and Australian Product Information (PI/CMI).</p>
+          <div class="auth-key">Key ID: AUST R / AUST L</div>
+        </div>
+
+        <div class="auth-item">
+          <span class="auth-badge badge-mw">🚨 FDA MedWatch</span>
+          <div class="auth-title">MedWatch & FAERS</div>
+          <div class="auth-domain">fda.gov/safety/medwatch</div>
+          <p class="auth-desc">Ingests live MedWatch Safety Alerts RSS feed, queries openFDA FAERS adverse drug reaction endpoints, tracks Class I/II recalls, and links to Form 3500.</p>
+          <div class="auth-key">Key ID: MW-FAERS-XXXXXX</div>
+        </div>
+
+        <div class="auth-item">
+          <span class="auth-badge badge-mhra">🇬🇧 UK MHRA</span>
+          <div class="auth-title">Drug Safety Update</div>
+          <div class="auth-domain">gov.uk/drug-safety-update</div>
+          <p class="auth-desc">Queries live GOV.UK JSON search endpoint and ATOM feed for monthly bulletins, extracts UK Product Licences (PL/PLGB), and links to Yellow Card reporting.</p>
+          <div class="auth-key">Key ID: PL / PLGB XXXXX/XXXX</div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Relational Database Schema -->
+    <section class="card">
+      <h2 class="card-title"><span class="icon">💾</span> SQLite Relational Schema & Collision Prevention (Mermaid ERD)</h2>
+      <div class="mermaid-container">
+        <pre class="mermaid">
+erDiagram
+    DRUGS ||--o{ SAFETY_LABELING_CHANGES : "has many"
+    SAFETY_LABELING_CHANGES ||--o{ SAFETY_CHANGE_VERSIONS : "has audit history"
+
+    DRUGS {
+        int drug_id PK "Auto-increment primary key"
+        string drug_name "Normalized Brand Name (e.g. OZEMPIC)"
+        string active_ingredient "Normalized Active Substance (e.g. SEMAGLUTIDE)"
+        string application_number "Authority ID (NDA, DIN, AUST R, MW-FAERS, PLGB)"
+        string source "Source: FDA_SRLC, HEALTH_CANADA, AUSTRALIA_TGA, FDA_MEDWATCH, UK_MHRA"
+        datetime created_at "Initial ingestion timestamp"
+        datetime last_verified_at "Last checked timestamp"
+    }
+
+    SAFETY_LABELING_CHANGES {
+        int change_id PK "Auto-increment primary key"
+        int drug_id FK "References DRUGS(drug_id)"
+        string section_name "e.g. BOXED WARNING, ADVERSE REACTIONS, CLINICAL ADVICE"
+        string summary "Brief summary of warning or update"
+        text description "Complete regulatory advisory text"
+        datetime change_date "Publication or effective date"
+        string content_hash "SHA-256 hash for revision tracking"
+    }
+
+    SAFETY_CHANGE_VERSIONS {
+        int version_id PK "Auto-increment primary key"
+        int change_id FK "References SAFETY_LABELING_CHANGES(change_id)"
+        int version_number "Sequential revision (1, 2, 3...)"
+        text previous_content "Historical advisory text"
+        string previous_hash "Previous SHA-256 hash"
+        datetime detected_at "Detection timestamp of modification"
+    }
+        </pre>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    Medicine Safety Regulatory Intelligence Platform &bull; Multi-Jurisdiction Crawling & Extraction Engine
+  </footer>
+
+</body>
+</html>

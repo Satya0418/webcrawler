@@ -1,0 +1,101 @@
+erDiagram
+    DRUGS ||--o{ SAFETY_LABELING_CHANGES : "has many (1:N)"
+    SAFETY_LABELING_CHANGES ||--o{ SAFETY_CHANGE_VERSIONS : "has audit history (1:N)"
+    CRAWL_RUNS ||--o{ DRUGS : "monitors discovery"
+
+    DOCUMENTS ||--o{ EXTRACTIONS : "has many (1:N)"
+    EXTRACTIONS ||--o{ CONTENT_BLOCKS : "contains (1:N)"
+
+    DRUGS {
+        int id PK "Primary Key (Integer Auto-Inc)"
+        string display_name "Original Display Name (e.g. OZEMPIC)"
+        string normalized_name "Indexed Search Key (e.g. ozempic)"
+        string active_ingredient "Normalized Active Substance"
+        string application_number "Authority ID (NDA-XXXXXX, DIN, AUST R, PLGB)"
+        string source "Regulatory Authority Identifier"
+        datetime created_at "First ingestion timestamp"
+        datetime updated_at "Last modification timestamp"
+    }
+
+    SAFETY_LABELING_CHANGES {
+        int id PK "Primary Key (Integer Auto-Inc)"
+        int drug_id FK "Foreign Key -> drugs.id (Cascade Delete)"
+        string source "Authority Source Identifier"
+        string source_record_id "Upstream Unique Reference ID"
+        string section "Labeling / Clinical Section"
+        string change_type "Type: Boxed Warning, Advisory, Recall"
+        datetime source_date "Upstream published date"
+        datetime approval_date "Regulatory approval date"
+        datetime effective_date "Legal effective date"
+        text original_text "Historical or pre-revision text"
+        text updated_text "New or revised safety advisory text"
+        text fda_comment "Regulatory review or CHM comment"
+        string source_url "Deep link to source advisory"
+        string content_hash "SHA-256 hash of content fields"
+        datetime first_seen_at "Initial detection timestamp"
+        datetime last_verified_at "Last verification timestamp"
+        datetime created_at "Creation timestamp"
+        datetime updated_at "Modification timestamp"
+    }
+
+    SAFETY_CHANGE_VERSIONS {
+        int id PK "Primary Key (Integer Auto-Inc)"
+        int safety_change_id FK "Foreign Key -> safety_labeling_changes.id"
+        int version_number "Sequential Version (1, 2, 3...)"
+        string content_hash "SHA-256 hash at time of revision"
+        text original_text "Historical text version"
+        text updated_text "Updated text version"
+        text normalized_content "Normalized comparison payload"
+        datetime retrieved_at "Timestamp of capture"
+        datetime created_at "Row creation timestamp"
+    }
+
+    CRAWL_RUNS {
+        int id PK "Primary Key (Integer Auto-Inc)"
+        string source "Regulatory Source Identifier"
+        datetime started_at "Run start timestamp"
+        datetime completed_at "Run completion timestamp"
+        string status "pending, running, success, failed"
+        int pages_requested "Pages requested"
+        int pages_crawled "Pages successfully crawled"
+        int records_found "Total records found"
+        int records_added "New records inserted"
+        int records_changed "Existing records updated"
+        int records_unchanged "Unchanged records"
+        text errors "JSON serialized array of error logs"
+        datetime created_at "Creation timestamp"
+    }
+
+    DOCUMENTS {
+        string id PK "UUID Primary Key (char 36)"
+        string filename "Original PDF Filename"
+        string file_path "Absolute Filesystem Path"
+        int total_pages "Total page count"
+        datetime created_at "Upload timestamp"
+    }
+
+    EXTRACTIONS {
+        string id PK "UUID Primary Key (char 36)"
+        string document_id FK "Foreign Key -> documents.id"
+        string main_section "Parent Heading (e.g. 16)"
+        string target_subsection "Target Subheading (e.g. 16.1)"
+        int start_page "Extraction start page"
+        int end_page "Extraction boundary page"
+        string status "success, partial, failed"
+        float confidence_score "Extraction confidence (0.0 - 1.0)"
+        text included_sections "JSON array of included subsections"
+        text excluded_sections "JSON array of excluded sibling sections"
+        datetime created_at "Extraction timestamp"
+    }
+
+    CONTENT_BLOCKS {
+        string id PK "Content Hash UUID (char 64)"
+        string extraction_id FK "Foreign Key -> extractions.id"
+        string block_type "paragraph, heading, table, list_item"
+        int page_num "Page number (1-based)"
+        string section_number "Section prefix (e.g. 16.1.2)"
+        int reading_order "Topological reading order index"
+        text text "Extracted text content"
+        string bbox_json "Bounding box coordinates"
+        text content_json "Structured table matrix JSON"
+    }

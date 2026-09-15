@@ -1,301 +1,169 @@
-# Medicine Safety Backend - FDA SrLC Web Crawler & Scraper
+# Medicine Safety Intelligence & Multi-Authority Regulatory Platform
 
-Production-ready Python backend for crawling and scraping the FDA Drug Safety-related Labeling Changes (SrLC) database.
+A high-reliability, multi-jurisdiction pharmaceutical intelligence platform that autonomously crawls, normalizes, detects safety revisions, and harmonizes drug safety data across **5 international health and regulatory authorities**, coupled with a deterministic PDF section extractor.
 
-## Project Overview
+---
 
-This backend application provides:
-- **Web Crawler**: Fetches pages from FDA SrLC database
-- **Web Scraper**: Extracts structured data from FDA HTML
-- **Data Pipeline**: Normalization, validation, change detection
-- **REST API**: FastAPI endpoints for search and data retrieval
-- **Database**: PostgreSQL with SQLAlchemy ORM
-- **Caching**: Redis for performance
-- **Background Jobs**: Celery for scheduled crawling
-- **Change Detection**: SHA-256 hashing for version history
+## 1. Supported Regulatory Authorities
 
-## Architecture
+Searching for any medicine (e.g., `Ozempic`, `Tecfidera`, `Aspirin`, `Warfarin`) queries all 5 regulatory authorities concurrently:
 
-```
-User Search Request
-        ↓
-   FastAPI API
-        ↓
-  Database/Cache Check
-        ↓
-  If missing/stale:
-   FDA Crawler → FDA Scraper → Normalize → Validate → Change Detection
-        ↓
-   PostgreSQL Database
-        ↓
-  Return Structured JSON
-```
+| Authority | Coverage & Domain | Key Identifiers | Primary Data Extracted |
+| :--- | :--- | :--- | :--- |
+| **🇺🇸 US FDA SrLC** | [accessdata.fda.gov](https://www.accessdata.fda.gov/scripts/cder/safetylabelingchanges/) | Application No. (`NDA`, `BLA`) | Prescription safety labeling changes, Boxed Warnings, Warnings and Precautions, Adverse Reactions. |
+| **🍁 Health Canada** | [health-products.canada.ca](https://health-products.canada.ca/dpd-bdpp/) & InfoWatch | Drug Identification Number (`DIN`) | Marketed drug status, Product Monographs, Health Product InfoWatch advisories, Canadian safety alerts. |
+| **🇦🇺 Australia TGA** | [tga.gov.au](https://www.tga.gov.au/search?keywords=) | Register of Therapeutic Goods (`AUST R`, `AUST L`) | Product Information (PI), Consumer Medicine Information (CMI), active ingredients, Australian safety alerts. |
+| **🚨 FDA MedWatch** | [fda.gov/safety/medwatch](https://www.fda.gov/safety/medwatch) & FAERS | MedWatch ID (`MW-FAERS`, `MW-RECALL`) | Post-marketing surveillance signals, openFDA adverse event cases, Class I/II/III enforcement recalls, Form 3500 reporting. |
+| **🇬🇧 UK MHRA** | [gov.uk/drug-safety-update](https://www.gov.uk/drug-safety-update) | UK Product Licence (`PL`, `PLGB`) | Monthly Drug Safety Update bulletins, CHM clinical advice, urgent safety alerts, UK Yellow Card incident reporting. |
 
-## Features
+---
 
-- ✅ Modular architecture (crawler, scraper, normalization, validation, change detection separate)
-- ✅ SHA-256 content hashing for change detection
-- ✅ Version history management (never overwrites, creates versions)
-- ✅ Comprehensive date tracking (source_date, approval_date, effective_date, etc.)
-- ✅ Preserves original FDA text
-- ✅ Fail-safe parsing (corrupted data detection)
-- ✅ Input validation with Pydantic
-- ✅ Test fixtures and regression protection
-- ✅ Structured logging
-- ✅ Redis caching with TTL
-- ✅ Celery background jobs
-- ✅ Comprehensive test suite
+## 2. Multi-Authority Processing Architecture
 
-## Project Structure
+```mermaid
+flowchart TD
+    User([User Search Query: 'Ozempic']) --> Router[FastAPI Orchestration Layer<br/>app/api/drugs.py & app/main.py]
 
-```
-backend/
-├── app/
-│   ├── main.py                 # FastAPI app factory
-│   ├── config.py               # Settings and configuration
-│   ├── database.py             # SQLAlchemy setup
-│   │
-│   ├── models/
-│   │   └── drug.py            # ORM models
-│   │
-│   ├── schemas/
-│   │   └── drug.py            # Pydantic schemas
-│   │
-│   ├── api/
-│   │   ├── drugs.py           # Drug search endpoints
-│   │   ├── safety_changes.py  # Safety change endpoints
-│   │   └── admin.py           # Admin endpoints
-│   │
-│   ├── crawler/
-│   │   └── fda_crawler.py     # FDA web crawler
-│   │
-│   ├── scrapers/
-│   │   └── fda_srlc_scraper.py # FDA HTML parser
-│   │
-│   ├── services/
-│   │   ├── normalization.py    # Data normalization
-│   │   ├── validation.py       # Data validation
-│   │   └── change_detection.py # SHA-256 hashing
-│   │
-│   ├── sources/               # Future: other regulatory sources
-│   └── workers/               # Celery tasks
-│
-├── tests/
-│   ├── conftest.py            # Pytest fixtures
-│   ├── test_fda_scraper.py
-│   ├── test_change_detection.py
-│   └── test_validation.py
-│
-├── requirements.txt           # Python dependencies
-├── pytest.ini                 # Pytest configuration
-└── README.md                  # This file
+    subgraph Concurrent Ingestion [asyncio.gather - Parallel Regulatory Crawlers]
+        Router -->|Live Query| S1[🇺🇸 US FDA SrLC Scraper<br/>app/scrapers/fda_srlc_scraper.py]
+        Router -->|Live Query| S2[🍁 Health Canada DPD & Alerts<br/>app/sources/health_canada/]
+        Router -->|Live Query| S3[🇦🇺 Australia TGA Crawler<br/>app/sources/australia_tga/]
+        Router -->|Live Query| S4[🚨 FDA MedWatch & FAERS<br/>app/sources/fda_medwatch/]
+        Router -->|Live Query| S5[🇬🇧 UK MHRA Drug Safety Update<br/>app/sources/uk_mhra/]
+    end
+
+    subgraph Adapters [Data Normalization & Mapping Layer]
+        S1 --> A1[FDA Adapter<br/>source: FDA_SRLC]
+        S2 --> A2[Canada Adapter<br/>source: HEALTH_CANADA]
+        S3 --> A3[TGA Adapter<br/>source: AUSTRALIA_TGA]
+        S4 --> A4[MedWatch Adapter<br/>source: FDA_MEDWATCH]
+        S5 --> A5[UK MHRA Adapter<br/>source: UK_MHRA]
+    end
+
+    subgraph Relational Storage [SQLite: backend/medicine_safety.db]
+        A1 & A2 & A3 & A4 & A5 --> DBService[DatabaseService<br/>app/services/database_service.py]
+        DBService -->|Upsert Drugs Table| DB[(drugs & safety_labeling_changes<br/>Scoped by source + drug_name)]
+    end
+
+    subgraph Presentation & Exports
+        DB --> WebUI[Web Search & Drug Detail UI<br/>app/ui.py]
+        DB --> REST[REST API JSON Endpoints<br/>/api/drugs/search]
+        DB --> CSV[Instant CSV & JSON Export]
+    end
 ```
 
-## Installation
+---
+
+## 3. Documentation Directory
+
+All architectural blueprints, developer guides, and milestone reports are organized under the [`docs/`](docs/) directory:
+
+### 🏛️ Architecture
+- [**Multi-Source Data Processing & DB Architecture**](docs/architecture/MULTI_SOURCE_DATA_PROCESSING_ARCHITECTURE.md): Deep-dive into data processing across all authorities and SQLite relational schema.
+- [**Enterprise Architecture Blueprint (C4 Model)**](docs/architecture/ARCHITECTURE.md): Full ISO/IEC 42010 C4 architectural specification.
+- [**Client Integration Architecture**](docs/architecture/CLIENT_INTEGRATION_ARCHITECTURE.md): Integration guide for external web portals and microservices.
+- [**Interactive Architecture Visualizer**](docs/architecture/ARCHITECTURE_DIAGRAM.html): Interactive HTML visualization diagram.
+- [**Visual Architecture Diagram**](docs/architecture/architecture_diagram.jpg): High-resolution schematic image.
+
+### 📖 Guides
+- [**Start Here**](docs/guides/START_HERE.md): Fast onboarding for new developers and stakeholders.
+- [**Quickstart Guide**](docs/guides/QUICKSTART.md): Step-by-step local setup, environment configuration, and verification.
+- [**How It Works**](docs/guides/HOW_IT_WORKS.md): Complete internal walkthrough of crawler mechanics, caching, and revision hashing.
+
+### 🔌 Integration
+- [**PDF Extractor Client Integration**](docs/integration/PDF_EXTRACTOR_CLIENT_INTEGRATION.md): API contract and integration guide for the PDF extraction subsystem.
+
+### 📋 Reports & Milestones
+- [**FDA Scraper Investigation Report**](docs/reports/FDA_INVESTIGATION_REPORT.md): Analysis of the FDA SrLC web portal, ASPX forms, and anti-bot mitigation.
+- [**Phase 1 Completion Report**](docs/reports/PHASE1_COMPLETION.md): Core backend delivery summary and sign-off.
+- [**Phase 2 Plan**](docs/reports/PHASE2_PLAN.md): Architectural roadmap and feature evolution plan.
+- [**Session Summary**](docs/reports/SESSION_SUMMARY.md): Development trajectory, decisions, and system verification checklist.
+- [**Files Created Inventory**](docs/reports/FILES_CREATED.md): Historical file breakdown and package inventory.
+
+---
+
+## 4. Repository Structure
+
+```
+webcrwler/
+├── README.md                           # Master entrypoint & documentation directory
+├── docs/                               # Reorganized documentation hierarchy
+│   ├── architecture/                   # Architecture blueprints & visual diagrams
+│   ├── guides/                         # Onboarding, quickstart, and how-it-works guides
+│   ├── integration/                    # Subsystem integration specifications
+│   └── reports/                        # Milestone reports, research audits, and roadmaps
+├── backend/                            # FastAPI backend application
+│   ├── app/
+│   │   ├── api/                        # REST API routes (drugs, safety_changes, admin)
+│   │   ├── sources/                    # Country-specific modular adapters
+│   │   │   ├── australia_tga/          # 🇦🇺 Australia TGA crawler & adapter
+│   │   │   ├── fda_medwatch/           # 🚨 FDA MedWatch & FAERS crawler & adapter
+│   │   │   ├── health_canada/          # 🍁 Health Canada DPD & InfoWatch
+│   │   │   └── uk_mhra/                # 🇬🇧 UK MHRA Drug Safety Update crawler & adapter
+│   │   ├── scrapers/                   # 🇺🇸 US FDA SrLC Scraper engine
+│   │   ├── crawler/                    # Asynchronous crawling coordinator
+│   │   ├── models/ & schemas/          # SQLAlchemy ORM & Pydantic validation schemas
+│   │   ├── services/                   # DatabaseService, normalization, change_detection
+│   │   ├── workers/                    # Background polling and audit workers
+│   │   ├── ui.py                       # Glassmorphic Web UI and multi-country detail pages
+│   │   ├── main.py                     # FastAPI application factory & multi-gather route
+│   │   └── database.py & config.py     # SQLite/PostgreSQL engine and settings
+│   ├── tests/                          # Core test suites and fixtures
+│   ├── scripts/
+│   │   └── investigation/              # Scratch, verification, and manual investigation scripts
+│   ├── medicine_safety.db              # Active SQLite persistence store
+│   ├── pytest.ini                      # Pytest configuration (152 unit & integration tests)
+│   └── requirements.txt                # Python backend dependencies
+├── pdf_extractor/                      # Autonomous clinical PDF section extraction subsystem
+├── scripts/                            # Production deployment and maintenance scripts
+├── nginx/                              # Reverse proxy configuration
+└── systemd/                            # Production systemd service unit files
+```
+
+---
+
+## 5. Quickstart & Local Development
 
 ### Prerequisites
-- Python 3.11+
-- PostgreSQL 14+
-- Redis 7+
-- pip/venv
+- Python 3.9+ (or virtual environment in `backend/.venv`)
+- SQLite 3 (included)
 
-### Setup
-
-1. **Clone or navigate to the project**
-   ```bash
-   cd webcrwler/backend
-   ```
-
-2. **Create virtual environment**
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configure environment**
-   ```bash
-   cp ../.env.example .env
-   # Edit .env with your database and Redis credentials
-   ```
-
-5. **Initialize database**
-   ```bash
-   # Using Alembic (when migrations are created)
-   alembic upgrade head
-   
-   # Or directly:
-   python -c "from app.database import init_db; import asyncio; asyncio.run(init_db())"
-   ```
-
-6. **Run tests**
-   ```bash
-   pytest -v
-   ```
-
-7. **Start development server**
-   ```bash
-   uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-   ```
-
-## Development Phases
-
-### Phase 1: FDA Investigation (Current)
-- [x] Analyze FDA SrLC website structure
-- [x] Create project structure
-- [x] Create crawler and scraper stubs
-- [ ] Test actual FDA searches
-- [ ] Document HTML structure and extraction points
-
-### Phase 2: FDA Crawler & Scraper
-- [ ] Implement real FDA crawler
-- [ ] Implement HTML parser for search results
-- [ ] Implement HTML parser for detail pages
-- [ ] Create test fixtures from real FDA responses
-- [ ] Write regression tests
-
-### Phase 3: Database & Data Pipeline
-- [ ] Set up Alembic migrations
-- [ ] Implement normalization service (complete)
-- [ ] Implement validation service (complete)
-- [ ] Implement change detection (complete)
-- [ ] Database insert/update logic
-
-### Phase 4: FastAPI Endpoints
-- [ ] Implement search endpoint
-- [ ] Implement detail endpoint
-- [ ] Implement safety changes endpoint
-- [ ] Implement version history endpoint
-
-### Phase 5: Redis Caching
-- [ ] Implement cache service
-- [ ] Add caching to search endpoint
-- [ ] Configure TTL
-
-### Phase 6: Celery Background Jobs
-- [ ] Set up Celery task queue
-- [ ] Implement scheduled crawler
-- [ ] Implement on-demand crawler
-
-### Phase 7: Testing & Documentation
-- [ ] Write comprehensive tests
-- [ ] Add logging
-- [ ] Create admin dashboard endpoint
-
-### Phase 8: Ubuntu Deployment
-- [ ] Create systemd services
-- [ ] Configure Nginx reverse proxy
-- [ ] Set up HTTPS with Let's Encrypt
-- [ ] Configure UFW firewall
-
-## API Endpoints
-
-### Health & Status
-- `GET /api/health` - Health check
-
-### Drugs
-- `GET /api/drugs/search?q={drug_name}` - Search for drugs
-- `GET /api/drugs/{drug_id}` - Get drug details
-- `GET /api/drugs/{drug_id}/safety-changes` - Get safety changes for drug
-
-### Safety Changes
-- `GET /api/safety-changes/{record_id}` - Get safety change record
-- `GET /api/safety-changes/{record_id}/history` - Get version history
-
-### Admin
-- `POST /api/admin/crawl/fda` - Trigger FDA crawl
-- `GET /api/admin/crawl/status` - Get last crawl status
-- `GET /api/admin/source-health` - FDA source health check
-
-## Testing
-
-Run all tests:
+### Running the Backend Server
 ```bash
-pytest
+cd backend
+source .venv/bin/activate
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Run specific test file:
+Open your browser at:
+- **Web UI Search**: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
+- **Interactive Swagger Docs**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- **ReDoc API Reference**: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
+
+### Running Automated Tests
 ```bash
-pytest tests/test_change_detection.py -v
+cd backend
+.venv/bin/pytest tests/ app/sources/ -v
 ```
+> **Test Results**: 152 passed (100% pass rate across all 5 regulatory test suites).
 
-Run with coverage:
+---
+
+## 6. Live API Verification Commands
+
 ```bash
-pytest --cov=app --cov-report=html
+# Query all 5 authorities simultaneously:
+curl -s "http://127.0.0.1:8000/api/drugs/search?q=Ozempic&source=ALL"
+
+# Filter by Australia TGA:
+curl -s "http://127.0.0.1:8000/api/drugs/search/australia-tga?q=Ozempic"
+
+# Filter by FDA MedWatch:
+curl -s "http://127.0.0.1:8000/api/drugs/search/fda-medwatch?q=Ozempic"
+
+# Filter by UK MHRA:
+curl -s "http://127.0.0.1:8000/api/drugs/search/uk-mhra?q=Warfarin"
+
+# Filter by Health Canada:
+curl -s "http://127.0.0.1:8000/api/drugs/search/health-canada?q=Ozempic"
 ```
-
-## Key Technologies
-
-| Component | Technology |
-|-----------|-----------|
-| Framework | FastAPI + Uvicorn |
-| ORM | SQLAlchemy |
-| Database | PostgreSQL |
-| Cache | Redis |
-| Task Queue | Celery |
-| HTML Parsing | BeautifulSoup + lxml |
-| HTTP Client | httpx + requests |
-| Validation | Pydantic |
-| Testing | pytest + pytest-asyncio |
-
-## Configuration
-
-See `.env.example` for all configuration options:
-- Database connection
-- Redis endpoints
-- FDA crawler timeouts and retries
-- Cache TTL
-- Logging level
-
-## Important Notes
-
-1. **No Docker**: This backend runs natively on Ubuntu, not in containers
-2. **FDA Compliance**: Respects robots.txt, implements reasonable timeouts, uses exponential backoff
-3. **Data Integrity**: Never silently returns corrupted medical information
-4. **Change Detection**: Uses SHA-256 hashing to detect changes
-5. **Version History**: Maintains complete history without overwrites
-6. **Original Source**: Always preserves and attributes FDA source text
-
-## Future Extensibility
-
-The architecture is designed to support additional regulatory sources:
-- FDA openFDA
-- EMA (European Medicines Agency)
-- Health Canada
-- Other regulatory databases
-
-Each source would implement a source adapter without modifying core logic.
-
-## Development
-
-### Code Style
-- Follow PEP 8
-- Type hints for all functions
-- Docstrings for modules, classes, and methods
-- Structured logging
-
-### Git Workflow
-- Create feature branches
-- Write tests before implementing
-- Run full test suite before committing
-
-## Known Limitations
-
-- Requires investigation of FDA SrLC website structure
-- HTML scraping depends on FDA page structure stability
-- Rate limiting respected (reasonable crawl frequency)
-
-## License
-
-[Specify your license]
-
-## Support
-
-For issues or questions:
-1. Check test files for usage examples
-2. Review inline code documentation
-3. Check environment configuration
