@@ -126,11 +126,13 @@ def test_extract_html_format_explicit():
     assert list(data.keys()) == ["Data"]
     html_str = data["Data"]
     assert html_str.startswith("<!DOCTYPE html>")
-    assert '<style>body { font-family: Arial, sans-serif; margin: 40px; background-color: #f9f9f9; } h2 { color: #333; } table { width: 100%; border-collapse: collapse; margin-top: 20px; background-color: #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); } th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; } th { background-color: #007BFF; color: white; font-weight: bold; } tr:hover { background-color: #f5f5f5; }</style>' in html_str
-    assert "<table>" in html_str
-    assert "<th>" in html_str
-    assert "<td>" in html_str
+    assert "<style>" in html_str
+    assert "body {" in html_str
     assert "<h2>" in html_str
+    assert "<p>" in html_str
+    # Should not fabricate a table when the source document has no tables
+    assert "<table>" not in html_str
+    assert "table {" not in html_str
 
 
 def test_extract_html_format_tables_pdf():
@@ -242,7 +244,7 @@ def test_extract_html_user_exact_phrase():
 
 def test_html_output_omits_section_numbers_but_extracts_data():
     """Verify that section numbers 16 and 16.1 are omitted from HTML output elements (titles, headings, tables) while section data is extracted."""
-    # Test 1: Document without tables (narrative + fallback table)
+    # Test 1: Document without tables (clean semantic narrative without fake table)
     sample_basic = SAMPLE_DIR / "test1_basic.pdf"
     res1 = client.post("/api/extract", json={
         "file_path": str(sample_basic),
@@ -252,14 +254,13 @@ def test_html_output_omits_section_numbers_but_extracts_data():
     })
     assert res1.status_code == 200
     html1 = res1.json()["Data"]
-    # Check that section numbers 16/16.1 are NOT in title, headings, or table headers/IDs
+    # Check that section numbers 16/16.1 are NOT in title or headings
     assert "<title>Test1 Basic</title>" in html1
     assert "16.1" not in html1
     assert "<h2>16" not in html1
-    assert "<th>Section</th>" not in html1
-    assert "<td>001</td><td>Heading</td><td>1</td><td>Safety Information</td>" in html1
-    assert "Safety Information" in html1
-    assert "Adverse Events" in html1
+    assert "<h2>Safety Information</h2>" in html1
+    assert "<h2>Adverse Events</h2>" in html1
+    assert "<table>" not in html1
 
     # Test 2: Document with tables
     sample_tables = SAMPLE_DIR / "test8_tables.pdf"

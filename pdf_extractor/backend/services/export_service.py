@@ -33,139 +33,148 @@ class ExportService:
     @classmethod
     def generate_html_content(cls, result: ExtractionResult, title: Optional[str] = None) -> str:
         """
-        Generates semantic HTML formatted with the exact styling requested:
-        - Arial font, 40px margin, #f9f9f9 body background
-        - Blue (#007BFF) table headers with white bold text
-        - Border bottom #ddd, hover effect #f5f5f5, box-shadow on table
-        - <h2> headings for tables and sections
-        - Section numbers (e.g. 16, 16.1) omitted from titles, headings, and table headers
+        Generates clean, semantic, browser-renderable HTML according to strict rules:
+        - Centralized CSS in <head><style>
+        - Consecutive bullet items grouped into single <ul> containing multiple <li> elements
+        - Consecutive numbered items grouped into single <ol> containing multiple <li> elements
+        - Headings rendered semantically (<h2>, <h3>)
+        - Paragraphs rendered as <p> preserving exact text
+        - Tables rendered with <table>, <thead>, <tbody> only when real tables exist in extracted content
+        - Table CSS included ONLY if <table> exists in generated HTML
+        - Clean indentation and readability (not single-line minified)
+        - Exact text preservation without alterations
         """
         if title:
             clean_t = cls._clean_section_heading(title)
-            page_title = clean_t or "Sample HTML Table"
+            page_title = clean_t or "Extracted Document"
         elif result.document and result.document != "document.pdf":
             stem = Path(result.document).stem.replace("_", " ").title()
             clean_stem = cls._clean_section_heading(stem)
-            page_title = clean_stem or "Sample HTML Table"
+            page_title = clean_stem or "Extracted Document"
         else:
-            page_title = "Sample HTML Table"
-
-        body_elements = []
+            page_title = "Extracted Document"
 
         is_neglect_mode = getattr(result, "table_mode", "add") == "neglect"
+        structured_items = result.structured_content or []
 
-        # First pass: check if structured tables exist
-        table_items = [it for it in (result.structured_content or []) if it.type == "table"]
+        # Check if actual tables should be rendered
+        table_items = [it for it in structured_items if it.type == "table"]
+        has_table = bool(table_items) and not is_neglect_mode
 
-        if is_neglect_mode:
-            # Text Only mode: Render purely semantic headings, paragraphs, and lists without any table
-            for item in (result.structured_content or []):
-                if item.type == "heading":
-                    raw_h = item.title or item.text or ""
-                    h_text = cls._clean_section_heading(raw_h)
-                    if h_text:
-                        body_elements.append(f"<h2>{html.escape(h_text)}</h2>")
-                elif item.type in ("bullet_list", "numbered_list"):
-                    lis = "".join(f"<li>{html.escape(str(it))}</li>" for it in (item.items or []))
-                    body_elements.append(f"<ul style=\"margin: 10px 0 10px 24px; color: #333;\">{lis}</ul>")
-                elif item.type != "table":
-                    p_text = html.escape(item.text or "").replace("\n", "<br>")
-                    if p_text.strip():
-                        body_elements.append(f"<p style=\"margin: 12px 0; color: #333; line-height: 1.6;\">{p_text}</p>")
+        body_elements: List[str] = []
 
-        elif table_items:
-            for item in (result.structured_content or []):
-                if item.type == "heading":
-                    raw_h = item.title or item.text or ""
-                    h_text = cls._clean_section_heading(raw_h)
-                    if h_text:
-                        body_elements.append(f"<h2>{html.escape(h_text)}</h2>")
-                elif item.type == "table":
+        # Iterate through structured items and group consecutive list items
+        i = 0
+        n = len(structured_items)
+
+        while i < n:
+            item = structured_items[i]
+
+            if item.type == "heading":
+                raw_h = item.title or item.text or ""
+                h_text = cls._clean_section_heading(raw_h)
+                if h_text:
+                    tag = "h2" if (item.level is None or item.level <= 2) else "h3"
+                    body_elements.append(f"<{tag}>{html.escape(h_text)}</{tag}>")
+                i += 1
+
+            elif item.type in ("bullet_list", "numbered_list"):
+                list_type = item.type
+                accumulated_items: List[str] = []
+
+                # Group consecutive list items of the same type
+                while i < n and structured_items[i].type == list_type:
+                    curr = structured_items[i]
+                    if curr.items:
+                        accumulated_items.extend(curr.items)
+                    elif curr.text:
+                        accumulated_items.append(curr.text)
+                    i += 1
+
+                tag = "ul" if list_type == "bullet_list" else "ol"
+                li_elements = "\n".join(f"    <li>{html.escape(str(it))}</li>" for it in accumulated_items if str(it).strip())
+                if li_elements:
+                    body_elements.append(f"<{tag}>\n{li_elements}\n</{tag}>")
+
+            elif item.type == "table":
+                if not is_neglect_mode:
                     caption = ""
                     if item.caption:
                         caption = cls._clean_section_heading(item.caption)
-                    if not caption:
-                        caption = f"Extracted Table (Page {item.page})" if item.page else "Extracted Table"
 
                     cols = item.columns or []
                     th_cells = "".join(f"<th>{html.escape(str(c))}</th>" for c in cols)
-                    thead = f"<thead><tr>{th_cells}</tr></thead>" if th_cells else ""
+                    thead = f"    <thead>\n        <tr>{th_cells}</tr>\n    </thead>" if th_cells else ""
 
                     rows_html = []
                     if item.rows:
                         for row_dict in item.rows:
                             td_cells = "".join(f"<td>{html.escape(str(row_dict.get(c, '')))}</td>" for c in cols)
-                            rows_html.append(f"<tr>{td_cells}</tr>")
+                            rows_html.append(f"        <tr>{td_cells}</tr>")
                     elif item.raw_rows:
-                        for r_list in item.raw_rows:
+                        # Skip header row if it matches cols
+                        start_idx = 1 if (len(item.raw_rows) > 1 and item.raw_rows[0] == cols) else 0
+                        for r_list in item.raw_rows[start_idx:]:
                             td_cells = "".join(f"<td>{html.escape(str(val))}</td>" for val in r_list)
-                            rows_html.append(f"<tr>{td_cells}</tr>")
+                            rows_html.append(f"        <tr>{td_cells}</tr>")
 
-                    tbody = f"<tbody>{''.join(rows_html)}</tbody>"
-                    body_elements.append(f"<h2>{html.escape(caption)}</h2><table>{thead}{tbody}</table>")
-                elif item.type in ("bullet_list", "numbered_list"):
-                    lis = "".join(f"<li>{html.escape(str(it))}</li>" for it in (item.items or []))
-                    body_elements.append(f"<ul style=\"margin: 10px 0 10px 24px; color: #333;\">{lis}</ul>")
-                else:
-                    p_text = html.escape(item.text or "").replace("\n", "<br>")
-                    if p_text.strip():
-                        body_elements.append(f"<p style=\"margin: 12px 0; color: #333; line-height: 1.6;\">{p_text}</p>")
-        else:
-            # No explicit table matrices found: create document narrative + structured data table
-            doc_stem = Path(result.document).stem.replace("_", " ").title() if result.document and result.document != "document.pdf" else ""
-            clean_doc_heading = cls._clean_section_heading(doc_stem)
-            if clean_doc_heading:
-                body_elements.append(f"<h2>{html.escape(clean_doc_heading)}</h2>")
+                    tbody = f"    <tbody>\n" + "\n".join(rows_html) + "\n    </tbody>" if rows_html else "    <tbody></tbody>"
+                    table_str = f"<table>\n{thead}\n{tbody}\n</table>"
+                    if caption:
+                        body_elements.append(f"<h2>{html.escape(caption)}</h2>\n{table_str}")
+                    else:
+                        body_elements.append(table_str)
+                i += 1
 
-            table_rows = []
-            idx = 1
-            for item in (result.structured_content or []):
-                if item.type == "heading":
-                    raw_h = item.title or item.text or ""
-                    h_text = cls._clean_section_heading(raw_h)
-                    if h_text:
-                        body_elements.append(f"<h2>{html.escape(h_text)}</h2>")
-                        table_rows.append((f"{idx:03d}", "Heading", str(item.page), h_text))
-                        idx += 1
-                else:
-                    txt = (item.text or "").strip()
-                    if txt:
-                        body_elements.append(f"<p style=\"margin: 12px 0; color: #333; line-height: 1.6;\">{html.escape(txt)}</p>")
-                        table_rows.append((f"{idx:03d}", "Content", str(item.page), txt[:150] + ("..." if len(txt) > 150 else "")))
-                        idx += 1
-
-            # Guarantee that a styled <table> is ALWAYS rendered matching the user's template
-            if not table_rows and result.content:
-                clean_content_sample = result.content[:200].strip()
-                table_rows.append((f"{idx:03d}", "Content", f"{result.start_page}-{result.end_page}", clean_content_sample))
-
-            if table_rows:
-                th_cells = "<th>ID</th><th>Type</th><th>Page</th><th>Extracted Information</th>"
-                tbody_rows = "".join(
-                    f"<tr><td>{html.escape(r_id)}</td><td>{html.escape(t)}</td><td>{html.escape(p)}</td><td>{html.escape(info)}</td></tr>"
-                    for r_id, t, p, info in table_rows
-                )
-                body_elements.append(f"<h2>Extracted Information Table</h2><table><thead><tr>{th_cells}</tr></thead><tbody>{tbody_rows}</tbody></table>")
             else:
-                body_elements.append("<h2>Extracted Information Table</h2><table><thead><tr><th>ID</th><th>Status</th></tr></thead><tbody><tr><td>001</td><td>No extracted data available</td></tr></tbody></table>")
+                # Paragraph or other content
+                p_text = html.escape(item.text or "").replace("\n", "<br>\n    ")
+                if p_text.strip():
+                    body_elements.append(f"<p>\n    {p_text}\n</p>")
+                i += 1
 
-        css_styles = (
-            "body { font-family: Arial, sans-serif; margin: 40px; background-color: #f9f9f9; } "
-            "h2 { color: #333; } "
-            "table { width: 100%; border-collapse: collapse; margin-top: 20px; background-color: #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); } "
-            "th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; } "
-            "th { background-color: #007BFF; color: white; font-weight: bold; } "
-            "tr:hover { background-color: #f5f5f5; }"
-        )
+        # Fallback if no structured items found but raw content exists
+        if not body_elements and result.content:
+            p_text = html.escape(result.content).replace("\n", "<br>\n    ")
+            body_elements.append(f"<p>\n    {p_text}\n</p>")
 
-        inner_body = "".join(body_elements)
+        # Construct centralized CSS - only include table rules if a table is actually present
+        css_rules = [
+            "body { font-family: Arial, sans-serif; margin: 40px; background-color: #f9f9f9; }",
+            "h2, h3 { color: #333; }",
+            "p { margin: 12px 0; color: #333; line-height: 1.6; }",
+            "ul, ol { margin: 10px 0 10px 24px; color: #333; }",
+            "li { margin-bottom: 4px; }",
+        ]
+
+        if has_table:
+            css_rules.extend([
+                "table { width: 100%; border-collapse: collapse; margin-top: 20px; background-color: #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }",
+                "th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }",
+                "th { background-color: #007BFF; color: white; font-weight: bold; }",
+                "tr:hover { background-color: #f5f5f5; }",
+            ])
+
+        formatted_css = "\n    ".join(css_rules)
+        inner_body = "\n\n".join(body_elements)
+        # Indent inner body nicely
+        indented_body = "\n".join("    " + line if line.strip() else "" for line in inner_body.splitlines())
+
         html_content = (
-            f'<!DOCTYPE html><html lang="en"><head>'
-            f'<meta charset="UTF-8">'
-            f'<meta name="viewport" content="width=device-width, initial-scale=1.0">'
-            f'<title>{html.escape(page_title)}</title>'
-            f'<style>{css_styles}</style>'
-            f'</head><body>{inner_body}</body></html>'
+            f"<!DOCTYPE html>\n"
+            f'<html lang="en">\n'
+            f"<head>\n"
+            f'    <meta charset="UTF-8">\n'
+            f'    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
+            f"    <title>{html.escape(page_title)}</title>\n"
+            f"    <style>\n"
+            f"    {formatted_css}\n"
+            f"    </style>\n"
+            f"</head>\n"
+            f"<body>\n"
+            f"{indented_body}\n"
+            f"</body>\n"
+            f"</html>"
         )
         return html_content
 
