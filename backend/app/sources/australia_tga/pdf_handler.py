@@ -5,7 +5,9 @@ Routes discovered Product Information PDFs to the EXISTING PDF extraction pipeli
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
+import hashlib
 import io
 import logging
 import os
@@ -52,6 +54,10 @@ class TGAPDFHandler:
         self.prefer_in_process = prefer_in_process
         self._section_extractor = None
 
+        # Local cache directory for downloaded PDFs
+        self.cache_dir = Path(__file__).resolve().parents[3] / "data" / "pdf_cache"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
     def _get_in_process_extractor(self):
         """Lazily imports and instantiates the existing SectionExtractor."""
         if self._section_extractor is None:
@@ -66,6 +72,7 @@ class TGAPDFHandler:
     async def fetch_pdf_bytes(self, pdf_url_or_path: str) -> Optional[bytes]:
         """
         Retrieves PDF content as bytes from a local file path or remote URL.
+        Caches remote PDF downloads on local disk so subsequent reads are instantaneous.
         """
         if not pdf_url_or_path:
             return None
@@ -79,12 +86,25 @@ class TGAPDFHandler:
                 logger.error("Error reading local PDF file %s: %s", pdf_url_or_path, exc)
                 return None
 
+        # Check local disk cache for remote URL
+        url_hash = hashlib.md5(pdf_url_or_path.encode("utf-8")).hexdigest()
+        cached_file = self.cache_dir / f"{url_hash}.pdf"
+        if cached_file.exists() and cached_file.stat().st_size > 1000:
+            logger.info("Using cached PDF for %s (%d bytes)", pdf_url_or_path, cached_file.stat().st_size)
+            try:
+                return cached_file.read_bytes()
+            except Exception as exc:
+                logger.warning("Failed to read cached PDF %s: %s", cached_file, exc)
+
         # Remote URL with retry
-        for attempt in range(1, 3):
+        req_headers = dict(DEFAULT_HEADERS)
+        req_headers["Connection"] = "close"
+
+        for attempt in range(1, 2):
             try:
                 async with httpx.AsyncClient(
-                    headers=DEFAULT_HEADERS,
-                    timeout=self.timeout,
+                    headers=req_headers,
+                    timeout=httpx.Timeout(self.timeout, connect=6.0, read=self.timeout),
                     follow_redirects=True,
                 ) as client:
                     # Special handling for Australian TGA eBS document repository
@@ -92,45 +112,55 @@ class TGAPDFHandler:
                         # 1. Fetch the initial landing or license page
                         init_resp = await client.get(pdf_url_or_path)
                         if init_resp.content.startswith(b"%PDF"):
+                            cached_file.write_bytes(init_resp.content)
                             return init_resp.content
 
                         # If HTML license agreement, extract remoteaddr and accept
                         match = re.search(r'id=["\']remoteaddr["\'][^>]*value=["\']([^"\']+)["\']', init_resp.text, re.I)
                         if not match:
+                            match = re.search(r'value=["\']([^"\']+)["\'][^>]*id=["\']remoteaddr["\']', init_resp.text, re.I)
+                        if not match:
                             match = re.search(r'name=["\']Remote_Addr["\'][^>]*value=["\']([^"\']+)["\']', init_resp.text, re.I)
-                        remote_ip = match.group(1) if match else "127001"
+                        if not match:
+                            match = re.search(r'value=["\']([^"\']+)["\'][^>]*name=["\']Remote_Addr["\']', init_resp.text, re.I)
+                        if not match:
+                            match = re.search(r'value=["\'](\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})["\']', init_resp.text)
+
+                        remote_ip = match.group(1) if match else "172.31.0.101"
                         clean_ip = re.sub(r"\D", "", remote_ip)
                         utc_date = datetime.utcnow().strftime("%Y%m%d")
                         cookie_val = f"{utc_date}{clean_ip}"
 
                         sep = "&" if "?" in pdf_url_or_path else "?"
                         pdf_download_url = f"{pdf_url_or_path}{sep}d={cookie_val}"
-                        req_headers = dict(DEFAULT_HEADERS)
-                        req_headers["Cookie"] = f"PICMIIAccept={cookie_val}"
+                        step_headers = dict(req_headers)
+                        step_headers["Cookie"] = f"PICMIIAccept={cookie_val}"
 
-                        pdf_resp = await client.get(pdf_download_url, headers=req_headers)
+                        pdf_resp = await client.get(pdf_download_url, headers=step_headers)
                         if pdf_resp.status_code == 200 and pdf_resp.content.startswith(b"%PDF"):
                             logger.info("Successfully downloaded eBS PDF from %s (%d bytes)", pdf_download_url, len(pdf_resp.content))
+                            cached_file.write_bytes(pdf_resp.content)
                             return pdf_resp.content
                         elif pdf_resp.content.startswith(b"%PDF"):
+                            cached_file.write_bytes(pdf_resp.content)
                             return pdf_resp.content
+                        else:
+                            logger.warning("eBS download returned non-PDF (%d bytes, HTTP %d)", len(pdf_resp.content), pdf_resp.status_code)
+                            return None
 
                     resp = await client.get(pdf_url_or_path)
                     if resp.status_code == 200 and resp.content:
                         if resp.content.startswith(b"%PDF") or "pdf" in resp.headers.get("content-type", "").lower():
                             logger.info("Successfully downloaded PDF from %s (%d bytes)", pdf_url_or_path, len(resp.content))
+                            cached_file.write_bytes(resp.content)
                             return resp.content
                         logger.warning("Downloaded content from %s is not a PDF (length: %d)", pdf_url_or_path, len(resp.content))
                         return None
                     logger.warning("Failed to download PDF from %s (HTTP %d)", pdf_url_or_path, resp.status_code)
                     return None
             except Exception as exc:
-                logger.warning("Network exception downloading PDF %s (attempt %d/2): %s", pdf_url_or_path, attempt, type(exc).__name__)
-                if attempt < 2:
-                    await asyncio.sleep(1.0)
-                else:
-                    logger.error("Failed to download PDF %s after %d attempts: %s", pdf_url_or_path, attempt, exc)
-                    return None
+                logger.warning("Network exception downloading PDF %s: %s (%s)", pdf_url_or_path, type(exc).__name__, exc)
+                return None
         return None
 
     async def extract_sections(

@@ -15,7 +15,7 @@ TGA_EBS_VIEW_URL = "https://www.ebs.tga.gov.au/ebs/picmi/picmirepository.nsf/Vie
 # PDF Extractor configuration (reusing existing pdf_extractor subsystem)
 PDF_EXTRACTOR_URL = "http://localhost:8001"
 PDF_EXTRACTOR_TIMEOUT = 120.0  # seconds
-PDF_DOWNLOAD_TIMEOUT = 90.0   # seconds for remote PDF fetching from TGA eBS
+PDF_DOWNLOAD_TIMEOUT = 25.0   # seconds for remote PDF fetching from TGA eBS
 
 # Request headers for web discovery
 DEFAULT_HEADERS: Dict[str, str] = {
@@ -28,11 +28,23 @@ DEFAULT_HEADERS: Dict[str, str] = {
     "Sec-Fetch-Dest": "document",
     "Sec-Fetch-Mode": "navigate",
     "Sec-Fetch-Site": "none",
+    "Connection": "close",
 }
 
-# Network timeouts (in seconds)
-DEFAULT_TIMEOUT = 8.0
-CONNECT_TIMEOUT = 4.0
+# Optimized headers specifically for TGA eBS SearchViewEntries JSON API
+EBS_SEARCH_HEADERS: Dict[str, str] = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "en-AU,en-US;q=0.9,en;q=0.8",
+    "X-Requested-With": "XMLHttpRequest",
+}
+
+# Network timeouts (in seconds) - optimized to prevent long hangs
+DEFAULT_TIMEOUT = 12.0
+CONNECT_TIMEOUT = 8.0
 
 # Regulatory sections targeted for extraction
 SECTION_4_6_NUM = "4.6"

@@ -16,6 +16,7 @@ from app.sources.australia_tga.config import (
     CONNECT_TIMEOUT,
     DEFAULT_HEADERS,
     DEFAULT_TIMEOUT,
+    EBS_SEARCH_HEADERS,
     HUMAN_VERIFICATION_REQUIRED,
     SECURITY_CHALLENGE_SIGNATURES,
     TGA_BASE_URL,
@@ -72,56 +73,64 @@ class TGASearchEngine:
         """
         Queries official TGA eBS Product Information register (PISearch).
         Returns structured search results directly linking to the PI documents.
+        Uses specialized JSON headers for 1-3s fast responses from Lotus Domino.
         """
         target_url = f"{TGA_EBS_SEARCH_URL}{quote_plus(query)}"
-        try:
-            async with httpx.AsyncClient(
-                headers=self.headers,
-                timeout=self.timeout,
-                follow_redirects=True,
-            ) as client:
-                resp = await client.get(target_url)
-                if resp.status_code != 200:
-                    return []
-                data = resp.json()
-                entries = data.get("viewentry", [])
-                results: List[TGASearchResult] = []
-                for e in entries:
-                    unid = e.get("@unid")
-                    if not unid:
+        req_headers = dict(EBS_SEARCH_HEADERS)
+        if self.headers and "User-Agent" in self.headers:
+            req_headers["User-Agent"] = self.headers["User-Agent"]
+
+        for attempt in range(1, 3):
+            try:
+                async with httpx.AsyncClient(
+                    headers=req_headers,
+                    timeout=httpx.Timeout(10.0, connect=min(self.timeout, 6.0), read=10.0),
+                    follow_redirects=True,
+                ) as client:
+                    resp = await client.get(target_url)
+                    if resp.status_code != 200:
                         continue
-                    edata = {item.get("@name"): item for item in e.get("entrydata", [])}
-                    trade_name = edata.get("Trade name", {}).get("text", {}).get("0", "").strip()
-                    active_ingr = edata.get("Active ingredients", {}).get("text", {}).get("0", "").strip()
-                    artg_raw = edata.get("ARTG", {})
-                    if "text" in artg_raw:
-                        artg = artg_raw["text"].get("0", "").strip()
-                    elif "textlist" in artg_raw:
-                        artg = " ".join(t.get("0", "") for t in artg_raw["textlist"].get("text", [])).strip()
-                    else:
-                        artg = ""
-                    sponsor = edata.get("Sponsor name", {}).get("text", {}).get("0", "").strip()
-                    date_val = edata.get("Published date", {}).get("datetime", {}).get("0", "")
+                    data = resp.json()
+                    entries = data.get("viewentry", [])
+                    results: List[TGASearchResult] = []
+                    for e in entries:
+                        unid = e.get("@unid")
+                        if not unid:
+                            continue
+                        edata = {item.get("@name"): item for item in e.get("entrydata", [])}
+                        trade_name = edata.get("Trade name", {}).get("text", {}).get("0", "").strip()
+                        active_ingr = edata.get("Active ingredients", {}).get("text", {}).get("0", "").strip()
+                        artg_raw = edata.get("ARTG", {})
+                        if "text" in artg_raw:
+                            artg = artg_raw["text"].get("0", "").strip()
+                        elif "textlist" in artg_raw:
+                            artg = " ".join(t.get("0", "") for t in artg_raw["textlist"].get("text", [])).strip()
+                        else:
+                            artg = ""
+                        sponsor = edata.get("Sponsor name", {}).get("text", {}).get("0", "").strip()
+                        date_val = edata.get("Published date", {}).get("datetime", {}).get("0", "")
 
-                    doc_url = f"{TGA_EBS_VIEW_URL}{unid}"
-                    dt = TGADateParser.parse_date(date_val)
-                    snippet = f"Australian Register of Therapeutic Goods (ARTG) Product Information for {trade_name} ({artg}). Sponsor: {sponsor}"
+                        doc_url = f"{TGA_EBS_VIEW_URL}{unid}"
+                        dt = TGADateParser.parse_date(date_val)
+                        snippet = f"Australian Register of Therapeutic Goods (ARTG) Product Information for {trade_name} ({artg}). Sponsor: {sponsor}"
 
-                    results.append(
-                        TGASearchResult(
-                            title=trade_name or query.upper(),
-                            url=doc_url,
-                            snippet=snippet,
-                            date_str=date_val,
-                            source_date=dt,
-                            artg_number=artg or None,
-                            active_ingredient=active_ingr or None,
+                        results.append(
+                            TGASearchResult(
+                                title=trade_name or query.upper(),
+                                url=doc_url,
+                                snippet=snippet,
+                                date_str=date_val,
+                                source_date=dt,
+                                artg_number=artg or None,
+                                active_ingredient=active_ingr or None,
+                            )
                         )
-                    )
-                return results
-        except Exception as exc:
-            logger.warning("Failed to query TGA eBS search for '%s': %s", query, exc)
-            return []
+                    return results
+            except Exception as exc:
+                logger.warning("Attempt %d/2: Failed to query TGA eBS search for '%s': %s (%s)", attempt, query, type(exc).__name__, exc)
+                if attempt == 1:
+                    await asyncio.sleep(0.5)
+        return []
 
     async def fetch_search_html(self, query: str) -> Optional[str]:
         """

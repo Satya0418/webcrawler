@@ -130,8 +130,14 @@ async def homepage(
 
     async def _crawl_tga():
         try:
-            logger.info("Executing Australia TGA live search for '%s'", query_clean)
-            await tga_adapter.search(query=query_clean, db=db, force_refresh=True)
+            existing_tga = DatabaseService.search_drugs(db, query_clean, source="AUSTRALIA_TGA")
+            has_data = any(bool(DatabaseService.get_safety_changes_by_drug_id(db, d.id)) for d in existing_tga)
+            if has_data:
+                logger.info("Australian TGA records already exist for '%s'; using cached data", query_clean)
+                await tga_adapter.search(query=query_clean, db=db, force_refresh=False)
+            else:
+                logger.info("Executing Australia TGA live search for '%s'", query_clean)
+                await tga_adapter.search(query=query_clean, db=db, force_refresh=True)
         except Exception as exc:
             logger.error("Australia TGA search crawl error for '%s': %s", query_clean, exc, exc_info=True)
             db.rollback()

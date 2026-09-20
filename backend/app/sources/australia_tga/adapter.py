@@ -43,11 +43,14 @@ class AustraliaTGAAdapter:
             return []
 
         # Check local DB if not force refresh
-        if not force_refresh:
-            local_drugs = DatabaseService.search_drugs(db, q, source=SOURCE_ID)
-            if local_drugs:
-                logger.info("Found %d cached Australian TGA drug records for '%s'", len(local_drugs), q)
-                return local_drugs
+        local_drugs = DatabaseService.search_drugs(db, q, source=SOURCE_ID)
+        has_complete_data = any(
+            bool(DatabaseService.get_safety_changes_by_drug_id(db, d.id))
+            for d in local_drugs
+        )
+        if has_complete_data and not force_refresh:
+            logger.info("Found %d cached Australian TGA drug records with safety data for '%s'", len(local_drugs), q)
+            return local_drugs
 
         # Run live TGA search & extraction
         try:
