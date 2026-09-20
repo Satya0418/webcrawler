@@ -923,6 +923,194 @@ def _render_health_canada_drug_detail(drug: dict, changes: list) -> str:
 """
 
 
+def _render_markdown_table_to_html(md_lines: List[str]) -> str:
+    """Parses markdown pipe table lines into responsive semantic HTML with SOC styling."""
+    if not md_lines:
+        return ""
+
+    rows = []
+    for line in md_lines:
+        line_s = line.strip()
+        if not line_s.startswith("|"):
+            continue
+        cells = [c.strip() for c in line_s.split("|")[1:-1]]
+        if all(re.match(r"^:?-+:?$", c) for c in cells if c):
+            continue
+        rows.append(cells)
+
+    if not rows:
+        return ""
+
+    headers = rows[0]
+    data_rows = rows[1:]
+    col_count = len(headers)
+
+    html_parts = ['<div class="tga-table-responsive"><table class="tga-table">']
+
+    # Header
+    html_parts.append("<thead><tr>")
+    for i, h in enumerate(headers):
+        align_cls = "text-left" if i == 0 else "text-right"
+        clean_h = re.sub(r"^\*+|\*+$", "", h).strip()
+        html_parts.append(f'<th class="{align_cls}">{html.escape(clean_h)}</th>')
+    html_parts.append("</tr></thead>")
+
+    # Body
+    html_parts.append("<tbody>")
+    for row in data_rows:
+        if not row or not any(row):
+            continue
+        if len(row) < col_count:
+            row.extend([""] * (col_count - len(row)))
+        elif len(row) > col_count:
+            row = row[:col_count]
+
+        c0 = row[0].strip()
+        clean_c0 = re.sub(r"^\*+|\*+$", "", c0).strip()
+        other_cells = row[1:]
+        other_empty = all(not c.strip() for c in other_cells)
+
+        if other_empty and clean_c0:
+            # System Organ Class (SOC) category row
+            html_parts.append(
+                f'<tr class="tga-soc-row"><td colspan="{col_count}"><strong>{html.escape(clean_c0)}</strong></td></tr>'
+            )
+        elif "number treated" in clean_c0.lower():
+            html_parts.append('<tr class="tga-subtotal-row">')
+            html_parts.append(f"<td><strong>{html.escape(clean_c0)}</strong></td>")
+            for c in other_cells:
+                html_parts.append(f'<td class="tga-freq-cell">{html.escape(c)}</td>')
+            html_parts.append("</tr>")
+        else:
+            html_parts.append('<tr class="tga-data-row">')
+            html_parts.append(f'<td class="tga-term-cell">{html.escape(clean_c0)}</td>')
+            for c in other_cells:
+                html_parts.append(f'<td class="tga-freq-cell">{html.escape(c)}</td>')
+            html_parts.append("</tr>")
+
+    html_parts.append("</tbody></table></div>")
+    return "".join(html_parts)
+
+
+def _format_tga_prose_html(clean_text: str) -> str:
+    """
+    Parses structured narrative and markdown tables into semantic, accessible HTML.
+    Renders section headers, subheadings, Australian pregnancy categories,
+    responsive tables, and distinct paragraphs matching the official PDF layout.
+    """
+    paragraphs = clean_text.split("\n\n")
+    out_parts = []
+
+    for p in paragraphs:
+        ps = p.strip()
+        # 0. Metadata banner like "4.6. FERTILITY...\nPages: 12–13\nDocument Date: ..."
+        if "Pages:" in ps and ("Document Date:" in ps or "Date:" in ps):
+            pages_m = re.search(r"Pages:\s*([^\n]+)", ps)
+            date_m = re.search(r"Document Date:\s*([^\n]+)", ps)
+            pages_val = pages_m.group(1).strip() if pages_m else ""
+            date_val = date_m.group(1).strip() if date_m else ""
+            out_parts.append(f'<div class="tga-doc-meta-box"><span class="tga-doc-meta-pill">📄 Document Pages: <strong>{html.escape(pages_val)}</strong></span><span class="tga-doc-meta-pill">📅 Effective Date: <strong>{html.escape(date_val)}</strong></span></div>')
+            continue
+
+        # 1. Main section header e.g. 4.6 FERTILITY, PREGNANCY AND LACTATION
+        if re.match(r"^(?:###\s*)?(?:\[Page\s+\d+\]\s*)?4\.[68]\b", ps, re.IGNORECASE):
+            clean_hdr = re.sub(r"^(?:###\s*)?(?:\[Page\s+\d+\]\s*)?", "", ps).strip()
+            out_parts.append(f'<h3 class="tga-section-header">{html.escape(clean_hdr)}</h3>')
+            continue
+
+        # 2. Category badge e.g. Category C or Category B3
+        if re.match(r"^(?:###\s*)?Category\s+[A-X0-9]+", ps, re.IGNORECASE):
+            clean_cat = re.sub(r"^(?:###\s*)?", "", ps).strip()
+            out_parts.append(f'<div class="tga-category-box"><span class="tga-category-badge">{html.escape(clean_cat)}</span></div>')
+            continue
+
+        # 3. Table title e.g. Table 1: Adverse reactions...
+        if re.match(r"^(?:###\s*)?Table\s+\d+:", ps, re.IGNORECASE):
+            clean_title = re.sub(r"^(?:###\s*)?", "", ps).strip()
+            out_parts.append(f'<h4 class="tga-table-title">{html.escape(clean_title)}</h4>')
+            continue
+
+        # 4. Explicit subheading (starts with ###)
+        if ps.startswith("### "):
+            clean_sub = ps[4:].strip()
+            out_parts.append(f'<h4 class="tga-subheading">{html.escape(clean_sub)}</h4>')
+            continue
+
+        # 5. Markdown table block
+        if ps.startswith("|") and ("|" in ps[1:]):
+            table_lines = [l for l in ps.split("\n") if l.strip().startswith("|")]
+            table_html = _render_markdown_table_to_html(table_lines)
+            if table_html:
+                out_parts.append(table_html)
+            continue
+
+        # 6. Fallback check if paragraph itself contains an inline subheading or table
+        lines = ps.split("\n")
+        if any(l.strip().startswith("###") or (l.strip().startswith("|") and "|" in l.strip()[1:]) for l in lines):
+            i = 0
+            sub_para_lines = []
+            while i < len(lines):
+                line = lines[i]
+                line_s = line.strip()
+                if not line_s:
+                    i += 1
+                    continue
+                if re.match(r"^(?:###\s*)?(?:\[Page\s+\d+\]\s*)?4\.[68]\b", line_s, re.IGNORECASE):
+                    if sub_para_lines:
+                        out_parts.append(f'<p class="tga-text">{" ".join(sub_para_lines)}</p>')
+                        sub_para_lines = []
+                    clean_hdr = re.sub(r"^(?:###\s*)?(?:\[Page\s+\d+\]\s*)?", "", line_s).strip()
+                    out_parts.append(f'<h3 class="tga-section-header">{html.escape(clean_hdr)}</h3>')
+                    i += 1
+                    continue
+                if re.match(r"^(?:###\s*)?Category\s+[A-X0-9]+", line_s, re.IGNORECASE):
+                    if sub_para_lines:
+                        out_parts.append(f'<p class="tga-text">{" ".join(sub_para_lines)}</p>')
+                        sub_para_lines = []
+                    clean_cat = re.sub(r"^(?:###\s*)?", "", line_s).strip()
+                    out_parts.append(f'<div class="tga-category-box"><span class="tga-category-badge">{html.escape(clean_cat)}</span></div>')
+                    i += 1
+                    continue
+                if re.match(r"^(?:###\s*)?Table\s+\d+:", line_s, re.IGNORECASE):
+                    if sub_para_lines:
+                        out_parts.append(f'<p class="tga-text">{" ".join(sub_para_lines)}</p>')
+                        sub_para_lines = []
+                    clean_title = re.sub(r"^(?:###\s*)?", "", line_s).strip()
+                    out_parts.append(f'<h4 class="tga-table-title">{html.escape(clean_title)}</h4>')
+                    i += 1
+                    continue
+                if line_s.startswith("### "):
+                    if sub_para_lines:
+                        out_parts.append(f'<p class="tga-text">{" ".join(sub_para_lines)}</p>')
+                        sub_para_lines = []
+                    clean_sub = line_s[4:].strip()
+                    out_parts.append(f'<h4 class="tga-subheading">{html.escape(clean_sub)}</h4>')
+                    i += 1
+                    continue
+                if line_s.startswith("|") and ("|" in line_s[1:]):
+                    if sub_para_lines:
+                        out_parts.append(f'<p class="tga-text">{" ".join(sub_para_lines)}</p>')
+                        sub_para_lines = []
+                    tbl_lines = []
+                    while i < len(lines) and lines[i].strip().startswith("|"):
+                        tbl_lines.append(lines[i])
+                        i += 1
+                    tbl_html = _render_markdown_table_to_html(tbl_lines)
+                    if tbl_html:
+                        out_parts.append(tbl_html)
+                    continue
+                sub_para_lines.append(html.escape(line_s))
+                i += 1
+            if sub_para_lines:
+                out_parts.append(f'<p class="tga-text">{" ".join(sub_para_lines)}</p>')
+            continue
+
+        # 7. Standard regular narrative paragraph
+        out_parts.append(f'<p class="tga-text">{html.escape(ps)}</p>')
+
+    return "\n".join(out_parts)
+
+
 def _render_australia_tga_drug_detail(drug: dict, changes: list) -> str:
     """
     Render Australian Therapeutic Goods Administration (TGA) drug detail page.
@@ -962,8 +1150,7 @@ def _render_australia_tga_drug_detail(drug: dict, changes: list) -> str:
         )
         plain_reports.append(plain_report)
 
-        paragraphs = clean_text.split("\n\n")
-        para_html = "".join(f"<p>{html.escape(p.strip())}</p>" for p in paragraphs if p.strip())
+        para_html = _format_tga_prose_html(clean_text)
 
         source_link_html = ""
         if s_url:
@@ -1257,13 +1444,150 @@ def _render_australia_tga_drug_detail(drug: dict, changes: list) -> str:
             margin: 0 0 14px 0;
             line-height: 1.4;
         }}
+        .tga-section-header {{
+            font-size: 16px;
+            font-weight: 800;
+            color: #0f172a;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            margin: 20px 0 12px 0;
+            padding-bottom: 6px;
+            border-bottom: 2px solid #e2e8f0;
+        }}
+        .tga-subheading {{
+            font-size: 14.5px;
+            font-weight: 700;
+            color: #1e293b;
+            margin: 20px 0 8px 0;
+            line-height: 1.4;
+        }}
+        .tga-category-box {{
+            margin: 10px 0 14px 0;
+        }}
+        .tga-category-badge {{
+            display: inline-block;
+            background: #eff6ff;
+            color: #1d4ed8;
+            border: 1px solid #bfdbfe;
+            font-weight: 700;
+            font-size: 13px;
+            padding: 3px 12px;
+            border-radius: 6px;
+            letter-spacing: 0.02em;
+        }}
+        .tga-doc-meta-box {{
+            display: inline-flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            margin: 0 0 16px 0;
+            padding: 8px 14px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+        }}
+        .tga-doc-meta-pill {{
+            font-size: 13px;
+            color: #475569;
+        }}
+        .tga-doc-meta-pill strong {{
+            color: #0f172a;
+        }}
+        .tga-text {{
+            margin: 0 0 14px 0;
+            color: #334155;
+            line-height: 1.68;
+            font-size: 14px;
+        }}
+        .tga-text:last-child {{
+            margin-bottom: 0;
+        }}
         .tga-prose p {{
-            margin: 0 0 12px 0;
-            color: #374151;
-            line-height: 1.65;
+            margin: 0 0 14px 0;
+            color: #334155;
+            line-height: 1.68;
         }}
         .tga-prose p:last-child {{
             margin-bottom: 0;
+        }}
+        .tga-table-title {{
+            font-size: 15px;
+            font-weight: 700;
+            color: #1e293b;
+            margin: 18px 0 8px 0;
+            line-height: 1.4;
+        }}
+        .tga-table-responsive {{
+            overflow-x: auto;
+            margin: 14px 0 18px 0;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+            background: #ffffff;
+        }}
+        .tga-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13.5px;
+            line-height: 1.5;
+            text-align: left;
+        }}
+        .tga-table th {{
+            background: #f8fafc;
+            color: #1e293b;
+            font-weight: 700;
+            padding: 10px 14px;
+            border-bottom: 2px solid #cbd5e1;
+            border-right: 1px solid #e2e8f0;
+            font-size: 13px;
+        }}
+        .tga-table th:last-child {{
+            border-right: none;
+        }}
+        .tga-table th.text-left {{
+            text-align: left;
+        }}
+        .tga-table th.text-right {{
+            text-align: right;
+        }}
+        .tga-table td {{
+            padding: 8px 14px;
+            border-bottom: 1px solid #f1f5f9;
+            border-right: 1px solid #f1f5f9;
+            color: #334155;
+        }}
+        .tga-table td:last-child {{
+            border-right: none;
+        }}
+        .tga-table tr:hover:not(.tga-soc-row) {{
+            background: #f8fafc;
+        }}
+        .tga-soc-row {{
+            background: #f1f5f9 !important;
+            border-top: 1.5px solid #cbd5e1;
+            border-bottom: 1.5px solid #cbd5e1;
+        }}
+        .tga-soc-row td {{
+            font-weight: 700;
+            color: #0f172a;
+            padding: 9px 14px;
+            font-size: 13.5px;
+            letter-spacing: 0.01em;
+        }}
+        .tga-subtotal-row {{
+            background: #fafafa;
+            border-bottom: 1.5px solid #e2e8f0;
+            font-weight: 600;
+        }}
+        .tga-term-cell {{
+            padding-left: 24px !important;
+            font-weight: 500;
+            color: #1e293b;
+        }}
+        .tga-freq-cell {{
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: #475569;
         }}
         .tga-source-link {{
             margin-top: 16px;

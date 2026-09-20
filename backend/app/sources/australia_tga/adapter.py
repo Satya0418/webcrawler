@@ -12,8 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.drug import Drug
 from app.services.database_service import DatabaseService
-from app.services.normalization import NormalizationService
-from app.sources.australia_tga.tga_crawler import AustraliaTGACrawler, tga_crawler
+from app.sources.australia_tga.crawler import AustraliaTGACrawler, tga_crawler
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +35,8 @@ class AustraliaTGAAdapter:
         Search for an Australian medicine by name, ingredient, or AUST R / ARTG ID.
 
         If local results exist and force_refresh is False, returns local cached records.
-        Otherwise executes live crawl of https://www.tga.gov.au/search?keywords=...
-        and persists structured results into the database.
+        Otherwise executes live crawl and section extraction via the existing PDF extractor,
+        persisting structured results into the database.
         """
         q = (query or "").strip()
         if not q or len(q) < 2:
@@ -50,7 +49,7 @@ class AustraliaTGAAdapter:
                 logger.info("Found %d cached Australian TGA drug records for '%s'", len(local_drugs), q)
                 return local_drugs
 
-        # Run live TGA search
+        # Run live TGA search & extraction
         try:
             candidates = await self.crawler.search_medicine(q)
             logger.info("TGA crawler returned %d candidate items for '%s'", len(candidates), q)
@@ -58,7 +57,7 @@ class AustraliaTGAAdapter:
             for cand in candidates:
                 drug, is_new = DatabaseService.insert_or_update_drug(db, cand)
 
-                # Save associated safety alerts and product information changes
+                # Save associated safety alerts and product information changes (Sections 4.6 & 4.8)
                 for change in cand.get("safety_changes", []):
                     DatabaseService.save_safety_change(db, drug.id, change)
 
