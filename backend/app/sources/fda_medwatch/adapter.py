@@ -13,11 +13,10 @@ from sqlalchemy.orm import Session
 
 from app.models.drug import Drug
 from app.services.database_service import DatabaseService
-from app.sources.fda_medwatch.medwatch_crawler import FDAMedWatchCrawler, medwatch_crawler
+from app.sources.fda_medwatch.config import SOURCE_ID
+from app.sources.fda_medwatch.crawler import FDAMedWatchCrawler, medwatch_crawler
 
 logger = logging.getLogger(__name__)
-
-SOURCE_ID = "FDA_MEDWATCH"
 
 
 class FDAMedWatchAdapter:

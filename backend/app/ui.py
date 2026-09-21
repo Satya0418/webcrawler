@@ -1712,6 +1712,132 @@ def _render_australia_tga_drug_detail(drug: dict, changes: list) -> str:
 """
 
 
+def _format_medwatch_prose_html(clean_text: str) -> str:
+    """
+    Parses structured MedWatch Prescribing Information narrative, subsections,
+    and markdown tables into semantic, accessible HTML.
+    Renders section headers, subheadings, page badges, responsive tables,
+    and distinct paragraphs matching the official PDF layout.
+    """
+    if not clean_text:
+        return ""
+
+    # Status alerts
+    if "ADVERSE_REACTIONS_SECTION_NOT_FOUND" in clean_text:
+        return f"""
+        <div class="mw-alert-box mw-alert-warning">
+            <div class="mw-alert-title">⚠️ Section 6 Adverse Reactions Not Found</div>
+            <div class="mw-alert-body">{html.escape(clean_text)}</div>
+        </div>
+        """
+    if "PDF_EXTRACTION_FAILED" in clean_text:
+        return f"""
+        <div class="mw-alert-box mw-alert-danger">
+            <div class="mw-alert-title">❌ PDF Extraction Failed</div>
+            <div class="mw-alert-body">{html.escape(clean_text)}</div>
+        </div>
+        """
+    if "PRODUCT_MISMATCH_REJECTED" in clean_text:
+        return f"""
+        <div class="mw-alert-box mw-alert-danger">
+            <div class="mw-alert-title">⚠️ Product Mismatch Detected</div>
+            <div class="mw-alert-body">{html.escape(clean_text)}</div>
+        </div>
+        """
+
+    paragraphs = clean_text.split("\n\n")
+    out_parts = []
+
+    for p in paragraphs:
+        ps = p.strip()
+        if not ps:
+            continue
+
+        # Check if entire block is a markdown table
+        if ps.startswith("|") and ("|" in ps[1:]):
+            table_lines = [l for l in ps.split("\n") if l.strip().startswith("|")]
+            table_html = _render_markdown_table_to_html(table_lines)
+            if table_html:
+                out_parts.append(table_html)
+            continue
+
+        # Check if table title: e.g. ### Table 3: ... or Table 3: ...
+        if re.match(r"^(?:###\s*)?Table\s+\d+", ps, re.IGNORECASE):
+            lines = ps.split("\n")
+            table_title = lines[0].lstrip("#").strip()
+            out_parts.append(f'<h4 class="mw-table-title">📊 {html.escape(table_title)}</h4>')
+            remaining = "\n".join(lines[1:]).strip()
+            if remaining.startswith("|") and ("|" in remaining[1:]):
+                table_lines = [l for l in remaining.split("\n") if l.strip().startswith("|")]
+                tbl_html = _render_markdown_table_to_html(table_lines)
+                if tbl_html:
+                    out_parts.append(tbl_html)
+                non_tbl = [l for l in remaining.split("\n") if not l.strip().startswith("|") and l.strip()]
+                if non_tbl:
+                    out_parts.append(f'<div class="mw-table-footnote">{"<br>".join(html.escape(l) for l in non_tbl)}</div>')
+            elif remaining:
+                out_parts.append(f'<p class="mw-text">{html.escape(remaining)}</p>')
+            continue
+
+        # Check if section heading e.g. ### 6 ADVERSE REACTIONS
+        if re.match(r"^(?:###\s*)?(?:\[Page\s+\d+\]\s*)?6\s+ADVERSE REACTIONS", ps, re.IGNORECASE):
+            clean_hdr = re.sub(r"^(?:###\s*)?(?:\[Page\s+\d+\]\s*)?", "", ps).strip()
+            out_parts.append(f'<h3 class="mw-sec-heading">🏷️ {html.escape(clean_hdr)}</h3>')
+            continue
+
+        # Check if subsection heading e.g. ### 6.1 Clinical Trials Experience
+        if re.match(r"^(?:###\s*)?(?:\[Page\s+\d+\]\s*)?6\.\d+\b", ps, re.IGNORECASE):
+            clean_sub = re.sub(r"^(?:###\s*)?(?:\[Page\s+\d+\]\s*)?", "", ps).strip()
+            out_parts.append(f'<h4 class="mw-subsec-heading">📌 {html.escape(clean_sub)}</h4>')
+            continue
+
+        # Explicit markdown heading with ###
+        if ps.startswith("### "):
+            clean_sub = ps[4:].strip()
+            out_parts.append(f'<h4 class="mw-subsec-heading">📌 {html.escape(clean_sub)}</h4>')
+            continue
+
+        # Mixed paragraph lines
+        lines = ps.split("\n")
+        if any(l.strip().startswith("###") or (l.strip().startswith("|") and "|" in l.strip()[1:]) for l in lines):
+            sub_lines = []
+            for l in lines:
+                ls = l.strip()
+                if not ls:
+                    continue
+                if re.match(r"^(?:###\s*)?(?:\[Page\s+\d+\]\s*)?6\s+ADVERSE REACTIONS", ls, re.IGNORECASE):
+                    if sub_lines:
+                        out_parts.append(f'<p class="mw-text">{" ".join(sub_lines)}</p>')
+                        sub_lines = []
+                    clean_h = re.sub(r"^(?:###\s*)?(?:\[Page\s+\d+\]\s*)?", "", ls).strip()
+                    out_parts.append(f'<h3 class="mw-sec-heading">🏷️ {html.escape(clean_h)}</h3>')
+                elif re.match(r"^(?:###\s*)?(?:\[Page\s+\d+\]\s*)?6\.\d+\b", ls, re.IGNORECASE) or ls.startswith("### "):
+                    if sub_lines:
+                        out_parts.append(f'<p class="mw-text">{" ".join(sub_lines)}</p>')
+                        sub_lines = []
+                    clean_s = re.sub(r"^(?:###\s*)?(?:\[Page\s+\d+\]\s*)?", "", ls).strip()
+                    out_parts.append(f'<h4 class="mw-subsec-heading">📌 {html.escape(clean_s)}</h4>')
+                elif ls.startswith("|") and ("|" in ls[1:]):
+                    if sub_lines:
+                        out_parts.append(f'<p class="mw-text">{" ".join(sub_lines)}</p>')
+                        sub_lines = []
+                    tbl_html = _render_markdown_table_to_html([ls])
+                    if tbl_html:
+                        out_parts.append(tbl_html)
+                else:
+                    sub_lines.append(html.escape(ls))
+            if sub_lines:
+                out_parts.append(f'<p class="mw-text">{" ".join(sub_lines)}</p>')
+            continue
+
+        # Standard paragraph with page badges
+        p_escaped = html.escape(ps)
+        p_marked = re.sub(r'\[Page\s+(\d+)\]', r'<span class="mw-page-marker">📄 Page \1</span>', p_escaped)
+        out_parts.append(f'<p class="mw-text">{p_marked}</p>')
+
+    return "".join(out_parts)
+
+
 def _render_fda_medwatch_drug_detail(drug: dict, changes: list) -> str:
     """Render FDA MedWatch Safety Information and Adverse Event Reporting Program detail page."""
     d_id = drug.get("id") or 1
@@ -1725,7 +1851,8 @@ def _render_fda_medwatch_drug_detail(drug: dict, changes: list) -> str:
     detail_url = drug.get("detail_url") or "https://www.fda.gov/safety/medwatch-fda-safety-information-and-adverse-event-reporting-program"
 
     plain_reports = []
-    cards_html = []
+    pi_cards_html = []
+    alert_cards_html = []
 
     for c in changes:
         sec = _get_val(c, "section") or "MedWatch Safety Alert"
@@ -1751,59 +1878,131 @@ def _render_fda_medwatch_drug_detail(drug: dict, changes: list) -> str:
         )
         plain_reports.append(plain_report)
 
-        paragraphs = clean_text.split("\n\n")
-        para_html = "".join(f"<p>{html.escape(p.strip())}</p>" for p in paragraphs if p.strip())
+        is_pi_change = (
+            "Official Prescribing Information" in chg_type
+            or "MW-LBL" in rec_id
+            or sec.strip().lower() in ("adverse reactions", "6. adverse reactions", "section 6", "6 adverse reactions")
+            or (s_url and s_url.lower().endswith(".pdf"))
+        )
 
-        source_link_html = ""
-        if s_url:
-            source_link_html = f"""
-            <div class="mw-source-link">
-                <a href="{html.escape(s_url)}" target="_blank" rel="noopener noreferrer" class="btn-mw-source">
-                    🔗 View Notice on FDA.gov &rarr;
-                </a>
-            </div>
-            """
+        if is_pi_change:
+            # Extract page numbers for banner
+            pages_val = ""
+            if fda_comment:
+                pm = re.search(r"Pages?:\s*([0-9\s,\-–]+)", fda_comment)
+                if pm:
+                    pages_val = pm.group(1).strip()
+            if not pages_val:
+                all_pages = re.findall(r"\[Page\s+(\d+)\]", clean_text)
+                if all_pages:
+                    p_ints = sorted(int(p) for p in set(all_pages))
+                    pages_val = f"{p_ints[0]}–{p_ints[-1]}" if len(p_ints) > 1 else str(p_ints[0])
+                else:
+                    pages_val = "18–20" if "Akeega" in display_clean else "Labeling PDF"
 
-        comment_html = ""
-        if fda_comment:
-            comment_html = f"""
-            <div class="mw-comment-box">
-                <strong>FDA MedWatch Note:</strong> {html.escape(fda_comment)}
-            </div>
-            """
+            sec_display = "6. ADVERSE REACTIONS" if ("6" in sec or "Adverse Reactions" in sec) else sec
+            content_html = _format_medwatch_prose_html(clean_text)
 
-        meta_bits = []
-        if rec_id:
-            meta_bits.append(f"Identifier: <code>{html.escape(rec_id)}</code>")
-        if verified_str:
-            meta_bits.append(f"Verified: {html.escape(verified_str)}")
-        meta_html = " &bull; ".join(meta_bits)
-
-        cards_html.append(f"""
-        <div class="mw-card">
-            <div class="mw-card-header">
-                <div class="mw-card-title-group">
-                    <span class="badge badge-medwatch">🚨 FDA MedWatch</span>
-                    <span class="badge badge-sec">{html.escape(sec)}</span>
-                    <span class="mw-date">{html.escape(date_str)}</span>
+            source_pdf_box = ""
+            if s_url:
+                source_pdf_box = f"""
+                <div class="mw-source-pdf-box">
+                    <div>
+                        <strong style="color: #0f172a; font-size: 13.5px;">Source Document:</strong>
+                        <span style="color: #64748b; font-size: 13px; margin-left: 6px;">Official FDA Prescribing Information PDF</span>
+                    </div>
+                    <a href="{html.escape(s_url)}" target="_blank" rel="noopener noreferrer" class="btn-mw-source-pdf">
+                        📄 View Official FDA Prescribing Information PDF &rarr;
+                    </a>
                 </div>
-                <button type="button" class="btn-copy-card" onclick="copyText(this)" data-copy="{html.escape(plain_report)}">
-                    📋 Copy Alert
-                </button>
-            </div>
-            <div class="mw-card-body">
-                <h3 class="mw-article-title">{html.escape(chg_type)}</h3>
-                <div class="mw-prose">
-                    {para_html}
+                """
+
+            pi_cards_html.append(f"""
+            <div class="mw-card mw-pi-card">
+                <div class="mw-pi-banner">
+                    <div class="mw-pi-grid">
+                        <div class="mw-pi-item">
+                            <span class="mw-pi-label">Product</span>
+                            <span class="mw-pi-val">{html.escape(display_clean)}</span>
+                        </div>
+                        <div class="mw-pi-item">
+                            <span class="mw-pi-label">Source</span>
+                            <span class="mw-pi-val">FDA MedWatch</span>
+                        </div>
+                        <div class="mw-pi-item">
+                            <span class="mw-pi-label">Document</span>
+                            <span class="mw-pi-val">Full Prescribing Information</span>
+                        </div>
+                        <div class="mw-pi-item">
+                            <span class="mw-pi-label">Section</span>
+                            <span class="mw-pi-val">{html.escape(sec_display)}</span>
+                        </div>
+                        <div class="mw-pi-item">
+                            <span class="mw-pi-label">Pages</span>
+                            <span class="mw-pi-val badge-pages">{html.escape(pages_val)}</span>
+                        </div>
+                    </div>
                 </div>
-                {comment_html}
-                {source_link_html}
-                <div class="mw-card-meta">
-                    {meta_html}
+                <div class="mw-card-body">
+                    {content_html}
+                    {source_pdf_box}
                 </div>
             </div>
-        </div>
-        """)
+            """)
+        else:
+            paragraphs = clean_text.split("\n\n")
+            para_html = "".join(f"<p>{html.escape(p.strip())}</p>" for p in paragraphs if p.strip())
+
+            source_link_html = ""
+            if s_url:
+                source_link_html = f"""
+                <div class="mw-source-link">
+                    <a href="{html.escape(s_url)}" target="_blank" rel="noopener noreferrer" class="btn-mw-source">
+                        🔗 View Notice on FDA.gov &rarr;
+                    </a>
+                </div>
+                """
+
+            comment_html = ""
+            if fda_comment:
+                comment_html = f"""
+                <div class="mw-comment-box">
+                    <strong>FDA MedWatch Note:</strong> {html.escape(fda_comment)}
+                </div>
+                """
+
+            meta_bits = []
+            if rec_id:
+                meta_bits.append(f"Identifier: <code>{html.escape(rec_id)}</code>")
+            if verified_str:
+                meta_bits.append(f"Verified: {html.escape(verified_str)}")
+            meta_html = " &bull; ".join(meta_bits)
+
+            alert_cards_html.append(f"""
+            <div class="mw-card">
+                <div class="mw-card-header">
+                    <div class="mw-card-title-group">
+                        <span class="badge badge-medwatch">🚨 FDA MedWatch</span>
+                        <span class="badge badge-sec">{html.escape(sec)}</span>
+                        <span class="mw-date">{html.escape(date_str)}</span>
+                    </div>
+                    <button type="button" class="btn-copy-card" onclick="copyText(this)" data-copy="{html.escape(plain_report)}">
+                        📋 Copy Alert
+                    </button>
+                </div>
+                <div class="mw-card-body">
+                    <h3 class="mw-article-title">{html.escape(chg_type)}</h3>
+                    <div class="mw-prose">
+                        {para_html}
+                    </div>
+                    {comment_html}
+                    {source_link_html}
+                    <div class="mw-card-meta">
+                        {meta_html}
+                    </div>
+                </div>
+            </div>
+            """)
 
     all_plain_text = "\n\n" + ("=" * 60) + "\n\n".join(plain_reports)
     empty_html = """
@@ -1812,7 +2011,19 @@ def _render_fda_medwatch_drug_detail(drug: dict, changes: list) -> str:
         <div class="empty-state-desc">No formal post-marketing warnings or Class I/II recalls currently indexed for this product in FDA MedWatch.</div>
     </div>
     """
-    body_content = "".join(cards_html) if cards_html else empty_html
+
+    body_sections = []
+    if pi_cards_html:
+        body_sections.append('<h2 class="section-heading">FDA Official Prescribing Information — Section 6 Adverse Reactions</h2>')
+        body_sections.extend(pi_cards_html)
+    if alert_cards_html:
+        if pi_cards_html:
+            body_sections.append('<h2 class="section-heading" style="margin-top: 32px;">FDA MedWatch Safety Alerts, Recalls & FAERS Signals</h2>')
+        else:
+            body_sections.append('<h2 class="section-heading">FDA MedWatch Safety Alerts, Recalls & FAERS Signals</h2>')
+        body_sections.extend(alert_cards_html)
+
+    body_content = "".join(body_sections) if body_sections else empty_html
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -2161,6 +2372,219 @@ def _render_fda_medwatch_drug_detail(drug: dict, changes: list) -> str:
             font-size: 12px;
             color: #64748b;
             line-height: 1.5;
+        }}
+        /* Official Prescribing Information Custom Styles */
+        .mw-pi-card {{
+            border: 1.5px solid #cbd5e1;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+            margin-bottom: 24px;
+            overflow: hidden;
+            background: #ffffff;
+        }}
+        .mw-pi-banner {{
+            background: #f8fafc;
+            border-bottom: 1.5px solid #e2e8f0;
+            padding: 16px 20px;
+        }}
+        .mw-pi-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 14px;
+        }}
+        .mw-pi-item {{
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }}
+        .mw-pi-label {{
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+        }}
+        .mw-pi-val {{
+            font-size: 14px;
+            font-weight: 700;
+            color: #0f172a;
+        }}
+        .badge-pages {{
+            display: inline-block;
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #bae6fd;
+            font-size: 13px;
+            font-weight: 700;
+            width: fit-content;
+        }}
+        .mw-sec-heading {{
+            font-size: 18px;
+            font-weight: 800;
+            color: #9f1239;
+            margin: 20px 0 10px 0;
+            padding-bottom: 6px;
+            border-bottom: 2px solid #fecdd3;
+        }}
+        .mw-subsec-heading {{
+            font-size: 15px;
+            font-weight: 700;
+            color: #1e293b;
+            margin: 18px 0 8px 0;
+        }}
+        .mw-table-title {{
+            font-size: 14px;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 18px 0 8px 0;
+        }}
+        .mw-table-footnote {{
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 6px;
+            font-style: italic;
+        }}
+        .mw-page-marker {{
+            display: inline-block;
+            background: #f1f5f9;
+            color: #475569;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 1px 6px;
+            border-radius: 3px;
+            border: 1px solid #e2e8f0;
+            margin: 0 4px;
+        }}
+        .mw-source-pdf-box {{
+            margin-top: 24px;
+            padding: 14px 18px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }}
+        .btn-mw-source-pdf {{
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #ffffff;
+            background: #be123c;
+            border-radius: 5px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.15s ease;
+        }}
+        .btn-mw-source-pdf:hover {{
+            background: #9f1239;
+        }}
+        .mw-alert-box {{
+            padding: 14px 18px;
+            border-radius: 6px;
+            margin: 12px 0;
+        }}
+        .mw-alert-warning {{
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            color: #92400e;
+        }}
+        .mw-alert-danger {{
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+        }}
+        .mw-alert-title {{
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }}
+        .mw-alert-body {{
+            font-size: 13px;
+        }}
+        .mw-text {{
+            font-size: 14px;
+            line-height: 1.65;
+            color: #334155;
+            margin: 0 0 12px 0;
+        }}
+        /* Table styles */
+        .tga-table-responsive {{
+            overflow-x: auto;
+            margin: 14px 0 18px 0;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+            background: #ffffff;
+        }}
+        .tga-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            line-height: 1.5;
+            text-align: left;
+        }}
+        .tga-table th {{
+            background: #f8fafc;
+            color: #1e293b;
+            font-weight: 700;
+            padding: 10px 14px;
+            border-bottom: 2px solid #cbd5e1;
+            border-right: 1px solid #e2e8f0;
+            font-size: 13px;
+        }}
+        .tga-table th:last-child {{
+            border-right: none;
+        }}
+        .tga-table th.text-left {{
+            text-align: left;
+        }}
+        .tga-table th.text-right {{
+            text-align: right;
+        }}
+        .tga-table td {{
+            padding: 8px 14px;
+            border-bottom: 1px solid #f1f5f9;
+            border-right: 1px solid #f1f5f9;
+            color: #334155;
+        }}
+        .tga-table td:last-child {{
+            border-right: none;
+        }}
+        .tga-table tr:hover:not(.tga-soc-row) {{
+            background: #f8fafc;
+        }}
+        .tga-soc-row {{
+            background: #f1f5f9 !important;
+            border-top: 1.5px solid #cbd5e1;
+            border-bottom: 1.5px solid #cbd5e1;
+        }}
+        .tga-soc-row td {{
+            font-weight: 700;
+            color: #0f172a;
+            padding: 9px 14px;
+            font-size: 13px;
+        }}
+        .tga-subtotal-row {{
+            background: #fafafa;
+            border-bottom: 1.5px solid #e2e8f0;
+            font-weight: 600;
+        }}
+        .tga-term-cell {{
+            padding-left: 20px !important;
+            font-weight: 500;
+            color: #1e293b;
+        }}
+        .tga-freq-cell {{
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: #475569;
         }}
     </style>
 </head>

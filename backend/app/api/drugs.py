@@ -4,6 +4,7 @@ Provides search, detail, and safety labeling changes endpoints.
 Supports multiple data sources: FDA_SRLC and HEALTH_CANADA_INFOWATCH.
 """
 import logging
+import re
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Response
@@ -539,11 +540,120 @@ async def get_drug_adverse_reactions_report(
         )
 
     changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id)
+
+    if "MEDWATCH" in (drug.source or "").upper():
+        ar_change = next(
+            (c for c in changes if "Section 6" in (c.change_type or "") or "Adverse Reactions" in (c.section or "")),
+            None,
+        )
+        art_change = next(
+            (c for c in changes if "MedWatch Alert" in (c.change_type or "") or "MedWatch Safety Communication" in (c.section or "")),
+            None,
+        )
+
+        if ar_change and ar_change.updated_text and "NOT FOUND" not in ar_change.updated_text:
+            pdf_url = ar_change.source_url or ""
+            doc_date = str(ar_change.source_date)[:10] if ar_change.source_date else ""
+            fda_comm = ar_change.fda_comment or ""
+            pages_m = re.search(r"Pages?:\s*([0-9\s,\-–—]+)", fda_comm)
+            page_str = pages_m.group(1).strip() if pages_m else ""
+            pages_list = []
+            if page_str:
+                page_str = re.sub(r"[–—]", "-", page_str)
+                for part in page_str.split(","):
+                    part = part.strip()
+                    if "-" in part:
+                        try:
+                            p_parts = [int(p) for p in part.split("-")]
+                            pages_list.extend(range(p_parts[0], p_parts[1] + 1))
+                        except Exception:
+                            pass
+                    elif part.isdigit():
+                        pages_list.append(int(part))
+            if not pages_list:
+                text_pages = re.findall(r"\[Page\s+(\d+)\]", clean_text)
+                if text_pages:
+                    pages_list = sorted(list({int(p) for p in text_pages}))
+
+            clean_text = ar_change.updated_text or ""
+            subsections = []
+            sub_matches = list(re.finditer(r"###\s+([^\n]+)\n(.*?)(?=(?:###\s+[^\n]+\n)|\Z)", clean_text, re.DOTALL))
+            for sm in sub_matches:
+                sub_title = sm.group(1).strip()
+                sub_body = sm.group(2).strip()
+                p_in_sub = re.findall(r"\[Page\s+(\d+)\]", sub_body)
+                sub_pages = sorted(list({int(p) for p in p_in_sub})) if p_in_sub else (pages_list or [])
+                subsections.append({
+                    "name": sub_title,
+                    "pages": sub_pages,
+                    "content": sub_body,
+                })
+
+            tables = []
+            tbl_blocks = re.findall(r"((?:\|[^\n]+\|\n?)+)", clean_text)
+            for tidx, tb in enumerate(tbl_blocks):
+                lines = [l.strip() for l in tb.strip().split("\n") if l.strip().startswith("|")]
+                if len(lines) >= 3:
+                    headers = [c.strip() for c in lines[0].split("|")[1:-1]]
+                    rows = []
+                    for row_line in lines[2:]:
+                        cells = [c.strip() for c in row_line.split("|")[1:-1]]
+                        row_dict = {headers[ci]: cells[ci] for ci in range(min(len(headers), len(cells)))}
+                        rows.append(row_dict)
+                    tables.append({
+                        "title": f"Adverse Reactions Table {tidx + 1}",
+                        "pages": pages_list or [1],
+                        "headers": headers,
+                        "rows": rows,
+                    })
+
+            return {
+                "product": drug.display_name,
+                "source": "FDA MedWatch",
+                "medwatch_article": {
+                    "title": art_change.change_type.replace("FDA MedWatch Alert: ", "") if art_change and art_change.change_type else "",
+                    "publication_date": str(art_change.source_date)[:10] if art_change and art_change.source_date else "",
+                    "url": art_change.source_url if art_change else "",
+                },
+                "product_information": {
+                    "document_found": True,
+                    "document_title": "Full Prescribing Information",
+                    "document_date": doc_date,
+                    "pdf_url": pdf_url,
+                },
+                "adverse_reactions": {
+                    "found": True,
+                    "section": "6. ADVERSE REACTIONS",
+                    "pages": pages_list,
+                    "subsections": subsections,
+                    "tables": tables,
+                },
+            }
+        else:
+            return {
+                "product": drug.display_name,
+                "source": "FDA MedWatch",
+                "medwatch_article": {
+                    "title": art_change.change_type.replace("FDA MedWatch Alert: ", "") if art_change and art_change.change_type else "",
+                    "publication_date": str(art_change.source_date)[:10] if art_change and art_change.source_date else "",
+                    "url": art_change.source_url if art_change else "",
+                },
+                "product_information": {
+                    "document_found": False,
+                    "pdf_url": None,
+                },
+                "adverse_reactions": {
+                    "found": False,
+                    "status": "ADVERSE_REACTIONS_SECTION_NOT_FOUND",
+                },
+            }
+
     return scraper.extract_adverse_reactions_from_records(
         drug_name=drug.display_name,
         active_ingredient=drug.active_ingredient,
         changes=changes,
     )
+
 
 
 @router.get("/{drug_id}/export")
