@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from urllib.parse import urljoin
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 logger = logging.getLogger(__name__)
 
@@ -177,30 +177,93 @@ def clean_adverse_reaction_text(raw_text: str) -> str:
 def clean_element_formatted_text(elem) -> str:
     """
     Extract clean, well-formatted text from an HTML element.
-    Preserves bullet points (•), paragraph breaks, and subsection headers.
+    Preserves bullet points (•), paragraph breaks, subsection headers,
+    underlines, italic notes, and cross-references.
     """
     if not elem:
         return ""
 
     soup = BeautifulSoup(str(elem), "lxml")
+    body = soup.body or soup
 
-    # Replace list items with clean bullet lines
-    for li in soup.find_all("li"):
-        t = re.sub(r"[ \t\n\r]+", " ", li.get_text()).strip()
-        if t:
-            li.replace_with(f"\n• {t}")
+    # Stop at Section 17
+    stop_pattern = re.compile(
+        r"(?i)\b(?:17\b|PCI/PI/MG|Patient\s+Counseling|MEDICATION\s+GUIDE|How\s+should\s+I\s+use)",
+    )
+    for el in body.find_all(["h4", "h5", "h6", "p", "strong", "b"]):
+        if stop_pattern.search(el.get_text()):
+            for sib in list(el.find_next_siblings()):
+                sib.decompose()
+            el.decompose()
+            break
+
+    # Normalize internal newlines inside paragraphs, spans, headers to spaces so sentences aren't fragmented
+    for tag in body.find_all(["p", "span", "h4", "h5", "h6", "div"]):
+        for c in tag.contents:
+            if isinstance(c, NavigableString):
+                c.replace_with(re.sub(r"[\r\n\t]+", " ", str(c)))
+
+    # Process lists: replace li with clean bullet line preserving inline tags
+    for li in body.find_all("li"):
+        li_inner = []
+        for child in li.children:
+            if isinstance(child, NavigableString):
+                li_inner.append(re.sub(r"[\r\n\t]+", " ", str(child)))
+            elif isinstance(child, Tag):
+                tag_name = child.name
+                txt = re.sub(r"\s+", " ", child.get_text()).strip()
+                if tag_name in ("u", "ins"):
+                    inner_html = "".join(str(c) for c in child.children)
+                    inner_cleaned = re.sub(r"\s+", " ", inner_html).strip()
+                    li_inner.append(f"<u>{inner_cleaned}</u>")
+                elif tag_name in ("i", "em"):
+                    li_inner.append(f"<i>{txt}</i>")
+                elif tag_name in ("b", "strong"):
+                    li_inner.append(f"<strong>{txt}</strong>")
+                elif tag_name == "p":
+                    inner_html = "".join(str(c) for c in child.children)
+                    inner_cleaned = re.sub(r"\s+", " ", inner_html).strip()
+                    li_inner.append(inner_cleaned)
+                else:
+                    li_inner.append(txt)
+        full_li = "".join(li_inner).strip()
+        full_li = re.sub(r"\s+", " ", full_li)
+        li.replace_with(f"\n• {full_li}\n")
+
+    # Preserve <u> underline tags for additions and revisions
+    for u in body.find_all(["u", "ins"]):
+        u_html = "".join(str(c) for c in u.children)
+        u_clean = re.sub(r"\s+", " ", u_html).strip()
+        if u_clean:
+            u.replace_with(f"<u>{u_clean}</u>")
         else:
-            li.unwrap()
+            u.decompose()
+
+    # Preserve <i> italic tags
+    for i in body.find_all(["i", "em"]):
+        i_txt = re.sub(r"\s+", " ", i.get_text()).strip()
+        if i_txt:
+            i.replace_with(f"<i>{i_txt}</i>")
+        else:
+            i.decompose()
+
+    # Preserve <b>/<strong> bold tags
+    for b in body.find_all(["b", "strong"]):
+        b_txt = re.sub(r"\s+", " ", b.get_text()).strip()
+        if b_txt:
+            b.replace_with(f"<strong>{b_txt}</strong>")
+        else:
+            b.decompose()
 
     # Preserve paragraph and block linebreaks
-    for p in soup.find_all(["p", "div", "h4", "h5", "blockquote"]):
+    for p in body.find_all(["p", "div", "h4", "h5", "h6", "blockquote", "ul", "ol"]):
         p.insert_before("\n\n")
         p.unwrap()
 
-    for br in soup.find_all("br"):
+    for br in body.find_all("br"):
         br.replace_with("\n")
 
-    text = soup.get_text()
+    text = body.get_text()
 
     # Clean whitespace while preserving line structure
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
@@ -214,7 +277,14 @@ def clean_element_formatted_text(elem) -> str:
             result.append("")
             blank = True
 
-    return "\n".join(result).strip()
+    joined = "\n".join(result).strip()
+    # Merge adjacent formatting tags on the same line (using [ \t]* so we never merge across newlines)
+    joined = re.sub(r"</u>[ \t]*<u>", " ", joined)
+    joined = re.sub(r"</i>[ \t]*<i>", " ", joined)
+    joined = re.sub(r"</strong>[ \t]*<strong>", " ", joined)
+    joined = re.sub(r"</b>[ \t]*<b>", " ", joined)
+    joined = re.sub(r"<i>:</i>\s*", ":", joined)
+    return joined.strip()
 
 
 class FDASrLCScraper:

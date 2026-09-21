@@ -18,6 +18,10 @@ from app.scrapers.fda_srlc_scraper import (
     format_fda_date_to_report,
     parse_fda_date,
 )
+from app.sources.fda_srlc.section_detector import (
+    FDASrLCSectionDetector,
+    clean_general_section_text,
+)
 
 
 def _get_val(obj: Any, attr: str, default: Any = "") -> Any:
@@ -2829,138 +2833,252 @@ def render_drug_detail_html(drug: dict, changes: list) -> str:
 
     application_number = drug.get("application_number") or "N/A"
 
-    # Filter changes for ONLY Adverse Reactions
-    ar_changes = []
-    for c in changes:
-        sec = _get_val(c, "section", "")
-        if re.search(r"(?i)\badverse\s+reactions?\b", sec):
-            ar_changes.append(c)
-
-    # Group Adverse Reactions by distinct parsed supplement date
+    # Group ALL safety changes by distinct parsed supplement date (Date-First)
     grouped = defaultdict(list)
-    for c in ar_changes:
+    for c in changes:
         s_date = _get_val(c, "source_date")
         dt_obj = parse_fda_date(s_date)
         date_str = dt_obj.strftime("%m/%d/%Y") if dt_obj else (str(s_date)[:10] if s_date else "Recent")
         group_key = (date_str, dt_obj or datetime.min)
         grouped[group_key].append(c)
 
-    # Sort dates chronologically descending (newest date first)
+    # Sort dates chronologically descending (newest date strictly first)
     sorted_groups = sorted(grouped.items(), key=lambda item: item[0][1], reverse=True)
 
-    report_sheets_html = []
-    plain_reports = []
-
-    for (date_str, dt_obj), section_changes in sorted_groups:
-        formatted_date = format_fda_date_to_report(dt_obj) if dt_obj else format_fda_date_to_report(date_str)
-        suppl_ids = list(dict.fromkeys([_get_val(c, "source_record_id") for c in section_changes if _get_val(c, "source_record_id")]))
-        suppl_id = ", ".join(suppl_ids) if suppl_ids else None
-
-        seen_texts = set()
-        raw_texts = []
-        for chg in section_changes:
-            txt = (_get_val(chg, "updated_text") or "").strip()
-            if txt and txt not in seen_texts:
-                seen_texts.add(txt)
-                raw_texts.append(txt)
-
-        cleaned_text = clean_adverse_reaction_text("\n\n".join(raw_texts))
-        if not cleaned_text:
-            continue
-
-        intro_sentence = (
-            f"On {formatted_date}, the United States Food and Drug Administration "
-            f"Center for Drug Evaluation and Research approved the following safety labeling "
-            f"changes for {display_clean} ({ingr_clean}; Additions underlined):"
-        )
-
-        body_html_parts = []
-        plain_text_lines = [
-            "3.1 The United States Food and Drug Administration",
-            "",
-            intro_sentence,
-            "",
-            "Adverse Reactions",
-            "",
-        ]
-
-        blocks = cleaned_text.split("\n\n")
-        for block in blocks:
-            block = block.strip()
-            if not block:
-                continue
-
-            plain_text_lines.append(block)
-            plain_text_lines.append("")
-
-            # If block is a subsection title (e.g. "Postmarketing Experience")
-            if len(block) < 60 and ("Experience" in block or "Reactions" in block or not ":" in block):
-                body_html_parts.append(f'<h4 class="report-subheading">{html.escape(block)}</h4>')
-            elif ":" in block:
-                # Format disorders line with bold prefix
-                label, desc = block.split(":", 1)
-                body_html_parts.append(
-                    f'<p class="report-disorder"><strong>{html.escape(label.strip())}:</strong> {html.escape(desc.strip())}</p>'
-                )
-            else:
-                body_html_parts.append(f'<p class="report-disorder">{html.escape(block)}</p>')
-
-        single_plain_report = "\n".join(plain_text_lines).strip()
-        plain_reports.append(single_plain_report)
-
-        suppl_label = f"({html.escape(suppl_id)})" if suppl_id else ""
-        report_sheets_html.append(f"""
-        <div class="report-sheet">
-            <div class="report-sheet-top">
-                <span class="suppl-badge">Supplement Date: {html.escape(date_str)} {suppl_label}</span>
-                <button type="button" class="btn-copy-card" onclick="copyText(this)" data-copy="{html.escape(single_plain_report)}">
-                    📋 Copy Text
-                </button>
-            </div>
-
-            <div class="report-sheet-content">
-                <div class="report-sec-num">3.1 The United States Food and Drug Administration</div>
-                <p class="report-intro-p">
-                    On {html.escape(formatted_date)}, the United States Food and Drug Administration Center for Drug Evaluation and Research approved the following safety labeling changes for {html.escape(display_clean)} ({html.escape(ingr_clean)}; <em>Additions underlined</em>):
-                </p>
-
-                <h3 class="report-main-heading">Adverse Reactions</h3>
-
-                <div class="report-body-container">
-                    {"".join(body_html_parts)}
-                </div>
-            </div>
-        </div>
-        """)
-
-    if not report_sheets_html:
+    if not sorted_groups:
         main_content_html = """
         <div class="no-data-box">
             <div class="no-data-icon">⚠️</div>
-            <h2 class="no-data-title">No data is present on adverse reaction</h2>
-            <p class="no-data-desc">No Adverse Reactions safety-related labeling changes were approved or recorded for this medicine in the FDA SrLC database.</p>
+            <h2 class="no-data-title">No matching FDA SrLC record found for this product.</h2>
+            <p class="no-data-desc">No safety-related labeling changes were approved or recorded for this medicine in the FDA SrLC database.</p>
         </div>
         """
         top_copy_btn = ""
     else:
-        latest_sheet = report_sheets_html[0]
-        older_sheets = report_sheets_html[1:]
+        # 1. LATEST APPLICABLE UPDATE (Date-First)
+        (latest_date_str, latest_dt), latest_changes = sorted_groups[0]
+        formatted_latest_date = format_fda_date_to_report(latest_dt) if latest_dt else format_fda_date_to_report(latest_date_str)
+        suppl_ids = list(dict.fromkeys([_get_val(c, "source_record_id") for c in latest_changes if _get_val(c, "source_record_id")]))
+        target_app = str(drug.get("application_number") or "")
+        chosen_suppl = None
+        for sid in suppl_ids:
+            if sid in target_app:
+                chosen_suppl = sid
+                break
+        if not chosen_suppl and suppl_ids:
+            chosen_suppl = sorted(suppl_ids, reverse=True)[0]
+        suppl_label = f"({html.escape(chosen_suppl)})" if chosen_suppl else ""
+
+        def _safe_html_format(text: str) -> str:
+            escaped = html.escape(text)
+            for tag in ("u", "i", "b", "strong", "em"):
+                escaped = escaped.replace(f"&lt;{tag}&gt;", f"<{tag}>")
+                escaped = escaped.replace(f"&lt;/{tag}&gt;", f"</{tag}>")
+            return escaped
+
+        def _render_fda_update_card(
+            date_str: str,
+            suppl_label_str: str,
+            card_changes: list,
+            is_latest: bool = False,
+            formatted_date_str: str = "",
+        ) -> str:
+            # Discover official label PDF
+            pdf_url = None
+            for c in card_changes:
+                cmt = _get_val(c, "fda_comment", "") or ""
+                if "Approved" in cmt and "http" in cmt:
+                    m = re.search(r"https?://[^\s]+", cmt)
+                    if m:
+                        pdf_url = m.group(0)
+                        break
+                s_url = _get_val(c, "source_url", "") or ""
+                if ".pdf" in s_url.lower():
+                    pdf_url = s_url
+                    break
+
+            pdf_html = ""
+            if pdf_url:
+                pdf_html = f'<p class="fda-pdf-link"><a href="{html.escape(pdf_url)}" target="_blank" rel="noopener noreferrer">Approved Drug Label (PDF)</a></p>'
+
+            # Segregate sections
+            wp_items = [c for c in card_changes if FDASrLCSectionDetector.is_warnings_and_precautions(_get_val(c, "section", ""))]
+            ar_items = [c for c in card_changes if FDASrLCSectionDetector.is_adverse_reactions(_get_val(c, "section", ""))]
+            preg_items = [c for c in card_changes if FDASrLCSectionDetector.is_use_in_specific_populations(_get_val(c, "section", ""))]
+            other_items = [c for c in card_changes if c not in wp_items and c not in ar_items and c not in preg_items]
+
+            def _render_item_content(item) -> str:
+                orig = _get_val(item, "original_text", "") or ""
+                if orig and any(t in orig.lower() for t in ("<p", "<ul", "<strong", "<b", "<i", "<u", "<h")):
+                    return f'<div class="fda-sec-content">{orig}</div>'
+                up_text = (_get_val(item, "updated_text", "") or "").strip()
+                if not up_text:
+                    return ""
+                lines = up_text.split("\n")
+                out_parts = []
+                in_ul = False
+                for line in lines:
+                    line_str = line.strip()
+                    if not line_str:
+                        continue
+                    if line_str.startswith("•") or line_str.startswith("-") or line_str.startswith("*"):
+                        if not in_ul:
+                            out_parts.append('<ul class="fda-ul">')
+                            in_ul = True
+                        bullet_txt = re.sub(r"^[•\-\*]\s*", "", line_str)
+                        out_parts.append(f'<li><p>{_safe_html_format(bullet_txt)}</p></li>')
+                    else:
+                        if in_ul:
+                            out_parts.append("</ul>")
+                            in_ul = False
+                        if line_str in ("…", "...", ". . .", "<strong>…</strong>", "<b>…</b>"):
+                            out_parts.append('<p class="fda-ellipsis">…</p>')
+                        elif (line_str.startswith("<strong>") and line_str.endswith("</strong>")) or (line_str.startswith("<b>") and line_str.endswith("</b>")):
+                            clean_hdr = re.sub(r"</?[a-zA-Z0-9]+[^>]*>", "", line_str).strip()
+                            out_parts.append(f'<strong class="fda-subsection">{_safe_html_format(clean_hdr)}</strong>')
+                        elif len(line_str) < 75 and (
+                            re.match(r"^(?:\:?\d+\.|\:\d+\.)", line_str)
+                            or any(w in line_str for w in ("Experience", "Reactions", "Trials", "Disorders", "Warnings", "Pregnancy", "Pediatric Use"))
+                        ):
+                            clean_hdr = re.sub(r"</?[a-zA-Z0-9]+[^>]*>", "", line_str).strip()
+                            out_parts.append(f'<strong class="fda-subsection">{_safe_html_format(clean_hdr)}</strong>')
+                        elif (line_str.startswith("<i>") and line_str.endswith("</i>")) or re.match(r"(?i)^(additions|newly\s+added|new\s+subsection)", line_str):
+                            clean_notice = re.sub(r"^<[ie][m]?>|</[ie][m]?>$", "", line_str).strip()
+                            out_parts.append(f'<p class="fda-notice"><i>{_safe_html_format(clean_notice)}</i></p>')
+                        else:
+                            out_parts.append(f'<p class="fda-p">{_safe_html_format(line_str)}</p>')
+                if in_ul:
+                    out_parts.append("</ul>")
+                return f'<div class="fda-sec-content">{"".join(out_parts)}</div>'
+
+            sections_rendered = []
+
+            # Section 5: Warnings and Precautions
+            if wp_items:
+                wp_bodies = []
+                seen_wp = set()
+                for it in wp_items:
+                    body = _render_item_content(it)
+                    if body and body not in seen_wp:
+                        seen_wp.add(body)
+                        wp_bodies.append(body)
+                if wp_bodies:
+                    sections_rendered.append(f'<h4 class="fda-section-h4">5 Warnings and Precautions</h4>{"".join(wp_bodies)}')
+            elif is_latest:
+                sections_rendered.append(f'''
+                <div class="fda-absent-section">
+                    <h4 class="fda-section-h4 fda-muted">5 Warnings and Precautions</h4>
+                    <div class="not-found-banner">⚠️ NOT FOUND IN THE LATEST APPLICABLE FDA LABELING UPDATE</div>
+                    <div class="not-found-sub">This safety section was not revised as part of the latest FDA labeling update on {html.escape(formatted_date_str)}.</div>
+                </div>
+                ''')
+
+            # Section 6: Adverse Reactions
+            if ar_items:
+                ar_bodies = []
+                seen_ar = set()
+                for it in ar_items:
+                    body = _render_item_content(it)
+                    if body and body not in seen_ar:
+                        seen_ar.add(body)
+                        ar_bodies.append(body)
+                if ar_bodies:
+                    sections_rendered.append(f'<h4 class="fda-section-h4">6 Adverse Reactions</h4>{"".join(ar_bodies)}')
+            elif is_latest:
+                sections_rendered.append(f'''
+                <div class="fda-absent-section">
+                    <h4 class="fda-section-h4 fda-muted">6 Adverse Reactions</h4>
+                    <div class="not-found-banner">⚠️ NOT FOUND IN THE LATEST APPLICABLE FDA LABELING UPDATE</div>
+                    <div class="not-found-sub">This safety section was not revised as part of the latest FDA labeling update on {html.escape(formatted_date_str)}.</div>
+                </div>
+                ''')
+
+            # Section 8: Use in Specific Populations
+            if preg_items:
+                preg_bodies = []
+                seen_preg = set()
+                for it in preg_items:
+                    body = _render_item_content(it)
+                    if body and body not in seen_preg:
+                        seen_preg.add(body)
+                        preg_bodies.append(body)
+                if preg_bodies:
+                    sections_rendered.append(f'<h4 class="fda-section-h4">8 Use in Specific Populations</h4>{"".join(preg_bodies)}')
+            elif is_latest:
+                sections_rendered.append(f'''
+                <div class="fda-absent-section">
+                    <h4 class="fda-section-h4 fda-muted">8 Use in Specific Populations (Pregnancy)</h4>
+                    <div class="not-found-banner">⚠️ NOT FOUND IN THE LATEST APPLICABLE FDA LABELING UPDATE</div>
+                    <div class="not-found-sub">This safety section was not revised as part of the latest FDA labeling update on {html.escape(formatted_date_str)}.</div>
+                </div>
+                ''')
+
+            # Other sections
+            seen_other = set()
+            for ot in other_items:
+                body = _render_item_content(ot)
+                if body and body not in seen_other:
+                    seen_other.add(body)
+                    s_name = _get_val(ot, "section") or "Safety Information"
+                    sections_rendered.append(f'<h4 class="fda-section-h4">{html.escape(s_name)}</h4>{body}')
+
+            header_title = f"{date_str} {suppl_label_str}".strip()
+
+            return f'''
+            <div class="fda-accordion-card">
+                <div class="fda-accordion-header">{html.escape(header_title)}</div>
+                <div class="fda-accordion-body">
+                    {pdf_html}
+                    {"".join(sections_rendered)}
+                </div>
+            </div>
+            '''
+
+        latest_sheet = _render_fda_update_card(
+            date_str=latest_date_str,
+            suppl_label_str=suppl_label,
+            card_changes=latest_changes,
+            is_latest=True,
+            formatted_date_str=formatted_latest_date,
+        )
+
+        older_groups = sorted_groups[1:]
+        older_sheets = []
+        for (o_date_str, o_dt), o_changes in older_groups:
+            o_suppl_ids = list(dict.fromkeys([_get_val(c, "source_record_id") for c in o_changes if _get_val(c, "source_record_id")]))
+            o_chosen = None
+            for sid in o_suppl_ids:
+                if sid in target_app:
+                    o_chosen = sid
+                    break
+            if not o_chosen and o_suppl_ids:
+                o_chosen = sorted(o_suppl_ids, reverse=True)[0]
+            o_suppl_label = f"({html.escape(o_chosen)})" if o_chosen else ""
+            o_card = _render_fda_update_card(
+                date_str=o_date_str,
+                suppl_label_str=o_suppl_label,
+                card_changes=o_changes,
+                is_latest=False,
+            )
+            older_sheets.append(o_card)
+
         older_html = ""
         if older_sheets:
             older_html = f"""
-            <details class="older-revisions-details">
+            <details class="older-revisions-details" open>
                 <summary class="older-revisions-summary">
-                    📁 Previous Adverse Reactions Labeling Updates ({len(older_sheets)} prior)
+                    📁 Historical FDA Labeling Updates ({len(older_sheets)} prior) &mdash; <span style="font-weight: normal; color: #64748b;">Preserved in database, not mixed with latest update</span>
                 </summary>
                 <div class="older-revisions-content">
                     {"".join(older_sheets)}
                 </div>
             </details>
             """
+
         main_content_html = f"{latest_sheet}\n{older_html}"
         top_copy_btn = f"""
-        <button type="button" class="btn-export btn-copy-primary" onclick="copyText(this)" data-copy="{html.escape(plain_reports[0])}">
-            📋 Copy Report
+        <button type="button" class="btn-export btn-copy-primary" onclick="copyText(this)" data-copy="FDA SrLC Update: {html.escape(display_clean)} ({html.escape(formatted_latest_date)})">
+            📋 Copy Latest Report
         </button>
         """
 
@@ -3185,6 +3303,236 @@ def render_drug_detail_html(drug: dict, changes: list) -> str:
             padding: 18px;
             background: #ffffff;
             border-top: 1px solid #e5e7eb;
+        }}
+        .pdf-banner {{
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 6px;
+            padding: 10px 16px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #1e40af;
+        }}
+        .pdf-banner a {{
+            color: #2563eb;
+            font-weight: 600;
+            text-decoration: underline;
+            margin-left: 6px;
+        }}
+        .sections-stack {{
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-top: 16px;
+        }}
+        .section-card {{
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            overflow: hidden;
+            background: #ffffff;
+        }}
+        .section-card-header {{
+            padding: 12px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #f1f5f9;
+            background: #f8fafc;
+        }}
+        .section-found {{
+            border-left: 4px solid #0284c7;
+        }}
+        .section-absent {{
+            border-left: 4px solid #cbd5e1;
+            background: #fafafa;
+        }}
+        .sec-badge {{
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 2px 8px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-bottom: 4px;
+        }}
+        .badge-ar {{
+            background: #fee2e2;
+            color: #991b1b;
+        }}
+        .badge-wp {{
+            background: #fef3c7;
+            color: #92400e;
+        }}
+        .badge-preg {{
+            background: #f3e8ff;
+            color: #6b21a8;
+        }}
+        .status-pill {{
+            font-size: 12px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 9999px;
+        }}
+        .status-found {{
+            background: #dcfce7;
+            color: #166534;
+        }}
+        .status-absent {{
+            background: #f1f5f9;
+            color: #64748b;
+        }}
+        .not-found-banner {{
+            padding: 12px 16px 4px 16px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #b91c1c;
+        }}
+        .not-found-sub {{
+            padding: 0 16px 12px 16px;
+            font-size: 12px;
+            color: #64748b;
+        }}
+        .fda-accordion-card {{
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            margin-bottom: 24px;
+            background: #ffffff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+            overflow: hidden;
+        }}
+        .fda-accordion-header {{
+            background: #f1f3f5;
+            background: linear-gradient(180deg, #f8f9fa 0%, #edf0f2 100%);
+            border-bottom: 1px solid #dee2e6;
+            padding: 10px 18px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #495057;
+            border-radius: 6px 6px 0 0;
+            letter-spacing: 0.01em;
+        }}
+        .fda-accordion-body {{
+            padding: 20px 24px;
+            color: #212529;
+            font-size: 15px;
+            line-height: 1.6;
+        }}
+        .fda-pdf-link {{
+            margin: 0 0 18px 0;
+            font-size: 15px;
+        }}
+        .fda-pdf-link a {{
+            color: #0066cc;
+            text-decoration: underline;
+            font-weight: 500;
+        }}
+        .fda-pdf-link a:hover {{
+            color: #004499;
+        }}
+        .fda-section-h4 {{
+            font-size: 16px;
+            font-weight: 700;
+            color: #111827;
+            margin: 22px 0 10px 0;
+            padding-bottom: 2px;
+        }}
+        .fda-section-h4:first-of-type {{
+            margin-top: 6px;
+        }}
+        .fda-subsection {{
+            display: block;
+            font-size: 15px;
+            font-weight: 700;
+            color: #111827;
+            margin: 14px 0 4px 0;
+        }}
+        .fda-notice {{
+            font-style: italic;
+            color: #374151;
+            font-size: 14.5px;
+            margin: 4px 0 10px 0;
+        }}
+        .fda-p {{
+            margin: 8px 0;
+            line-height: 1.6;
+            color: #1f2937;
+        }}
+        .fda-ul {{
+            margin: 8px 0 14px 22px;
+            padding-left: 0;
+            list-style-type: disc;
+        }}
+        .fda-muted {{
+            color: #64748b;
+        }}
+        .fda-sec-content {{
+            margin-bottom: 18px;
+        }}
+        .fda-sec-content p {{
+            margin: 8px 0;
+            line-height: 1.6;
+            color: #1f2937;
+        }}
+        .fda-sec-content strong, .fda-sec-content b {{
+            font-weight: 700;
+            color: #111827;
+        }}
+        .fda-sec-content i, .fda-sec-content em {{
+            font-style: italic;
+            color: #374151;
+        }}
+        .fda-sec-content u {{
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }}
+        .fda-sec-content ul {{
+            margin: 8px 0 14px 22px;
+            padding-left: 0;
+            list-style-type: disc;
+        }}
+        .fda-sec-content li {{
+            margin-bottom: 6px;
+            line-height: 1.55;
+            color: #1f2937;
+        }}
+        .fda-sec-content li p {{
+            margin: 0;
+            display: inline;
+        }}
+        .fda-ellipsis {{
+            color: #6b7280;
+            font-weight: bold;
+            margin: 6px 0;
+        }}
+        .fda-absent-section {{
+            background: #fafafa;
+            border-left: 4px solid #cbd5e1;
+            border-radius: 4px;
+            padding: 12px 16px;
+            margin-bottom: 18px;
+        }}
+        .older-group-item {{
+            border-bottom: 1px solid #f1f5f9;
+            padding: 12px 0;
+        }}
+        .older-group-item:last-child {{
+            border-bottom: none;
+        }}
+        .older-group-header {{
+            font-size: 13px;
+            font-weight: 700;
+            color: #334155;
+            margin-bottom: 6px;
+        }}
+        .older-change-item {{
+            font-size: 13px;
+            color: #475569;
+            margin: 4px 0;
+            padding-left: 12px;
+            border-left: 2px solid #e2e8f0;
+        }}
+        .older-change-item p {{
+            margin: 2px 0 6px 0;
         }}
         .footer-note {{
             margin-top: 40px;

@@ -16,8 +16,7 @@ from app.config import settings
 from app.database import init_db, get_db
 from app.api import drugs, safety_changes, admin
 from app.services.database_service import DatabaseService
-from app.crawler.fda_crawler import crawler
-from app.scrapers.fda_srlc_scraper import scraper, parse_fda_date
+from app.sources.fda_srlc.adapter import fda_srlc_adapter
 from app.sources.health_canada.infowatch.adapter import adapter as hc_adapter
 from app.sources.australia_tga.adapter import tga_adapter
 from app.sources.fda_medwatch.adapter import medwatch_adapter
@@ -71,7 +70,7 @@ async def homepage(
 ):
     """
     Unified Medicine Safety Search and Results page.
-    Supports Health Canada InfoWatch and US FDA SrLC.
+    Supports Health Canada InfoWatch, US FDA SrLC, Australia TGA, UK MHRA, and FDA MedWatch.
     """
     source_clean = (source or "ALL").strip().upper()
     if not q or not q.strip():
@@ -92,40 +91,10 @@ async def homepage(
 
     async def _crawl_fda():
         try:
-            logger.info("Executing FDA search for '%s'", query_clean)
-            html_resp = await crawler.search_drug(query_clean)
-            if html_resp:
-                search_res = scraper.parse_search_results(html_resp)
-                for item in search_res[:3]:
-                    drug, is_new = DatabaseService.insert_or_update_drug(db, item)
-                    d_url = item.get("detail_url")
-
-                    needs_crawl = is_new
-                    if not needs_crawl and d_url:
-                        existing = DatabaseService.get_safety_changes_by_drug_id(db, drug.id)
-                        if not existing:
-                            needs_crawl = True
-                        elif item.get("source_date"):
-                            cand_dt = parse_fda_date(item.get("source_date"))
-                            local_dt = parse_fda_date(existing[0].source_date)
-                            if cand_dt and local_dt and cand_dt > local_dt:
-                                needs_crawl = True
-
-                    if needs_crawl and d_url:
-                        crawler.visited_urls.discard(d_url)
-                        detail_html = await crawler.get_detail_page(d_url)
-                        if detail_html:
-                            detail_data = scraper.parse_detail_page(detail_html, source_url=d_url)
-                            if detail_data:
-                                if not drug.active_ingredient and detail_data.get("active_ingredient"):
-                                    drug.active_ingredient = detail_data["active_ingredient"]
-                                if not drug.application_number and detail_data.get("application_number"):
-                                    drug.application_number = detail_data["application_number"]
-                                for chg in detail_data.get("safety_changes", []):
-                                    DatabaseService.save_safety_change(db, drug.id, chg)
-                db.commit()
-        except Exception as e:
-            logger.error(f"FDA search crawl error: {e}", exc_info=True)
+            logger.info("Executing FDA SrLC search for '%s'", query_clean)
+            await fda_srlc_adapter.search(query=query_clean, db=db, force_refresh=True)
+        except Exception as exc:
+            logger.error("FDA SrLC search crawl error for '%s': %s", query_clean, exc, exc_info=True)
             db.rollback()
 
     async def _crawl_tga():
