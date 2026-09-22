@@ -2,9 +2,17 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-UPLOAD_DIR = BASE_DIR / "uploads"
-OUTPUT_DIR = BASE_DIR / "outputs"
-SAMPLE_DIR = BASE_DIR / "sample_reports"
+def _resolve_dir(env_var: str, default_path: Path) -> Path:
+    val = os.getenv(env_var)
+    if not val:
+        return default_path
+    p = Path(val)
+    return p if p.is_absolute() else (BASE_DIR / p)
+
+
+UPLOAD_DIR = _resolve_dir("UPLOAD_DIR", BASE_DIR / "uploads")
+OUTPUT_DIR = _resolve_dir("OUTPUT_DIR", BASE_DIR / "outputs")
+SAMPLE_DIR = _resolve_dir("SAMPLE_DIR", BASE_DIR / "sample_reports")
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

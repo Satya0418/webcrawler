@@ -1,15 +1,25 @@
-pymupdf>=1.24.0
-pdfplumber>=0.11.0
+# Core Web Framework & ASGI/WSGI Production Servers
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
+gunicorn>=21.2.0
 python-multipart>=0.0.9
-pandas>=2.2.0
-openpyxl>=3.1.2
+
+# PDF Parsing & Extraction Engines
+pymupdf>=1.24.0
+pdfplumber>=0.11.0
 reportlab>=4.2.0
+
+# OCR & Image Processing
 pytesseract>=0.3.10
 Pillow>=10.3.0
+
+# Data Serialization, Spreadsheets & Database
 pydantic>=2.7.0
+pandas>=2.2.0
+openpyxl>=3.1.2
+sqlalchemy>=2.0.0
+
+# Testing & HTTP Client
+httpx>=0.27.0
 pytest>=8.1.0
 pytest-asyncio>=0.23.0
-httpx>=0.27.0
-sqlalchemy>=2.0.0

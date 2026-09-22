@@ -1,14 +1,27 @@
+import os
+from pathlib import Path
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from backend.config import BASE_DIR
 from backend.database.models import Base
 
-DB_PATH = BASE_DIR / "extractor.db"
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+_raw_db_path = os.getenv("SQLITE_DB_PATH")
+if _raw_db_path:
+    p = Path(_raw_db_path)
+    DB_PATH = p if p.is_absolute() else (BASE_DIR / p)
+else:
+    DB_PATH = BASE_DIR / "extractor.db"
+
+# Ensure parent directory of the database file exists
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
+
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args=connect_args,
     echo=False
 )
 

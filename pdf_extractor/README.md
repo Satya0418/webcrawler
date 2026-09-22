@@ -127,6 +127,53 @@ Once launched:
 - **Web Application Dashboard**: Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
 - **Interactive Swagger API Documentation**: Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
+### Docker Deployment
+
+#### Option A: Docker Compose (Recommended)
+```bash
+# Build and start in detached mode with persistent volumes
+docker compose up -d --build
+
+# Check health and container status
+docker compose ps
+
+# View live container logs
+docker compose logs -f
+
+# Stop and clean up containers
+docker compose down
+```
+
+#### Option B: Docker CLI Direct
+```bash
+# 1. Build image
+docker build -t pdf-extractor:latest .
+
+# 2. Run container with volume mounts and port mapping
+docker run -d \
+  --name pdf-extractor \
+  -p 8000:8000 \
+  -v "$(pwd)/uploads:/app/uploads" \
+  -v "$(pwd)/outputs:/app/outputs" \
+  pdf-extractor:latest
+
+# 3. Stream logs
+docker logs -f pdf-extractor
+```
+
+#### Option C: Cloud Serverless Containers (Google Cloud Run / AWS ECS)
+- **Google Cloud Run**:
+  ```bash
+  gcloud run deploy pdf-extractor \
+    --source . \
+    --port 8000 \
+    --memory 2Gi \
+    --cpu 2 \
+    --allow-unauthenticated
+  ```
+- **AWS ECS / Fargate / Kubernetes**:
+  The image runs as non-root user `appuser` (UID 1000), accepts dynamic `$PORT`, and exposes `/api/health` for load balancer probes.
+
 ---
 
 ## 4. Explanation of the Section Detection & Extraction Algorithm

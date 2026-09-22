@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   pdf-extractor:
     build:
@@ -7,16 +5,28 @@ services:
       dockerfile: Dockerfile
     container_name: pdf_section_extractor
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     environment:
       - HOST=0.0.0.0
       - PORT=8000
-      - WORKERS=2
+      - WORKERS=${WORKERS:-2}
       - DEBUG=False
-      - ENABLE_OCR=True
-      - OCR_LANGUAGE=eng
+      - ENABLE_OCR=${ENABLE_OCR:-true}
+      - OCR_LANGUAGE=${OCR_LANGUAGE:-eng}
+      - SQLITE_DB_PATH=/app/data/extractor.db
     volumes:
+      # Persistent storage mounts for uploads, extracted outputs, and database
       - ./uploads:/app/uploads
       - ./outputs:/app/outputs
-      - ./extractor.db:/app/extractor.db
+      - pdf_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
+
+volumes:
+  pdf_data:
+    driver: local
