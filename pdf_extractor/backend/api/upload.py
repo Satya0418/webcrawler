@@ -32,6 +32,14 @@ async def upload_files(files: List[UploadFile] = File(...)):
                 "file_path": str(destination),
                 "size_bytes": len(content),
             })
+            # Instantly index uploaded file into PostgreSQL database in the background
+            try:
+                import asyncio
+                from backend.services.scanner_service import scanner_service
+                loop = asyncio.get_running_loop()
+                loop.run_in_executor(None, scanner_service.process_single_pdf, destination)
+            except Exception:
+                pass
         except Exception as e:
             raise HTTPException(
                 status_code=500,

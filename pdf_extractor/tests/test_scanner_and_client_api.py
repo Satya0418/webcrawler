@@ -128,7 +128,7 @@ def test_scanner_service_delta_and_client_api(tmp_path: Path):
     assert "database" in health_data
     assert "background_scanner" in health_data
 
-    # Test 11: Client query specifically for Subsection 16.1
+    # Test 11: Client query specifically for Subsection 16.1 (Neglect Table by default)
     res_16_1 = client.get("/api/v1/products/section-16", params={"product_name": "Lipitor", "subsection": "16.1"})
     assert res_16_1.status_code == 200
     data_16_1 = res_16_1.json()
@@ -137,19 +137,87 @@ def test_scanner_service_delta_and_client_api(tmp_path: Path):
     assert "16.1" in data_16_1["section_title"]
     assert "html_snippet" in data_16_1["data"]
     assert "<article" in data_16_1["data"]["html_snippet"] or "<section" in data_16_1["data"]["html_snippet"]
-    assert "<table" in data_16_1["data"]["html_snippet"]
+    # Table neglected by default
+    assert "<table" not in data_16_1["data"]["html_snippet"]
+    assert data_16_1["data"]["tables"] == []
 
-    # Test 12: Client query specifically for Subsection 16.1 in raw HTML format
+    # Test 11b: Client query with include_tables=True
+    res_16_1_tbl = client.get("/api/v1/products/section-16", params={"product_name": "Lipitor", "subsection": "16.1", "include_tables": "true"})
+    assert res_16_1_tbl.status_code == 200
+    data_16_1_tbl = res_16_1_tbl.json()
+    assert "<table" in data_16_1_tbl["data"]["html_snippet"]
+
+    # Test 12: Client query specifically for Subsection 16.1 in raw HTML format (neglect table default)
     res_16_1_html = client.get("/api/v1/products/section-16", params={"product_name": "Lipitor", "subsection": "16.1", "format": "html"})
     assert res_16_1_html.status_code == 200
     assert "text/html" in res_16_1_html.headers.get("content-type", "")
     assert "<!DOCTYPE html>" in res_16_1_html.text
     assert "16.1" in res_16_1_html.text
-    assert "<table" in res_16_1_html.text
+    assert "<table" not in res_16_1_html.text
 
     # Test 13: Client query for embeddable HTML snippet (no <!DOCTYPE html>)
     res_embed = client.get("/api/v1/products/section-16", params={"product_name": "Lipitor", "subsection": "16.1", "format": "html", "embed_only": "true"})
     assert res_embed.status_code == 200
     assert "<!DOCTYPE html>" not in res_embed.text
     assert "<section" in res_embed.text or "<article" in res_embed.text
+
+    # Test 14: Client query with format=data (HTML Table Data format)
+    res_data_fmt = client.get("/api/v1/products/section-16", params={"product_name": "Lipitor", "subsection": "16.1", "format": "data"})
+    assert res_data_fmt.status_code == 200
+    assert "Data" in res_data_fmt.json()
+
+
+def test_realtime_pdf_watcher_auto_ingestion(tmp_path: Path):
+    """
+    Validates that whenever a new PDF is placed into the watch folder:
+    1. The watchdog filesystem observer detects it in real-time.
+    2. Automatically extracts Section 16 and stores it in PostgreSQL.
+    3. The client API can immediately query it without manual intervention.
+    """
+    import time
+    import asyncio
+    from backend.database.db import get_db_session
+    from backend.database.models import ProductSectionRecord
+
+    test_product_file = "Amoxicillin_CAN_PBRER.pdf"
+
+    with get_db_session() as session:
+        session.query(ProductSectionRecord).filter_by(filename=test_product_file).delete()
+
+    auto_watch_dir = tmp_path / "realtime_watch"
+    auto_watch_dir.mkdir(parents=True, exist_ok=True)
+
+    test_scanner = ScannerService(watch_dir=auto_watch_dir, interval_minutes=60, target_section="16")
+    test_scanner.start()
+
+    try:
+        # Copy a PDF to simulate a user or webcrawler dropping a new PDF
+        source_sample = SAMPLE_DIR / "test8_tables.pdf"
+        dest_pdf = auto_watch_dir / test_product_file
+        shutil.copy(source_sample, dest_pdf)
+
+        # Allow real-time watchdog handler to debounce (1.5s) and process
+        start_wait = time.time()
+        found_in_db = False
+        while time.time() - start_wait < 6.0:
+            with get_db_session() as session:
+                rec = session.query(ProductSectionRecord).filter_by(filename=test_product_file).first()
+                if rec and rec.status == "success":
+                    found_in_db = True
+                    break
+            time.sleep(0.5)
+
+        assert found_in_db, "New PDF was not automatically ingested by the real-time watchdog within 6 seconds!"
+
+        # Verify client can immediately query the new product via API
+        resp = client.get("/api/v1/products/section-16", params={"product_name": "Amoxicillin"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "success"
+        assert "Data" in data
+        assert data["target_section"] == "16"
+
+    finally:
+        asyncio.run(test_scanner.stop())
+
 

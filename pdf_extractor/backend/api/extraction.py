@@ -64,6 +64,17 @@ async def extract_section(
     if not result.Data:
         result.Data = ExportService.generate_html_content(result)
 
+    # Persist extraction to PostgreSQL database
+    try:
+        from backend.services.scanner_service import save_extraction_to_db
+        save_extraction_to_db(
+            file_path=file_p,
+            extraction=result,
+            target_section=req.main_section or "16",
+        )
+    except Exception:
+        pass
+
     # Check if client asked for HTML response format
     requested_fmt = format or req.format
     requested_resp_fmt = response_format or req.response_format
@@ -139,6 +150,17 @@ async def extract_batch(
                 try:
                     downloads = ExportService.export_all(res, doc_id)
                     res.download_urls = downloads
+                except Exception:
+                    pass
+
+                # Persist extracted record to PostgreSQL database
+                try:
+                    from backend.services.scanner_service import save_extraction_to_db
+                    save_extraction_to_db(
+                        file_path=p,
+                        extraction=res,
+                        target_section=req.main_section or "16",
+                    )
                 except Exception:
                     pass
             else:

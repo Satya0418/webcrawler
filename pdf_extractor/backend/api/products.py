@@ -130,18 +130,44 @@ def extract_html_snippet(full_html: str) -> str:
     return full_html
 
 
+def strip_markdown_tables(text: str) -> str:
+    """Strips [Page X Table] captions and pipe table markdown blocks from extracted text."""
+    if not text:
+        return ""
+    text = re.sub(r'\[Page\s+\d+\s+Table\][\s\S]*?(?=\n\n|\Z)', '', text)
+    lines = text.split('\n')
+    cleaned = []
+    for line in lines:
+        s = line.strip()
+        if s.startswith('|') and s.endswith('|'):
+            continue
+        cleaned.append(line)
+    return '\n'.join(cleaned).strip()
+
+
+def strip_html_tables(html_str: str) -> str:
+    """Completely strips <table> and wrapper <div class="table-responsive"> elements from HTML."""
+    if not html_str:
+        return ""
+    cleaned = re.sub(r'<div class="table-responsive"[\s\S]*?</div>\s*', '', html_str, flags=re.IGNORECASE)
+    cleaned = re.sub(r'<table[\s\S]*?</table>\s*', '', cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
 def format_product_response(
     record: ProductSectionRecord,
     target_subsection: Optional[str] = None,
     format_type: str = "json",
     embed_only: bool = False,
+    include_tables: bool = False,
 ) -> Dict[str, Any]:
     """
     Formats a database ProductSectionRecord into a structured client-facing payload.
     If target_subsection is provided (e.g. '16.1'), filters strictly to that subsection.
+    When include_tables is False, completely omits tables, table rows, and renders text-only paragraphs.
     """
     tables = []
-    if record.tables_json:
+    if include_tables and record.tables_json:
         try:
             tables = json.loads(record.tables_json)
         except Exception:
@@ -150,92 +176,67 @@ def format_product_response(
     subsections = []
     if record.subsections_json:
         try:
-            subsections = json.loads(record.subsections_json)
+            raw_subs = json.loads(record.subsections_json)
+            for sub in raw_subs:
+                if isinstance(sub, dict):
+                    item_copy = dict(sub)
+                    if not include_tables:
+                        item_copy["tables"] = []
+                        item_copy["text"] = strip_markdown_tables(item_copy.get("text", ""))
+                        item_copy["html_snippet"] = strip_html_tables(item_copy.get("html_snippet", ""))
+                    subsections.append(item_copy)
         except Exception:
             subsections = []
 
     # Handle subsection-specific request (e.g. "16.1")
     if target_subsection:
         clean_sub = target_subsection.strip()
-        matched_sub = None
-        for item in subsections:
-            if isinstance(item, dict) and item.get("subsection_number") == clean_sub:
-                matched_sub = item
-                break
+        file_p = Path(record.file_path) if record.file_path else None
 
-        # If found in cached structured subsections
-        if matched_sub:
-            sub_snippet = matched_sub.get("html_snippet", "")
-            sub_full_html = ExportService.generate_structured_html(
-                result=SectionExtractor().extract(
-                    file_path_or_bytes=Path(record.file_path),
-                    main_section="16",
-                    target_subsection=clean_sub,
-                    doc_name=record.filename,
-                ) if Path(record.file_path).exists() else None,
-                product_name=record.product_name,
-                target_subsection=clean_sub,
-                standalone=True,
-            ) if Path(record.file_path).exists() else f"<!DOCTYPE html><html><body>{sub_snippet}</body></html>"
-
-            return {
-                "status": "success",
-                "product_name": record.product_name,
-                "target_section": record.target_section,
-                "target_subsection": clean_sub,
-                "section_title": matched_sub.get("title", f"Section {clean_sub}"),
-                "source_document": record.filename,
-                "total_pages": record.total_pages,
-                "pages": {
-                    "start": record.start_page,
-                    "end": record.end_page,
-                },
-                "extraction_status": "success",
-                "confidence_score": record.confidence_score,
-                "last_updated": record.updated_at.isoformat() if record.updated_at else record.created_at.isoformat(),
-                "data": {
-                    "text": matched_sub.get("text", ""),
-                    "tables": matched_sub.get("tables", []),
-                    "subsections": [clean_sub],
-                    "html": sub_full_html,
-                    "html_snippet": sub_snippet,
-                },
-            }
-
-        # If not cached, extract on-the-fly if source PDF is available
-        file_p = Path(record.file_path)
-        if file_p.exists():
+        # If source PDF is available, extract precise subsection on-the-fly according to table mode
+        if file_p and file_p.exists():
             extractor = SectionExtractor()
             res = extractor.extract(
                 file_path_or_bytes=file_p,
                 main_section=record.target_section,
                 target_subsection=clean_sub,
                 doc_name=record.filename,
+                include_tables=include_tables,
             )
             if res.status == "success":
                 full_html = ExportService.generate_structured_html(
-                    res, product_name=record.product_name, target_subsection=clean_sub, standalone=True
+                    res,
+                    product_name=record.product_name,
+                    target_subsection=clean_sub,
+                    standalone=True,
+                    include_tables=include_tables,
                 )
                 snippet = ExportService.generate_structured_html(
-                    res, product_name=record.product_name, target_subsection=clean_sub, standalone=False
+                    res,
+                    product_name=record.product_name,
+                    target_subsection=clean_sub,
+                    standalone=False,
+                    include_tables=include_tables,
                 )
                 sub_tables = []
-                for blk in res.blocks:
-                    if getattr(blk, "block_type", "") == "table":
-                        sub_tables.append({
-                            "id": blk.id,
-                            "page": blk.page,
-                            "columns": getattr(blk, "table_columns", None) or [],
-                            "rows": getattr(blk, "table_rows", None) or [],
-                            "markdown": getattr(blk, "table_markdown", "") or "",
-                        })
+                if include_tables:
+                    for blk in res.blocks:
+                        if getattr(blk, "block_type", "") == "table":
+                            sub_tables.append({
+                                "id": blk.id,
+                                "page": blk.page,
+                                "columns": getattr(blk, "table_columns", None) or [],
+                                "rows": getattr(blk, "table_rows", None) or [],
+                                "markdown": getattr(blk, "table_markdown", "") or "",
+                            })
 
-                # Determine subsection heading
                 sub_title = f"Section {clean_sub}"
                 for blk in res.blocks:
                     if getattr(blk, "block_type", "") == "heading" and blk.section == clean_sub:
                         sub_title = blk.text
                         break
+
+                clean_text = strip_markdown_tables(res.content) if not include_tables else res.content
 
                 return {
                     "status": "success",
@@ -252,8 +253,9 @@ def format_product_response(
                     "extraction_status": "success",
                     "confidence_score": getattr(res.validation, "confidence_score", 1.0),
                     "last_updated": record.updated_at.isoformat() if record.updated_at else record.created_at.isoformat(),
+                    "Data": full_html,
                     "data": {
-                        "text": res.content,
+                        "text": clean_text,
                         "tables": sub_tables,
                         "subsections": [clean_sub],
                         "html": full_html,
@@ -261,9 +263,56 @@ def format_product_response(
                     },
                 }
 
-    # Full Section 16 response
+        # Fallback to cached subsections if PDF is not locally reachable
+        matched_sub = None
+        for item in subsections:
+            if isinstance(item, dict) and item.get("subsection_number") == clean_sub:
+                matched_sub = item
+                break
+
+        if matched_sub:
+            sub_snippet = matched_sub.get("html_snippet", "")
+            if not include_tables:
+                sub_snippet = strip_html_tables(sub_snippet)
+            sub_full_html = f"<!DOCTYPE html><html><body>{sub_snippet}</body></html>"
+            sub_text = matched_sub.get("text", "")
+            if not include_tables:
+                sub_text = strip_markdown_tables(sub_text)
+
+            return {
+                "status": "success",
+                "product_name": record.product_name,
+                "target_section": record.target_section,
+                "target_subsection": clean_sub,
+                "section_title": matched_sub.get("title", f"Section {clean_sub}"),
+                "source_document": record.filename,
+                "total_pages": record.total_pages,
+                "pages": {
+                    "start": record.start_page,
+                    "end": record.end_page,
+                },
+                "extraction_status": "success",
+                "confidence_score": record.confidence_score,
+                "last_updated": record.updated_at.isoformat() if record.updated_at else record.created_at.isoformat(),
+                "Data": sub_full_html,
+                "data": {
+                    "text": sub_text,
+                    "tables": matched_sub.get("tables", []) if include_tables else [],
+                    "subsections": [clean_sub],
+                    "html": sub_full_html,
+                    "html_snippet": sub_snippet,
+                },
+            }
+
+    # Full Section response
     full_html = record.extracted_html or ""
+    if not include_tables:
+        full_html = strip_html_tables(full_html)
     html_snippet = extract_html_snippet(full_html)
+
+    clean_full_text = record.extracted_text or ""
+    if not include_tables:
+        clean_full_text = strip_markdown_tables(clean_full_text)
 
     return {
         "status": "success",
@@ -280,9 +329,10 @@ def format_product_response(
         "extraction_status": record.status,
         "confidence_score": record.confidence_score,
         "last_updated": record.updated_at.isoformat() if record.updated_at else record.created_at.isoformat(),
+        "Data": full_html,
         "data": {
-            "text": record.extracted_text or "",
-            "tables": tables,
+            "text": clean_full_text,
+            "tables": tables if include_tables else [],
             "subsections": subsections,
             "html": full_html,
             "html_snippet": html_snippet,
@@ -292,23 +342,29 @@ def format_product_response(
 
 @router.get("/products/section-16", summary="Fetch Section 16 or 16.1 structured data for a specified product")
 async def get_product_section_16(
-    product_name: str = Query(..., description="Brand name or medicine name (e.g. 'Lipitor')"),
+    product_name: str = Query(..., description="Brand name or medicine name (e.g. 'Lipitor', 'Ofloxacin')"),
     subsection: Optional[str] = Query(None, description="Optional target subsection, e.g. '16.1' or '16.2'"),
     section: Optional[str] = Query(None, description="Alternative: '16' or '16.1'"),
-    format: Optional[str] = Query("json", description="Output format: 'json' or 'html'"),
+    format: Optional[str] = Query("json", description="Output format: 'json', 'html', or 'data'"),
+    response_format: Optional[str] = Query(None, description="Alternative format selector e.g. 'html' or 'data'"),
     embed_only: bool = Query(False, description="If format=html and embed_only=True, returns embeddable snippet without <html><body>"),
+    include_tables: bool = Query(False, description="Whether to include clinical tables. Defaults to False (neglect tables, text only)"),
+    table_mode: Optional[str] = Query(None, description="Table mode: 'neglect' (default, omit tables) or 'add' (include tables)"),
     db: Session = Depends(get_db),
     _auth: bool = Depends(verify_api_key),
 ):
     """
     **Primary Client API Endpoint**:
     Returns pre-extracted Section 16 or subsection 16.1 data in proper structured HTML5 and JSON.
-    Results are returned instantly (<15ms) directly from the database without parsing PDFs on-the-fly.
+    By default, neglects tables (text only) as per client specification.
     
     Supports:
     - Entire Section 16: `?product_name=Lipitor`
     - Specific Subsection 16.1: `?product_name=Lipitor&subsection=16.1`
+    - Neglect tables (default): `?product_name=Ofloxacin&subsection=16.1` (or `&include_tables=false` / `&table_mode=neglect`)
+    - Include tables (optional): `?product_name=Ofloxacin&include_tables=true` (or `&table_mode=add`)
     - Standalone HTML page: `?product_name=Lipitor&format=html`
+    - HTML Table ("Data"): `?product_name=Lipitor&format=data` -> returns `{"Data": "<!DOCTYPE html>..."}`
     - Embeddable HTML snippet: `?product_name=Lipitor&format=html&embed_only=true`
     """
     record = find_product_record(db, product_name)
@@ -327,19 +383,34 @@ async def get_product_section_16(
     if not target_sub and section and section != "16":
         target_sub = section
 
+    # Determine table mode
+    effective_include_tables = False
+    if isinstance(table_mode, str):
+        effective_include_tables = (table_mode.lower() == "add")
+    elif isinstance(include_tables, bool):
+        effective_include_tables = include_tables
+
+    raw_format = response_format if isinstance(response_format, str) else (format if isinstance(format, str) else "json")
+    effective_format = raw_format.lower()
+
     resp_data = format_product_response(
         record=record,
         target_subsection=target_sub,
-        format_type=format,
+        format_type=effective_format,
         embed_only=embed_only,
+        include_tables=effective_include_tables,
     )
 
     # Return pure HTML if requested
-    if format and format.lower() == "html":
+    if effective_format == "html":
         content_to_serve = resp_data["data"]["html_snippet"] if embed_only else resp_data["data"]["html"]
         if not content_to_serve:
             content_to_serve = f"<section class='med-section-container'><p>{resp_data['data']['text']}</p></section>"
         return HTMLResponse(content=content_to_serve, media_type="text/html")
+
+    # If client specifically requested "Data" format (like in the UI option "HTML Table ('Data')")
+    if effective_format == "data":
+        return {"Data": resp_data.get("Data") or resp_data["data"]["html"]}
 
     return resp_data
 
@@ -365,16 +436,22 @@ async def post_product_section_16(
     if not target_sub and req.section and req.section != "16":
         target_sub = req.section
 
+    effective_include_tables = req.include_tables if req.include_tables is not None else False
+
     resp_data = format_product_response(
         record=record,
         target_subsection=target_sub,
         format_type=req.format or "json",
         embed_only=req.embed_only,
+        include_tables=effective_include_tables,
     )
 
     if req.format and req.format.lower() == "html":
         content_to_serve = resp_data["data"]["html_snippet"] if req.embed_only else resp_data["data"]["html"]
         return HTMLResponse(content=content_to_serve, media_type="text/html")
+
+    if req.format and req.format.lower() == "data":
+        return {"Data": resp_data.get("Data") or resp_data["data"]["html"]}
 
     return resp_data
 
@@ -462,16 +539,23 @@ async def list_all_products(
 
 @router.post("/scanner/trigger", summary="Manually trigger an immediate folder scan")
 async def trigger_scan(
+    folder_path: Optional[str] = Query(None, description="Optional folder path to scan on-demand (e.g. '/Users/satya/Desktop/Medical')"),
     _auth: bool = Depends(verify_api_key),
 ):
     """
-    Allows on-demand trigger of the 30-minute folder scanner.
-    Useful after dumping new PDFs into the watch folder without waiting for the next 30-minute timer.
+    Allows on-demand trigger of the folder scanner.
+    If folder_path is provided, immediately scans that directory and stores extracted sections into PostgreSQL.
+    Otherwise scans all configured watch directories.
     """
-    stats = await scanner_service.scan_once_async()
+    custom_dir = Path(folder_path).expanduser().resolve() if folder_path else None
+    if custom_dir and not custom_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Directory '{folder_path}' does not exist.")
+
+    stats = await scanner_service.scan_once_async(custom_dir=custom_dir)
     return {
         "status": "success",
         "message": "Scan completed successfully",
+        "scanned_directory": str(custom_dir) if custom_dir else [str(d) for d in scanner_service.watch_dirs],
         "stats": stats,
     }
 

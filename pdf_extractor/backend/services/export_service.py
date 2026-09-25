@@ -54,7 +54,7 @@ class ExportService:
         else:
             page_title = "Extracted Document"
 
-        is_neglect_mode = getattr(result, "table_mode", "add") == "neglect"
+        is_neglect_mode = (getattr(result, "table_mode", "add") == "neglect") or (getattr(result, "include_tables", True) is False)
         structured_items = result.structured_content or []
 
         # Check if actual tables should be rendered
@@ -185,6 +185,7 @@ class ExportService:
         product_name: Optional[str] = None,
         target_subsection: Optional[str] = None,
         standalone: bool = True,
+        include_tables: bool = True,
     ) -> str:
         """
         Generates production-grade, highly structured semantic HTML5.
@@ -197,6 +198,7 @@ class ExportService:
             target_subsection: If set (e.g. '16.1'), filters strictly to that subsection
             standalone: If True, wraps in full <!DOCTYPE html> with scoped stylesheet.
                         If False, returns embeddable <section> snippet for client websites.
+            include_tables: If False, omits tables and table cells completely (text only).
         """
         p_name = product_name or Path(result.document).stem.replace("_", " ").title()
         
@@ -253,6 +255,10 @@ class ExportService:
                         elements.append(f'    <{tag} class="med-list">\n{items_str}\n    </{tag}>')
 
                 elif btype == "table":
+                    if not include_tables:
+                        k += 1
+                        continue
+
                     cols = getattr(blk, "table_columns", None) or []
                     rows = getattr(blk, "table_rows", None) or []
                     th_html = "".join(f"<th>{html.escape(str(c))}</th>" for c in cols)

@@ -4,6 +4,24 @@ A production-quality, **deterministic** document processing engine and web appli
 
 ---
 
+## 🚀 Quick Access: Interactive Catalog & Short URLs (No Long Links!)
+
+> Full link reference document: see [PRODUCT_API_LINKS.md](PRODUCT_API_LINKS.md)
+
+You don't need to remember long query URLs! Use these clean short URLs or the visual catalog:
+
+- 📦 **Interactive Visual Catalog**: [http://127.0.0.1:8000/catalog](http://127.0.0.1:8000/catalog) *(Search, filter, and 1-click open any medicine)*
+- 🌐 **Clean Browser URL Format**: `http://127.0.0.1:8000/p/<medicine_name>/16.1`
+
+### One-Click Links for Indexed Medicines:
+- **Ofloxacin**: [Subsection 16.1 HTML](http://127.0.0.1:8000/p/ofloxacin/16.1) | [Section 16 HTML](http://127.0.0.1:8000/p/ofloxacin) | [JSON API](http://127.0.0.1:8000/api/v1/products/section-16?product_name=ofloxacin&subsection=16.1)
+- **Amikacin**: [Subsection 16.1 HTML](http://127.0.0.1:8000/p/amikacin/16.1) | [Section 16 HTML](http://127.0.0.1:8000/p/amikacin) | [JSON API](http://127.0.0.1:8000/api/v1/products/section-16?product_name=amikacin&subsection=16.1)
+- **Ezetimibe**: [Subsection 16.1 HTML](http://127.0.0.1:8000/p/ezetimibe/16.1) | [Section 16 HTML](http://127.0.0.1:8000/p/ezetimibe) | [JSON API](http://127.0.0.1:8000/api/v1/products/section-16?product_name=ezetimibe&subsection=16.1)
+- **Lipitor**: [Subsection 16.1 HTML](http://127.0.0.1:8000/p/lipitor/16.1) | [Section 16 HTML](http://127.0.0.1:8000/p/lipitor) | [JSON API](http://127.0.0.1:8000/api/v1/products/section-16?product_name=lipitor&subsection=16.1)
+- **Amoxicillin**: [Subsection 16.1 HTML](http://127.0.0.1:8000/p/amoxicillin/16.1) | [Section 16 HTML](http://127.0.0.1:8000/p/amoxicillin) | [JSON API](http://127.0.0.1:8000/api/v1/products/section-16?product_name=amoxicillin&subsection=16.1)
+
+---
+
 ## 1. Key Features
 
 - **100% Deterministic — Zero LLM Dependency**: No LLM is required or used in the extraction pipeline. Headings, hierarchy, and boundaries are computed via typography analysis, geometric layout parsing, and hierarchical tree navigation.

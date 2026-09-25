@@ -1,24 +1,67 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env if present
+load_dotenv(BASE_DIR / ".env")
+
 def _resolve_dir(env_var: str, default_path: Path) -> Path:
     val = os.getenv(env_var)
     if not val:
         return default_path
-    p = Path(val)
+    p = Path(val).expanduser()
     return p if p.is_absolute() else (BASE_DIR / p)
+
+
+def get_watch_directories() -> list[Path]:
+    """Returns list of resolved directories to watch for PDF ingestion."""
+    raw = os.getenv("PDF_WATCH_DIR", "")
+    dirs: list[Path] = []
+    if raw:
+        for part in raw.replace(";", ",").split(","):
+            part = part.strip()
+            if part:
+                p = Path(part).expanduser()
+                resolved = p if p.is_absolute() else (BASE_DIR / p)
+                dirs.append(resolved)
+    if not dirs:
+        dirs.append(BASE_DIR / "watch_pdfs")
+    
+    # Automatically include ~/Desktop/Medical if present on the local machine
+    desktop_med = Path("/Users/satya/Desktop/Medical")
+    if desktop_med.exists() and desktop_med not in dirs:
+        dirs.append(desktop_med)
+
+    # Automatically include uploads directory
+    uploads_dir = BASE_DIR / "uploads"
+    if uploads_dir not in dirs:
+        dirs.append(uploads_dir)
+
+    # Automatically include web crawler's PDF cache if present
+    crawler_cache = BASE_DIR.parent / "backend" / "data" / "pdf_cache"
+    if crawler_cache.exists() and crawler_cache not in dirs:
+        dirs.append(crawler_cache)
+
+    for d in dirs:
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+    return dirs
 
 
 UPLOAD_DIR = _resolve_dir("UPLOAD_DIR", BASE_DIR / "uploads")
 OUTPUT_DIR = _resolve_dir("OUTPUT_DIR", BASE_DIR / "outputs")
 SAMPLE_DIR = _resolve_dir("SAMPLE_DIR", BASE_DIR / "sample_reports")
-WATCH_DIR = _resolve_dir("PDF_WATCH_DIR", BASE_DIR / "watch_pdfs")
+
+WATCH_DIRS = get_watch_directories()
+WATCH_DIR = WATCH_DIRS[0]
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 SAMPLE_DIR.mkdir(parents=True, exist_ok=True)
-WATCH_DIR.mkdir(parents=True, exist_ok=True)
 
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8000"))
