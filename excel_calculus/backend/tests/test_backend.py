@@ -1,13 +1,16 @@
 import pytest
 import os
 import sys
+import io
 
-# Add root path
-sys.path.insert(0, "/Users/satya/projects/webcrwler")
+# Dynamic portable root path
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 from excel_calculus.backend.app.database import SessionLocal
 from excel_calculus.backend.app.models.entities import (
-    CaseRecord, CaseEvent, SafetyConcern, SearchMatch, SearchRun, 
+    CaseRecord, CaseEvent, CaseProduct, SafetyConcern, SearchMatch, SearchRun, 
     RelevanceAssessment, SMQTerm, Dataset, AuditLog
 )
 from excel_calculus.backend.app.services.ingestion import IngestionService
@@ -261,7 +264,18 @@ def test_24_source_lineage(db):
 
 # 25. Re-ingestion
 def test_25_re_ingestion(db):
-    abi_path = "/Users/satya/Downloads/Required Artifacts for section 16.3 (3)/Abiraterone/Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting.xlsx"
+    abi_path = os.environ.get(
+        "ABIRATERONE_EXCEL_PATH",
+        os.path.join(BASE_DIR, "excel_calculus", "data", "Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting.xlsx")
+    )
+    if not os.path.exists(abi_path):
+        fallback = os.path.expanduser("~/Downloads/Required Artifacts for section 16.3 (3)/Abiraterone/Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting.xlsx")
+        if os.path.exists(fallback):
+            abi_path = fallback
+
+    if not os.path.exists(abi_path):
+        pytest.skip(f"Abiraterone linelisting not found at {abi_path}")
+
     ingestion = IngestionService(db)
     res = ingestion.ingest_linelisting_file(
         abi_path,
@@ -302,3 +316,102 @@ def test_27_final_section_16_1_report(db):
     assert "Hepatotoxicity" in id_risks
     assert "Cardiac disorders" in id_risks
     assert "Rhabdomyolysis/Myopathy" in id_risks
+
+    # Strictly 13 official concerns; Section 9 Medication error must NOT be in Section 16.1 table
+    all_risks = [r["risk_term"] for sec in table_data["table_sections"] for r in sec["risks"]]
+    assert len(all_risks) == 13
+    assert "Medication error" not in all_risks
+    assert "Overdose due to medication error" in all_risks
+
+# 28. Real PDF generation and visual verification via pypdf
+def test_28_real_pbrer_pdf_generation(db):
+    import pypdf
+    report_service = ReportService(db)
+    pdf_bytes = report_service.generate_section_16_1_pdf("Abiraterone")
+
+    assert pdf_bytes is not None
+    assert len(pdf_bytes) > 1000
+    assert pdf_bytes.startswith(b"%PDF-1.4"), "Must be a valid PDF-1.4 file"
+
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    assert len(reader.pages) >= 1
+
+    all_pdf_text = ""
+    for page in reader.pages:
+        txt = page.extract_text()
+        all_pdf_text += "\n" + txt
+
+    # Verify official running header & footer
+    assert "Apotex Inc." in all_pdf_text
+    assert "Abiraterone" in all_pdf_text
+    assert "Periodic Benefit-Risk Evaluation Report" in all_pdf_text
+    assert "CONFIDENTIAL" in all_pdf_text
+    assert "Page " in all_pdf_text
+
+    # Verify official table headers and categories
+    assert "Risk Term" in all_pdf_text
+    assert "Case Reports" in all_pdf_text
+    assert "IMPORTANT IDENTIFIED RISKS" in all_pdf_text
+    assert "IMPORTANT POTENTIAL RISKS" in all_pdf_text
+    assert "MISSING INFORMATION" in all_pdf_text
+
+    # Verify all risk terms are present in the PDF
+    assert "Hepatotoxicity" in all_pdf_text
+    assert "Cardiac disorders" in all_pdf_text
+    assert "Osteoporosis including osteoporosis-related fractures" in all_pdf_text
+    assert "Allergic alveolitis" in all_pdf_text
+    assert "Increased exposure with food" in all_pdf_text
+    assert "Rhabdomyolysis/Myopathy" in all_pdf_text
+    assert "Cataract" in all_pdf_text
+    assert "Drug drug interaction with CYP2D6 inhibitors" in all_pdf_text
+    assert "Overdose due to medication error" in all_pdf_text
+
+    # Verify Requirement 18: No Total row in official table
+    assert "Total =" not in all_pdf_text
+    assert "TOTAL RELEVANT" not in all_pdf_text
+
+# 29. Search run history preservation (non-destructive)
+def test_29_search_run_history_preservation(db):
+    search_service = SearchEngineService(db)
+    run_a = search_service.execute_concern_search("abi_hepatotoxicity", reviewer_id="auditor_a")
+    matches_a = db.query(SearchMatch).filter_by(search_run_id=run_a["search_run_id"]).count()
+    assert matches_a > 0
+
+    run_b = search_service.execute_concern_search("abi_hepatotoxicity", reviewer_id="auditor_b")
+    matches_b = db.query(SearchMatch).filter_by(search_run_id=run_b["search_run_id"]).count()
+    assert matches_b > 0
+
+    # Old matches from run_a must still exist in DB (never wiped!)
+    matches_a_after = db.query(SearchMatch).filter_by(search_run_id=run_a["search_run_id"]).count()
+    assert matches_a_after == matches_a, "Historical SearchMatch records must be preserved"
+    assert run_a["search_run_id"] != run_b["search_run_id"]
+
+# 30. Dataset isolation & composite case identity
+def test_30_dataset_isolation_composite_identity(db):
+    case = db.query(CaseRecord).filter_by(case_number="2025AP002474").first()
+    assert case is not None
+    assert case.id is not None, "CaseRecord must have internal integer PK id"
+    assert case.dataset_id is not None
+
+    # Check related events and products link via case_id
+    events = db.query(CaseEvent).filter_by(case_id=case.id).all()
+    assert len(events) == 9
+    products = db.query(CaseProduct).filter_by(case_id=case.id).all()
+    assert len(products) >= 2
+
+# 31. Event onset and product field population
+def test_31_event_onset_and_product_fields(db):
+    case = db.query(CaseRecord).filter_by(case_number="2025AP002474").first()
+    events = db.query(CaseEvent).filter_by(case_id=case.id).all()
+    # At least some events have event_onset populated
+    onsets = [e.event_onset for e in events if e.event_onset]
+    assert len(onsets) > 0
+    # Multi-event onsets mapped by position have UNCERTAIN status
+    uncertain_events = [e for e in events if e.onset_mapping_status == "UNCERTAIN_MAPPED_BY_POSITION"]
+    assert len(uncertain_events) > 0
+
+    # Product fields populated
+    prods = db.query(CaseProduct).filter_by(case_id=case.id).all()
+    assert any(p.brand_name == "APO-ABIRATERONE" for p in prods)
+    assert any(p.role == "Suspect" for p in prods)
+

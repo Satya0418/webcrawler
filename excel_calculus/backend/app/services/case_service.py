@@ -179,12 +179,23 @@ class CaseService:
 
         prev_status = ass.status if ass else "NEW"
 
+        case = self.db.query(CaseRecord).filter_by(case_number=case_number).first()
+        case_id = case.id if case else None
+        dataset_id = case.dataset_id if case else None
+
         if not ass:
             ass = RelevanceAssessment(
+                case_id=case_id,
                 case_number=case_number,
-                concern_id=concern_id
+                concern_id=concern_id,
+                dataset_id=dataset_id
             )
             self.db.add(ass)
+        else:
+            if not ass.case_id and case_id:
+                ass.case_id = case_id
+            if not ass.dataset_id and dataset_id:
+                ass.dataset_id = dataset_id
 
         ass.status = status
         ass.exclusion_reason = exclusion_reason
@@ -194,8 +205,10 @@ class CaseService:
         ass.updated_at = datetime.utcnow()
 
         audit = AuditLog(
+            case_id=case_id,
             case_number=case_number,
             concern_id=concern_id,
+            dataset_id=dataset_id,
             user_id=reviewer_id,
             action=f"Changed assessment status for case {case_number} to {status}",
             previous_state=prev_status,

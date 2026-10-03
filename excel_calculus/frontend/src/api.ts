@@ -84,3 +84,8 @@ export async function updateAssessment(data: {
   if (!res.ok) throw new Error("Failed to update assessment");
   return res.json();
 }
+
+export function getSection161PdfUrl(product: string = "Abiraterone", preview: boolean = false): string {
+  return `${API_BASE}/reports/section-16-1/pdf?product=${encodeURIComponent(product)}&preview=${preview}`;
+}
+

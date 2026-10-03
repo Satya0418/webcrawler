@@ -1,8 +1,9 @@
 from collections import Counter
 from sqlalchemy.orm import Session
 from excel_calculus.backend.app.models.entities import (
-    SafetyConcern, CaseRecord, SearchMatch, RelevanceAssessment
+    SafetyConcern, CaseRecord, SearchRun, SearchMatch, RelevanceAssessment
 )
+from excel_calculus.backend.app.services.pdf_service import PDFReportService
 
 class ReportService:
     def __init__(self, db: Session):
@@ -13,7 +14,12 @@ class ReportService:
         if not concern:
             raise ValueError(f"Safety Concern not found: {concern_id}")
 
-        matches = self.db.query(SearchMatch).filter_by(concern_id=concern_id).all()
+        # Retrieve matches from the active/latest SearchRun
+        latest_run = self.db.query(SearchRun).filter_by(concern_id=concern_id, is_active=True).order_by(SearchRun.execution_time.desc()).first()
+        if not latest_run:
+            latest_run = self.db.query(SearchRun).filter_by(concern_id=concern_id).order_by(SearchRun.execution_time.desc()).first()
+
+        matches = self.db.query(SearchMatch).filter_by(search_run_id=latest_run.id).all() if latest_run else self.db.query(SearchMatch).filter_by(concern_id=concern_id).all()
         distinct_case_nums = sorted(list(set(m.case_number for m in matches)))
 
         assessments = self.db.query(RelevanceAssessment).filter_by(concern_id=concern_id).all()
@@ -22,10 +28,6 @@ class ReportService:
         cases = self.db.query(CaseRecord).filter(CaseRecord.case_number.in_(distinct_case_nums)).all()
         cases_map = {c.case_number: c for c in cases}
 
-        # Strict segregation:
-        # RELEVANT: Only cases explicitly assessed by reviewer as RELEVANT
-        # NOT_RELEVANT: Explicitly excluded cases with reasons
-        # PENDING / NEEDS_REVIEW: Still candidate or under review
         relevant_cases = []
         excluded_cases = []
         pending_cases = []
@@ -42,6 +44,7 @@ class ReportService:
             status = ass.status if ass else "CANDIDATE"
 
             case_item = {
+                "case_id": case.id if case else None,
                 "case_number": c_num,
                 "country": case.country if case else "",
                 "report_type": case.report_type if case else "",
@@ -70,9 +73,6 @@ class ReportService:
                 "secondary_result": ass.secondary_assessment_result if ass else None
             }
 
-            # CRITICAL REGULATORY RULE:
-            # Candidates are NEVER counted as relevant!
-            # Only status == "RELEVANT" is counted towards the final regulatory total.
             if status == "RELEVANT":
                 relevant_cases.append(case_item)
                 for term in case_item["matched_terms"]:
@@ -86,7 +86,6 @@ class ReportService:
             else:
                 pending_cases.append(case_item)
 
-        # Tabular summary of Preferred Terms among relevant cases (or candidate if none relevant yet)
         target_pt_cases = relevant_cases if len(relevant_cases) > 0 else pending_cases
         display_counter = Counter()
         for ci in target_pt_cases:
@@ -98,7 +97,6 @@ class ReportService:
             for pt, count in display_counter.most_common()
         ]
 
-        # Clinical summary text template
         clinical_narrative_summary = (
             f"During the review period ({concern.reporting_period}), the MAH retrieved {len(distinct_case_nums)} "
             f"candidate case reports pertaining to the safety concern of '{concern.name}' using {concern.search_method} "
@@ -144,6 +142,7 @@ class ReportService:
         - Number of Relevant Case Reports must be COUNT(DISTINCT Case Number WHERE status = 'RELEVANT')
         - Never count candidate cases as relevant
         - Never hard-code counts
+        - Categories strictly: Important Identified Risks, Important Potential Risks, Missing Information
         """
         concerns = self.db.query(SafetyConcern).filter_by(product_name=product_name).all()
         if not concerns:
@@ -162,7 +161,6 @@ class ReportService:
         total_candidate = 0
 
         for c in concerns:
-            # Strictly filter for Section 16.1 safety concern categories
             c_cat_lower = (c.category or "").lower()
             if "section 9" in c_cat_lower:
                 continue
@@ -178,7 +176,16 @@ class ReportService:
             else:
                 continue
 
-            matches = self.db.query(SearchMatch).filter_by(concern_id=c.id).all()
+            # Query matches from the active/latest SearchRun
+            latest_run = self.db.query(SearchRun).filter_by(concern_id=c.id, is_active=True).order_by(SearchRun.execution_time.desc()).first()
+            if not latest_run:
+                latest_run = self.db.query(SearchRun).filter_by(concern_id=c.id).order_by(SearchRun.execution_time.desc()).first()
+
+            if latest_run:
+                matches = self.db.query(SearchMatch).filter_by(search_run_id=latest_run.id).all()
+            else:
+                matches = self.db.query(SearchMatch).filter_by(concern_id=c.id).all()
+
             distinct_cases = sorted(list(set(m.case_number for m in matches)))
 
             assessments = self.db.query(RelevanceAssessment).filter_by(concern_id=c.id).all()
@@ -234,3 +241,11 @@ class ReportService:
             "total_candidate_cases": total_candidate,
             "table_sections": table_sections
         }
+
+    def generate_section_16_1_pdf(self, product_name: str) -> bytes:
+        """
+        Generates official regulatory PBRER Section 16.1 PDF from current database data.
+        """
+        table_data = self.generate_section_16_1_table(product_name=product_name)
+        pdf_service = PDFReportService(self.db)
+        return pdf_service.generate_section_16_1_pdf(table_data)

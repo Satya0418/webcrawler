@@ -1,7 +1,21 @@
 import React, { useState, useEffect } from "react";
 import type { Section161ReportData } from "../types";
-import { fetchSection161Report } from "../api";
-import { Printer, Copy, Check, FileSpreadsheet, RefreshCw, ChevronRight, ShieldCheck, AlertCircle, LayoutList, Table } from "lucide-react";
+import { fetchSection161Report, getSection161PdfUrl } from "../api";
+import { 
+  Printer, 
+  Copy, 
+  Check, 
+  FileSpreadsheet, 
+  RefreshCw, 
+  ChevronRight, 
+  ShieldCheck, 
+  AlertCircle, 
+  LayoutList, 
+  Table, 
+  FileDown, 
+  Eye, 
+  X 
+} from "lucide-react";
 
 interface Props {
   product: string;
@@ -14,6 +28,7 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"official" | "reviewer">("official");
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
 
   useEffect(() => {
     loadTableData();
@@ -36,35 +51,32 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
   const copyTableToClipboard = () => {
     if (!reportData) return;
 
+    // Per Requirement 18: No Total row in official regulatory table (cases may belong to multiple concerns)
     let tsv = `Risk Term\tNumber of Relevant Case Reports\n`;
-    let html = `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse: collapse; font-family: Calibri, 'Segoe UI', Arial, sans-serif; width: 100%; font-size: 11pt;">
+    let html = `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse: collapse; font-family: 'Times New Roman', Times, serif; width: 100%; font-size: 10pt;">
       <thead>
         <tr style="background-color: #f1f5f9; font-weight: bold;">
-          <th align="left" style="border: 1px solid #94a3b8; padding: 8px;">Risk Term</th>
-          <th align="center" style="border: 1px solid #94a3b8; padding: 8px; width: 220px;">Number of Relevant Case Reports</th>
+          <th align="left" style="border: 1px solid #000000; padding: 6px 8px;">Risk Term</th>
+          <th align="center" style="border: 1px solid #000000; padding: 6px 8px; width: 180px;">Number of Relevant Case Reports</th>
         </tr>
       </thead>
       <tbody>`;
 
     for (const sec of reportData.table_sections) {
       tsv += `${sec.category_name.toUpperCase()}\t\n`;
-      html += `<tr style="background-color: #f8fafc; font-weight: bold;">
-        <td colspan="2" style="border: 1px solid #94a3b8; padding: 8px 10px; text-transform: uppercase;">${sec.category_name}</td>
+      html += `<tr style="font-weight: bold; background-color: #fafafa;">
+        <td colspan="2" style="border: 1px solid #000000; padding: 6px 8px; text-transform: uppercase;">${sec.category_name}</td>
       </tr>`;
       for (const risk of sec.risks) {
         tsv += `${risk.risk_term}\t${risk.number_of_relevant_cases}\n`;
         html += `<tr>
-          <td style="border: 1px solid #cbd5e1; padding: 6px 10px; padding-left: 20px;">${risk.risk_term}</td>
-          <td align="center" style="border: 1px solid #cbd5e1; padding: 6px 10px;">${risk.number_of_relevant_cases}</td>
+          <td style="border: 1px solid #000000; padding: 5px 8px; padding-left: 16px;">${risk.risk_term}</td>
+          <td align="center" style="border: 1px solid #000000; padding: 5px 8px;">${risk.number_of_relevant_cases}</td>
         </tr>`;
       }
     }
 
-    tsv += `Total\t${reportData.total_relevant_cases}\n`;
-    html += `<tr style="background-color: #f1f5f9; font-weight: bold;">
-      <td style="border: 1px solid #94a3b8; padding: 8px 10px;">Total</td>
-      <td align="center" style="border: 1px solid #94a3b8; padding: 8px 10px;">${reportData.total_relevant_cases}</td>
-    </tr></tbody></table>`;
+    html += `</tbody></table>`;
 
     if (navigator.clipboard && window.ClipboardItem) {
       const textBlob = new Blob([tsv], { type: "text/plain" });
@@ -178,6 +190,23 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
           <button className="btn-secondary" onClick={() => window.print()} title="Print Section 16.1 Table">
             <Printer size={15} /> Print
           </button>
+          <button 
+            className="btn-secondary" 
+            onClick={() => setShowPdfPreview(true)}
+            title="Preview Section 16.1 PBRER PDF matching official regulatory submission format"
+            style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+          >
+            <Eye size={15} color="#2563eb" /> Preview PDF
+          </button>
+          <a
+            href={getSection161PdfUrl(product, false)}
+            download={`${product}_Section_16.1_PBRER_Report.pdf`}
+            className="btn-primary"
+            style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+            title="Download formal A4 PBRER PDF Report"
+          >
+            <FileDown size={15} /> Download PBRER PDF
+          </a>
         </div>
       </div>
 
@@ -296,21 +325,6 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
                   ))}
                 </React.Fragment>
               ))}
-
-              {/* Total Row */}
-              <tr style={{ backgroundColor: "#f1f5f9", fontWeight: 700, borderTop: "2px solid #94a3b8" }}>
-                <td style={{ padding: "0.75rem 1rem", fontSize: "0.9rem", color: "#0f172a" }}>
-                  Total
-                </td>
-                <td style={{ textAlign: "center", padding: "0.75rem 1rem" }}>
-                  <span
-                    className="badge badge-relevant"
-                    style={{ fontSize: "1rem", fontWeight: 800, padding: "0.35rem 0.85rem" }}
-                  >
-                    {reportData.total_relevant_cases}
-                  </span>
-                </td>
-              </tr>
             </tbody>
           </table>
         ) : (
@@ -451,6 +465,94 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
         Each number is derived from the interval line listing, exploding multi-event verbatim terms, evaluating against MedDRA SMQs / PT lists, and applying reviewer relevance assessments.
         Click <strong>Review Cases</strong> on any risk term to inspect patient demographics, suspect products, exploded events, and raw row lineage.
       </div>
+
+      {/* PDF Preview Modal */}
+      {showPdfPreview && (
+        <div 
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.75)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: "1.5rem"
+          }}
+        >
+          <div 
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "0.5rem",
+              width: "100%",
+              maxWidth: "1050px",
+              height: "92vh",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)"
+            }}
+          >
+            {/* Modal Header */}
+            <div 
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "0.85rem 1.25rem",
+                borderBottom: "1px solid #e2e8f0",
+                backgroundColor: "#f8fafc"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <FileSpreadsheet size={18} color="#2563eb" />
+                <span style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.95rem" }}>
+                  PBRER Section 16.1 PDF Preview — {reportData.product_name}
+                </span>
+                <span style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                  (Formal A4 Regulatory Submission Format)
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <a
+                  href={getSection161PdfUrl(product, false)}
+                  download={`${product}_Section_16.1_PBRER_Report.pdf`}
+                  className="btn-primary"
+                  style={{ textDecoration: "none", fontSize: "0.8rem", padding: "0.35rem 0.75rem", display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
+                >
+                  <FileDown size={14} /> Download PDF
+                </a>
+                <button
+                  onClick={() => setShowPdfPreview(false)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "0.25rem",
+                    color: "#64748b"
+                  }}
+                  title="Close Preview"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal PDF iframe */}
+            <div style={{ flex: 1, backgroundColor: "#525659", padding: "0" }}>
+              <iframe
+                src={getSection161PdfUrl(product, true)}
+                title="PBRER PDF Preview"
+                style={{ width: "100%", height: "100%", border: "none" }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

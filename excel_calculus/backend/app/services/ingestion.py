@@ -56,7 +56,6 @@ class IngestionService:
             for term, flags in matches:
                 # Raw representation preserving brackets and original content
                 raw_token = f"[{term}]"
-                # Strip XML hex and normalize
                 clean_term = self.clean_xml_hex(term)
                 norm_term = self.normalize_term(clean_term)
 
@@ -81,7 +80,6 @@ class IngestionService:
             cleaned_text = self.clean_xml_hex(raw_ev)
             lines = [self.normalize_term(l) for l in cleaned_text.splitlines() if self.normalize_term(l)]
             for l in lines:
-                # Exclude lines that only contain assessment flags
                 if not re.match(r'^[YyNn\s/]+$', l):
                     events.append({
                         "normalized_term": l.upper(),
@@ -110,39 +108,88 @@ class IngestionService:
                 outcomes_map[term] = parts[1].strip()
         return outcomes_map
 
-    def parse_products(self, raw_products: str):
+    def parse_event_onsets(self, raw_onsets):
         """
-        Parses 'Product Name' column, e.g.:
-        PREDNISONE (PREDNISONE) Suspect, Unknown, Unknown
-        APO DEXAMETHASONE (DEXAMETHASONE) Concom, daily dose: .5milligram...
+        Parses 'Event Onset' column. Can be datetime object or multi-line string.
         """
-        if not raw_products:
+        if raw_onsets is None:
             return []
-        cleaned = self.clean_xml_hex(raw_products)
+        if isinstance(raw_onsets, datetime):
+            return [raw_onsets.strftime("%Y-%m-%d")]
+
+        cleaned = self.clean_xml_hex(str(raw_onsets))
+        lines = [self.normalize_term(l) for l in cleaned.splitlines() if self.normalize_term(l)]
+        return lines
+
+    def parse_products(self, raw_products: str, primary_product_name: str = "", primary_dose: str = "", primary_form: str = "", primary_duration: str = "", primary_indication: str = ""):
+        """
+        Parses complete product information from line listing:
+        1. Primary suspect drug from case columns (Daily Dose, Form, Duration, Indication)
+        2. Co-suspect and concomitant drugs from 'Product Name' column
+        """
         products = []
-        for line in cleaned.splitlines():
-            line_clean = self.normalize_term(line)
-            if not line_clean:
-                continue
 
-            # Role (Suspect vs Concom)
-            role = "Suspect" if "suspect" in line_clean.lower() else ("Concom" if "concom" in line_clean.lower() else "Unknown")
+        # 1. Primary suspect product
+        clean_primary_dose = self.normalize_term(self.clean_xml_hex(primary_dose)) if primary_dose else None
+        clean_primary_form = self.normalize_term(self.clean_xml_hex(primary_form)) if primary_form else None
+        clean_primary_dur = self.normalize_term(self.clean_xml_hex(primary_duration)) if primary_duration else None
+        clean_primary_ind = self.normalize_term(self.clean_xml_hex(primary_indication)) if primary_indication else None
 
-            # Active substance inside parenthesis e.g. APO DEXAMETHASONE (DEXAMETHASONE)
-            active_sub = None
-            paren_match = re.search(r'\(([^)]+)\)', line_clean)
-            if paren_match:
-                active_sub = paren_match.group(1).strip()
+        # Extract brand from primary dose header if available (e.g. 'APO-ABIRATERONE / Film coated...')
+        primary_brand = primary_product_name
+        if clean_primary_dose and " / " in clean_primary_dose:
+            primary_brand = clean_primary_dose.split(" / ")[0].strip()
 
-            # Brand name before parenthesis
-            brand = line_clean.split("(")[0].strip() if paren_match else line_clean.split()[0]
+        products.append({
+            "raw": f"{primary_brand} (Primary Suspect)",
+            "brand": primary_brand,
+            "active_substance": primary_product_name.upper(),
+            "role": "Suspect",
+            "daily_dose": clean_primary_dose,
+            "form": clean_primary_form,
+            "duration": clean_primary_dur,
+            "indication_pt": clean_primary_ind
+        })
 
-            products.append({
-                "raw": line_clean,
-                "brand": brand,
-                "active_substance": active_sub or brand,
-                "role": role
-            })
+        # 2. Additional products from Product Name column
+        if raw_products:
+            cleaned = self.clean_xml_hex(raw_products)
+            for line in cleaned.splitlines():
+                line_clean = self.normalize_term(line)
+                if not line_clean:
+                    continue
+
+                role = "Suspect" if "suspect" in line_clean.lower() else ("Concom" if "concom" in line_clean.lower() else "Concomitant")
+
+                active_sub = None
+                paren_match = re.search(r'\(([^)]+)\)', line_clean)
+                if paren_match:
+                    active_sub = paren_match.group(1).strip()
+
+                brand = line_clean.split("(")[0].strip() if paren_match else line_clean.split()[0]
+
+                # Extract daily dose if embedded in string
+                dose_match = re.search(r'daily dose:\s*([^,]+)', line_clean, re.IGNORECASE)
+                dose_val = dose_match.group(1).strip() if dose_match else None
+
+                # Extract form/route if embedded
+                form_val = None
+                for candidate_form in ["Oral use", "Tablet", "Capsule", "Injection", "Intravenous"]:
+                    if candidate_form.lower() in line_clean.lower():
+                        form_val = candidate_form
+                        break
+
+                products.append({
+                    "raw": line_clean,
+                    "brand": brand,
+                    "active_substance": active_sub or brand,
+                    "role": role,
+                    "daily_dose": dose_val,
+                    "form": form_val,
+                    "duration": None,
+                    "indication_pt": None
+                })
+
         return products
 
     def ingest_linelisting_file(
@@ -157,11 +204,9 @@ class IngestionService:
 
         file_name = os.path.basename(file_path)
 
-        # Compute SHA-256 hash of file for idempotent re-ingestion and audit
         with open(file_path, "rb") as f:
             file_hash = hashlib.sha256(f.read()).hexdigest()
 
-        # Deduce reporting period and DLP if not provided
         if not reporting_period:
             if "20260428" in file_name or "abiraterone" in primary_product_name.lower():
                 reporting_period = "29-Apr-2025 to 28-Apr-2026"
@@ -173,7 +218,6 @@ class IngestionService:
                 reporting_period = "Current Reporting Period"
                 data_lock_point = datetime.utcnow().strftime("%d-%b-%Y")
 
-        # Create or update Dataset
         dataset_id = f"ds_{primary_product_name.lower()}_{file_hash[:8]}"
         dataset = self.db.query(Dataset).filter_by(id=dataset_id).first()
         if not dataset:
@@ -211,6 +255,10 @@ class IngestionService:
         idx_report_type = col_idx("Report Type")
         idx_age = col_idx("Age")
         idx_sex = col_idx("Sex")
+        idx_daily_dose = col_idx("Daily Dose")
+        idx_form = col_idx("Form")
+        idx_duration = col_idx("Duration")
+        idx_onset = col_idx("Event Onset")
         idx_ev = col_idx("Event Verbatim")
         idx_outcome = col_idx("Outcome")
         idx_outcome_ev = col_idx("Outcome of Event")
@@ -220,6 +268,7 @@ class IngestionService:
         idx_receipt_date = col_idx("Case Initial Receipt Date")
         idx_narrative = col_idx("Case Narrative")
         idx_seriousness = col_idx("Case Seriousness?")
+        idx_prod_ind = col_idx("Product Indication PT")
         idx_prod = col_idx("Product Name")
         idx_listedness = col_idx("Case Listedness")
         idx_classification = col_idx("Case Classification")
@@ -241,16 +290,21 @@ class IngestionService:
             raw_ev = str(row[idx_ev]) if (idx_ev >= 0 and row[idx_ev] is not None) else ""
             raw_outcome_ev = str(row[idx_outcome_ev]) if (idx_outcome_ev >= 0 and row[idx_outcome_ev] is not None) else ""
             raw_prod = str(row[idx_prod]) if (idx_prod >= 0 and row[idx_prod] is not None) else ""
+            raw_dose = str(row[idx_daily_dose]) if (idx_daily_dose >= 0 and row[idx_daily_dose] is not None) else ""
+            raw_form = str(row[idx_form]) if (idx_form >= 0 and row[idx_form] is not None) else ""
+            raw_dur = str(row[idx_duration]) if (idx_duration >= 0 and row[idx_duration] is not None) else ""
+            raw_onset = row[idx_onset] if idx_onset >= 0 else None
+            raw_ind = str(row[idx_prod_ind]) if (idx_prod_ind >= 0 and row[idx_prod_ind] is not None) else ""
 
-            # Check if case exists, otherwise create
-            case_rec = self.db.query(CaseRecord).filter_by(case_number=case_num).first()
+            # Check if case exists in this specific dataset
+            case_rec = self.db.query(CaseRecord).filter_by(dataset_id=dataset_id, case_number=case_num).first()
             if not case_rec:
-                case_rec = CaseRecord(case_number=case_num)
+                case_rec = CaseRecord(dataset_id=dataset_id, case_number=case_num)
                 self.db.add(case_rec)
+                self.db.flush()
 
             seriousness_val = str(row[idx_seriousness]).strip() if (idx_seriousness >= 0 and row[idx_seriousness] is not None) else ""
 
-            case_rec.dataset_id = dataset_id
             case_rec.product_name = primary_product_name
             case_rec.reporting_period = reporting_period
             case_rec.data_lock_point = data_lock_point
@@ -279,21 +333,35 @@ class IngestionService:
             case_rec.raw_source_sheet = sheet_name
             case_rec.raw_source_row = r_idx
 
-            # Clear existing child records if re-ingesting this case
-            self.db.query(CaseEvent).filter_by(case_number=case_num).delete()
-            self.db.query(CaseProduct).filter_by(case_number=case_num).delete()
+            # Clear existing child event & product records for this internal case_id during reconciliation
+            self.db.query(CaseEvent).filter_by(case_id=case_rec.id).delete()
+            self.db.query(CaseProduct).filter_by(case_id=case_rec.id).delete()
 
             # Explode events
             parsed_events = self.parse_event_verbatim(raw_ev)
             outcomes_map = self.parse_outcomes(raw_outcome_ev)
+            onsets_list = self.parse_event_onsets(raw_onset)
 
             for pos, ev_item in enumerate(parsed_events):
                 norm_upper = ev_item["normalized_term"]
-                # Match outcome for this event
                 matched_outcome = outcomes_map.get(norm_upper, case_rec.case_outcome)
 
-                # IMPORTANT: preferred_term is NOT clean_term.title(). It is null until matched to MedDRA reference!
+                # Determine onset mapping
+                matched_onset = None
+                onset_status = "CONFIRMED"
+                if onsets_list:
+                    if len(onsets_list) == 1:
+                        matched_onset = onsets_list[0]
+                        onset_status = "CONFIRMED"
+                    elif pos < len(onsets_list):
+                        matched_onset = onsets_list[pos]
+                        onset_status = "UNCERTAIN_MAPPED_BY_POSITION"
+                    else:
+                        matched_onset = onsets_list[0]
+                        onset_status = "UNCERTAIN_MAPPED_BY_POSITION"
+
                 ev_rec = CaseEvent(
+                    case_id=case_rec.id,
                     case_number=case_num,
                     dataset_id=dataset_id,
                     position=pos + 1,  # 1-indexed position
@@ -302,7 +370,8 @@ class IngestionService:
                     preferred_term=None,  # Null until exact MedDRA lookup matches it! Never fabricate!
                     pt_code=None,
                     soc=case_rec.primary_soc if pos == 0 else None,
-                    event_onset=None,
+                    event_onset=matched_onset,
+                    onset_mapping_status=onset_status,
                     event_outcome=matched_outcome,
                     seriousness_flag=ev_item["seriousness"],
                     listedness_flag=ev_item["listedness"],
@@ -314,40 +383,52 @@ class IngestionService:
                 self.db.add(ev_rec)
                 total_events += 1
 
-            # Parse and insert products
-            parsed_products = self.parse_products(raw_prod)
-            for prod_item in parsed_products:
+            # Populate products (Primary + Concomitants)
+            parsed_prods = self.parse_products(
+                raw_products=raw_prod,
+                primary_product_name=primary_product_name,
+                primary_dose=raw_dose,
+                primary_form=raw_form,
+                primary_duration=raw_dur,
+                primary_indication=raw_ind
+            )
+            for prod_item in parsed_prods:
                 prod_rec = CaseProduct(
+                    case_id=case_rec.id,
                     case_number=case_num,
                     dataset_id=dataset_id,
                     product_name_raw=prod_item["raw"],
                     brand_name=prod_item["brand"],
                     active_substance=prod_item["active_substance"],
-                    role=prod_item["role"]
+                    role=prod_item["role"],
+                    daily_dose=prod_item["daily_dose"],
+                    form=prod_item["form"],
+                    duration=prod_item["duration"],
+                    indication_pt=prod_item["indication_pt"]
                 )
                 self.db.add(prod_rec)
                 total_products += 1
 
             total_cases += 1
 
-        # Update dataset stats
         dataset.total_cases = total_cases
         dataset.total_events = total_events
+        self.db.commit()
 
+        # Audit log entry
         audit = AuditLog(
-            user_id="system_ingestion",
             dataset_id=dataset_id,
-            action=f"Ingested {file_name} for {primary_product_name} ({reporting_period}): {total_cases} cases, {total_events} exploded events, {total_products} products."
+            action="INGEST_LINE_LISTING",
+            new_state=f"Ingested {total_cases} cases, {total_events} events, {total_products} products from {file_name}"
         )
         self.db.add(audit)
         self.db.commit()
 
         return {
             "dataset_id": dataset_id,
-            "product_name": primary_product_name,
-            "reporting_period": reporting_period,
-            "file": file_name,
-            "sheet": sheet_name,
+            "status": "success",
+            "file_name": file_name,
+            "file_hash": file_hash,
             "total_cases": total_cases,
             "total_events": total_events,
             "total_products": total_products

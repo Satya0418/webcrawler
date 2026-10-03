@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from excel_calculus.backend.app.database import Base
@@ -20,12 +20,22 @@ class Dataset(Base):
 
     # Relationships
     cases = relationship("CaseRecord", back_populates="dataset", cascade="all, delete-orphan")
+    search_runs = relationship("SearchRun", back_populates="dataset", cascade="all, delete-orphan")
 
 class CaseRecord(Base):
+    """
+    CaseRecord model:
+    Internal primary key 'id' prevents cross-dataset case collision.
+    The same case_number can cleanly exist in multiple datasets/periods without ID conflicts.
+    """
     __tablename__ = "case_records"
+    __table_args__ = (
+        UniqueConstraint('dataset_id', 'case_number', name='uix_dataset_case'),
+    )
 
-    case_number = Column(String(64), primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     dataset_id = Column(String(64), ForeignKey("datasets.id"), nullable=True, index=True)
+    case_number = Column(String(64), index=True)
     product_name = Column(String(255), index=True)
     reporting_period = Column(String(128), index=True, nullable=True)
     data_lock_point = Column(String(64), nullable=True)
@@ -66,7 +76,8 @@ class CaseEvent(Base):
     __tablename__ = "case_events"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    case_number = Column(String(64), ForeignKey("case_records.case_number"), index=True)
+    case_id = Column(Integer, ForeignKey("case_records.id"), index=True)
+    case_number = Column(String(64), index=True)
     dataset_id = Column(String(64), nullable=True, index=True)
     position = Column(Integer)
     raw_verbatim = Column(Text)
@@ -75,6 +86,7 @@ class CaseEvent(Base):
     pt_code = Column(String(32), index=True, nullable=True)  # Matched MedDRA PT Code
     soc = Column(String(255), index=True, nullable=True)
     event_onset = Column(String(128), nullable=True)
+    onset_mapping_status = Column(String(64), default="CONFIRMED")  # CONFIRMED or UNCERTAIN_MAPPED_BY_POSITION
     event_outcome = Column(String(128), nullable=True)
     seriousness_flag = Column(String(16), nullable=True)
     listedness_flag = Column(String(16), nullable=True)
@@ -89,12 +101,13 @@ class CaseProduct(Base):
     __tablename__ = "case_products"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    case_number = Column(String(64), ForeignKey("case_records.case_number"), index=True)
+    case_id = Column(Integer, ForeignKey("case_records.id"), index=True)
+    case_number = Column(String(64), index=True)
     dataset_id = Column(String(64), nullable=True, index=True)
     product_name_raw = Column(Text)
     brand_name = Column(String(255), nullable=True)
     active_substance = Column(String(255), index=True, nullable=True)
-    role = Column(String(64), index=True)  # Suspect, Concom, etc.
+    role = Column(String(64), index=True)  # Suspect, Concom, Co-suspect
     daily_dose = Column(String(255), nullable=True)
     form = Column(String(128), nullable=True)
     duration = Column(String(255), nullable=True)
@@ -136,9 +149,14 @@ class SafetyConcern(Base):
     search_runs = relationship("SearchRun", back_populates="concern", cascade="all, delete-orphan")
 
 class SearchRun(Base):
+    """
+    SearchRun preserves complete execution history.
+    Old SearchMatch records are never wiped; they remain linked to their historical SearchRun.
+    """
     __tablename__ = "search_runs"
 
     id = Column(String(64), primary_key=True)
+    dataset_id = Column(String(64), ForeignKey("datasets.id"), nullable=True, index=True)
     product_name = Column(String(128), index=True)
     reporting_period = Column(String(128), index=True)
     concern_id = Column(String(64), ForeignKey("safety_concerns.id"), index=True)
@@ -149,7 +167,9 @@ class SearchRun(Base):
     candidate_events_count = Column(Integer, default=0)
     distinct_cases_count = Column(Integer, default=0)
     executed_by = Column(String(64), default="reviewer")
+    is_active = Column(Boolean, default=True)
 
+    dataset = relationship("Dataset", back_populates="search_runs")
     concern = relationship("SafetyConcern", back_populates="search_runs")
     matches = relationship("SearchMatch", back_populates="search_run", cascade="all, delete-orphan")
 
@@ -159,8 +179,9 @@ class SearchMatch(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     search_run_id = Column(String(64), ForeignKey("search_runs.id"), nullable=True, index=True)
     concern_id = Column(String(64), ForeignKey("safety_concerns.id"), index=True)
-    case_number = Column(String(64), ForeignKey("case_records.case_number"), index=True)
-    event_id = Column(Integer, ForeignKey("case_events.id"), nullable=True)
+    case_id = Column(Integer, ForeignKey("case_records.id"), nullable=True, index=True)
+    case_number = Column(String(64), index=True)
+    event_id = Column(Integer, ForeignKey("case_events.id"), nullable=True, index=True)
     search_method = Column(String(64))
     matched_field = Column(String(128))
     matched_term = Column(String(255))
@@ -183,8 +204,10 @@ class RelevanceAssessment(Base):
     __tablename__ = "relevance_assessments"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    case_number = Column(String(64), ForeignKey("case_records.case_number"), index=True)
+    case_id = Column(Integer, ForeignKey("case_records.id"), nullable=True, index=True)
+    case_number = Column(String(64), index=True)
     concern_id = Column(String(64), ForeignKey("safety_concerns.id"), index=True)
+    dataset_id = Column(String(64), nullable=True, index=True)
     status = Column(String(32), default="CANDIDATE", index=True)  # CANDIDATE, RELEVANT, NOT_RELEVANT, NEEDS_REVIEW
     exclusion_reason = Column(String(255), nullable=True)
     reviewer_notes = Column(Text, nullable=True)
@@ -199,6 +222,7 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    case_id = Column(Integer, nullable=True, index=True)
     case_number = Column(String(64), nullable=True, index=True)
     concern_id = Column(String(64), nullable=True, index=True)
     dataset_id = Column(String(64), nullable=True, index=True)

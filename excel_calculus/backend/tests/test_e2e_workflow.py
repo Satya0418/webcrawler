@@ -140,9 +140,18 @@ def test_8_oxycodone_cross_product_validation():
     assert data["total_event_matches"] >= 10
 
 def test_9_file_upload_ingestion_api():
-    file_path = "/Users/satya/Downloads/Required Artifacts for section 16.3 (3)/Oxycodone/Oxycodone_20260412_CAN PBRER_Interval LL.xlsx"
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
+    file_path = os.environ.get(
+        "OXYCODONE_EXCEL_PATH",
+        os.path.join(base_dir, "excel_calculus", "data", "Oxycodone_20260412_CAN PBRER_Interval LL.xlsx")
+    )
     if not os.path.exists(file_path):
-        return
+        fallback = os.path.expanduser("~/Downloads/Required Artifacts for section 16.3 (3)/Oxycodone/Oxycodone_20260412_CAN PBRER_Interval LL.xlsx")
+        if os.path.exists(fallback):
+            file_path = fallback
+
+    if not os.path.exists(file_path):
+        pytest.skip(f"Oxycodone line listing not found at {file_path}")
 
     with open(file_path, "rb") as f:
         resp = client.post(
@@ -155,4 +164,36 @@ def test_9_file_upload_ingestion_api():
         assert res_data["status"] == "success"
         assert res_data["cases_ingested"] == 48
         assert res_data["events_exploded"] == 725
+
+def test_10_pdf_report_api_endpoint():
+    import io
+    import pypdf
+
+    resp = client.get("/api/reports/section-16-1/pdf?product=Abiraterone")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert 'attachment; filename="Abiraterone_Section_16.1_PBRER_Report.pdf"' in resp.headers["content-disposition"]
+    assert resp.content.startswith(b"%PDF-1.4")
+
+    # Verify extracted text via pypdf
+    reader = pypdf.PdfReader(io.BytesIO(resp.content))
+    assert len(reader.pages) >= 1
+
+    pdf_text = "".join([p.extract_text() for p in reader.pages])
+    assert "Apotex Inc." in pdf_text
+    assert "Abiraterone" in pdf_text
+    assert "Periodic Benefit-Risk Evaluation Report" in pdf_text
+    assert "CONFIDENTIAL" in pdf_text
+    assert "Risk Term" in pdf_text
+    assert "IMPORTANT IDENTIFIED RISKS" in pdf_text
+    assert "Hepatotoxicity" in pdf_text
+    assert "Rhabdomyolysis/Myopathy" in pdf_text
+
+def test_11_pdf_report_api_preview_mode():
+    resp = client.get("/api/reports/section-16-1/pdf?product=Abiraterone&preview=true")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.headers["content-disposition"] == "inline"
+    assert resp.content.startswith(b"%PDF-1.4")
+
 

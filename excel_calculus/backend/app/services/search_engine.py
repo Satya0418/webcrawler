@@ -21,6 +21,9 @@ class SearchEngineService:
         config = json.loads(concern.search_config) if concern.search_config else {}
         method = concern.search_method
 
+        # Deactivate previous active runs for this concern so old runs remain historical & auditable
+        self.db.query(SearchRun).filter_by(concern_id=concern_id).update({"is_active": False})
+
         # Unique Search Run tracking
         run_id = f"run_{concern.id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:6]}"
         search_run = SearchRun(
@@ -32,13 +35,14 @@ class SearchEngineService:
             search_config=concern.search_config,
             reference_version="MedDRA 29.0",
             execution_time=datetime.utcnow(),
-            executed_by=reviewer_id
+            executed_by=reviewer_id,
+            is_active=True
         )
         self.db.add(search_run)
 
-        # Clear existing matches for this concern to maintain deterministic reproducibility
-        self.db.query(SearchMatch).filter_by(concern_id=concern_id).delete()
-
+        # IMPORTANT AUDIT RULE:
+        # Do NOT delete historical SearchMatch records!
+        # Historical matches remain preserved under their respective SearchRun.
         matches_to_add = []
 
         if method in ("BROAD_SMQ", "NARROW_SMQ"):
@@ -59,12 +63,11 @@ class SearchEngineService:
 
             # Fetch events for the product in scope
             events_query = self.db.query(CaseEvent, CaseRecord).join(
-                CaseRecord, CaseEvent.case_number == CaseRecord.case_number
+                CaseRecord, CaseEvent.case_id == CaseRecord.id
             ).filter(
                 CaseRecord.product_name == concern.product_name
             )
             if concern.reporting_period and concern.reporting_period != "Current Period":
-                # Filter by reporting period when set on case record
                 events_query = events_query.filter(
                     (CaseRecord.reporting_period == concern.reporting_period) | (CaseRecord.reporting_period.is_(None))
                 )
@@ -82,6 +85,7 @@ class SearchEngineService:
                     matches_to_add.append(SearchMatch(
                         search_run_id=run_id,
                         concern_id=concern_id,
+                        case_id=case.id,
                         case_number=case.case_number,
                         event_id=ev.id,
                         search_method=method,
@@ -98,7 +102,6 @@ class SearchEngineService:
                     ))
 
         elif method == "SMQ_SUBFILTER":
-            # e.g. Broad SMQ Medication Errors further assessed with PTs of Overdose and Accidental overdose
             smq_name = config.get("smq_name", "Medication errors (SMQ)")
             scope = config.get("scope", "Broad")
             sub_pts = [p.strip().upper() for p in config.get("sub_filter_pts", [])]
@@ -113,7 +116,7 @@ class SearchEngineService:
             ref_lookup = {st.pt_name_upper: st for st in smq_records if st.pt_name_upper in sub_pts}
 
             candidate_events = self.db.query(CaseEvent, CaseRecord).join(
-                CaseRecord, CaseEvent.case_number == CaseRecord.case_number
+                CaseRecord, CaseEvent.case_id == CaseRecord.id
             ).filter(
                 CaseRecord.product_name == concern.product_name
             ).all()
@@ -127,6 +130,7 @@ class SearchEngineService:
                     matches_to_add.append(SearchMatch(
                         search_run_id=run_id,
                         concern_id=concern_id,
+                        case_id=case.id,
                         case_number=case.case_number,
                         event_id=ev.id,
                         search_method=method,
@@ -156,6 +160,7 @@ class SearchEngineService:
                 matches_to_add.append(SearchMatch(
                     search_run_id=run_id,
                     concern_id=concern_id,
+                    case_id=case.id,
                     case_number=case.case_number,
                     event_id=None,
                     search_method="SOC",
@@ -171,18 +176,19 @@ class SearchEngineService:
             # Event-level SOC mapping support if explicit event SOC is recorded
             if config.get("include_event_level", False):
                 ev_soc_matches = self.db.query(CaseEvent, CaseRecord).join(
-                    CaseRecord, CaseEvent.case_number == CaseRecord.case_number
+                    CaseRecord, CaseEvent.case_id == CaseRecord.id
                 ).filter(
                     CaseRecord.product_name == concern.product_name,
                     func.lower(CaseEvent.soc) == soc_name
                 ).all()
 
                 for ev, case in ev_soc_matches:
-                    existing = any(m.case_number == case.case_number and m.event_id == ev.id for m in matches_to_add)
+                    existing = any(m.case_id == case.id and m.event_id == ev.id for m in matches_to_add)
                     if not existing:
                         matches_to_add.append(SearchMatch(
                             search_run_id=run_id,
                             concern_id=concern_id,
+                            case_id=case.id,
                             case_number=case.case_number,
                             event_id=ev.id,
                             search_method="SOC_EVENT",
@@ -197,11 +203,10 @@ class SearchEngineService:
 
         elif method in ("SINGLE_PT", "MULTIPLE_PTS"):
             pts = [config.get("pt")] if method == "SINGLE_PT" else config.get("pts", [])
-            # Map uppercase -> display term
             configured_pt_map = {p.strip().upper(): p.strip() for p in pts if p and p.strip()}
 
             candidate_events = self.db.query(CaseEvent, CaseRecord).join(
-                CaseRecord, CaseEvent.case_number == CaseRecord.case_number
+                CaseRecord, CaseEvent.case_id == CaseRecord.id
             ).filter(
                 CaseRecord.product_name == concern.product_name,
                 CaseEvent.normalized_term.in_(list(configured_pt_map.keys()))
@@ -214,6 +219,7 @@ class SearchEngineService:
                 matches_to_add.append(SearchMatch(
                     search_run_id=run_id,
                     concern_id=concern_id,
+                    case_id=case.id,
                     case_number=case.case_number,
                     event_id=ev.id,
                     search_method=method,
@@ -227,13 +233,14 @@ class SearchEngineService:
                 ))
 
         elif method == "CONCOMITANT_INTERACTION":
-            # Stage 1: Search configured interaction PTs
             initial_pts = [p.strip().upper() for p in config.get("initial_pts", [])]
             initial_map = {p.strip().upper(): p.strip() for p in config.get("initial_pts", [])}
-            target_substances = [s.strip().lower() for s in config.get("target_substances", [])]
+            target_substances = [s.strip().lower() for s in config.get("target_substances", [
+                "fluoxetine", "paroxetine", "bupropion", "quinidine", "duloxetine", "terbinafine", "codeine"
+            ])]
 
             matching_events = self.db.query(CaseEvent, CaseRecord).join(
-                CaseRecord, CaseEvent.case_number == CaseRecord.case_number
+                CaseRecord, CaseEvent.case_id == CaseRecord.id
             ).filter(
                 CaseRecord.product_name == concern.product_name,
                 CaseEvent.normalized_term.in_(initial_pts)
@@ -243,8 +250,8 @@ class SearchEngineService:
                 matched_pt_name = initial_map.get(ev.normalized_term, ev.normalized_term)
                 ev.preferred_term = matched_pt_name
 
-                # Stage 3 & 4: Inspect concomitant products for configured CYP2D6 terminology
-                prods = self.db.query(CaseProduct).filter_by(case_number=case.case_number).all()
+                # Stage 3: Inspect structured products for CYP2D6 candidate drugs
+                prods = self.db.query(CaseProduct).filter_by(case_id=case.id).all()
                 matched_concom_drugs = []
                 for p in prods:
                     act = (p.active_substance or "").lower()
@@ -262,6 +269,7 @@ class SearchEngineService:
                 matches_to_add.append(SearchMatch(
                     search_run_id=run_id,
                     concern_id=concern_id,
+                    case_id=case.id,
                     case_number=case.case_number,
                     event_id=ev.id,
                     search_method=method,
@@ -293,6 +301,7 @@ class SearchEngineService:
                         matches_to_add.append(SearchMatch(
                             search_run_id=run_id,
                             concern_id=concern_id,
+                            case_id=case.id,
                             case_number=case.case_number,
                             event_id=None,
                             search_method="NARRATIVE_SEARCH",
@@ -318,21 +327,23 @@ class SearchEngineService:
         self.db.commit()
 
         # Initialize/preserve Relevance Assessments
-        # Important: If reviewer already assessed a case, PRESERVE their assessment!
-        # If it's a new candidate case, initialize as "CANDIDATE"
         for c_num in matched_case_numbers:
+            case_obj = self.db.query(CaseRecord).filter_by(case_number=c_num).first()
             existing_ass = self.db.query(RelevanceAssessment).filter_by(
                 case_number=c_num,
                 concern_id=concern_id
             ).first()
             if not existing_ass:
                 ass = RelevanceAssessment(
+                    case_id=case_obj.id if case_obj else None,
                     case_number=c_num,
                     concern_id=concern_id,
                     status="CANDIDATE",
                     reviewer_id=reviewer_id
                 )
                 self.db.add(ass)
+            elif case_obj and existing_ass.case_id is None:
+                existing_ass.case_id = case_obj.id
         self.db.commit()
 
         # Audit trail logging
@@ -351,10 +362,17 @@ class SearchEngineService:
         if not concern:
             raise ValueError(f"Safety Concern not found: {concern_id}")
 
-        matches_query = self.db.query(SearchMatch).filter_by(concern_id=concern_id)
         if search_run_id:
-            matches_query = matches_query.filter_by(search_run_id=search_run_id)
-        matches = matches_query.all()
+            matches = self.db.query(SearchMatch).filter_by(search_run_id=search_run_id).all()
+        else:
+            latest_run = self.db.query(SearchRun).filter_by(concern_id=concern_id, is_active=True).order_by(SearchRun.execution_time.desc()).first()
+            if not latest_run:
+                latest_run = self.db.query(SearchRun).filter_by(concern_id=concern_id).order_by(SearchRun.execution_time.desc()).first()
+            if latest_run:
+                search_run_id = latest_run.id
+                matches = self.db.query(SearchMatch).filter_by(search_run_id=latest_run.id).all()
+            else:
+                matches = self.db.query(SearchMatch).filter_by(concern_id=concern_id).all()
 
         distinct_cases = sorted(list(set(m.case_number for m in matches)))
 
@@ -362,14 +380,11 @@ class SearchEngineService:
         assessments = self.db.query(RelevanceAssessment).filter_by(concern_id=concern_id).all()
         ass_map = {a.case_number: a for a in assessments}
 
-        # ONLY cases with status == "RELEVANT" are counted in relevant_count!
-        # NEVER count CANDIDATE, NEEDS_REVIEW, or NOT_RELEVANT as relevant!
         relevant_count = sum(1 for c in distinct_cases if ass_map.get(c) and ass_map[c].status == "RELEVANT")
         not_relevant_count = sum(1 for c in distinct_cases if ass_map.get(c) and ass_map[c].status == "NOT_RELEVANT")
         needs_review_count = sum(1 for c in distinct_cases if ass_map.get(c) and ass_map[c].status == "NEEDS_REVIEW")
         candidate_count = sum(1 for c in distinct_cases if not ass_map.get(c) or ass_map[c].status == "CANDIDATE")
 
-        # Build detailed candidate case rows
         case_rows = []
         for c_num in distinct_cases:
             case = self.db.query(CaseRecord).filter_by(case_number=c_num).first()
@@ -377,6 +392,7 @@ class SearchEngineService:
             ass = ass_map.get(c_num)
 
             case_rows.append({
+                "case_id": case.id if case else None,
                 "case_number": c_num,
                 "country": case.country if case else "",
                 "report_type": case.report_type if case else "",
