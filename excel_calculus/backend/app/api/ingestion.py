@@ -9,7 +9,7 @@ from excel_calculus.backend.app.database import get_db
 from excel_calculus.backend.app.services.ingestion import IngestionService
 from excel_calculus.backend.app.services.smq_loader import SMQLoaderService
 from excel_calculus.backend.app.services.concern_seeder import seed_safety_concerns
-from excel_calculus.backend.app.models.entities import CaseRecord, CaseEvent, SMQTerm, SafetyConcern
+from excel_calculus.backend.app.models.entities import CaseRecord, CaseEvent, SMQTerm, SafetyConcern, Dataset
 
 router = APIRouter(prefix="/api/ingestion", tags=["Data Ingestion & Admin"])
 
@@ -28,13 +28,30 @@ def get_ingestion_status(db: Session = Depends(get_db)):
     prods = db.query(CaseRecord.product_name).distinct().all()
     prod_list = [p[0] for p in prods if p[0]]
 
+    datasets = db.query(Dataset).all()
+    dataset_list = [
+        {
+            "id": d.id,
+            "product_name": d.product_name,
+            "reporting_period": d.reporting_period,
+            "data_lock_point": d.data_lock_point,
+            "filename": d.source_filename,
+            "cases": d.total_cases,
+            "events": d.total_events,
+            "type": d.dataset_type,
+            "created_at": d.created_at.isoformat() if d.created_at else None
+        }
+        for d in datasets
+    ]
+
     return {
         "total_cases": total_cases,
         "total_exploded_events": total_events,
         "total_smq_terms": total_smq_terms,
         "total_safety_concerns": total_concerns,
         "ingested_files": file_list,
-        "products": prod_list
+        "products": prod_list,
+        "datasets": dataset_list
     }
 
 @router.post("/seed-defaults")
@@ -51,12 +68,19 @@ def seed_default_datasets(db: Session = Depends(get_db)):
     abi_path = os.path.join(base_artifacts, "Abiraterone/Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting.xlsx")
     oxy_path = os.path.join(base_artifacts, "Oxycodone/Oxycodone_20260412_CAN PBRER_Interval LL.xlsx")
 
+    # Fallback to local data/uploads if Downloads is missing
+    local_uploads = "/Users/satya/projects/webcrwler/excel_calculus/data/uploads"
+    if not os.path.exists(smq_path):
+        smq_candidates = [os.path.join(local_uploads, f) for f in os.listdir(local_uploads) if "SMQ" in f]
+        if smq_candidates:
+            smq_path = smq_candidates[0]
+
     # 1. Seed concerns
     seed_safety_concerns(db)
 
-    # 2. Ingest SMQs if not already loaded
+    # 2. Ingest SMQs
     smq_count = db.query(SMQTerm).count()
-    if smq_count == 0 and os.path.exists(smq_path):
+    if os.path.exists(smq_path):
         loader = SMQLoaderService(db)
         loader.load_smq_file(smq_path)
 
@@ -64,12 +88,22 @@ def seed_default_datasets(db: Session = Depends(get_db)):
     ingestion = IngestionService(db)
     abi_res = None
     if os.path.exists(abi_path):
-        abi_res = ingestion.ingest_linelisting_file(abi_path, primary_product_name="Abiraterone")
+        abi_res = ingestion.ingest_linelisting_file(
+            abi_path,
+            primary_product_name="Abiraterone",
+            reporting_period="29-Apr-2025 to 28-Apr-2026",
+            data_lock_point="28-Apr-2026"
+        )
 
     # 4. Ingest Oxycodone LL
     oxy_res = None
     if os.path.exists(oxy_path):
-        oxy_res = ingestion.ingest_linelisting_file(oxy_path, primary_product_name="Oxycodone")
+        oxy_res = ingestion.ingest_linelisting_file(
+            oxy_path,
+            primary_product_name="Oxycodone",
+            reporting_period="13-Apr-2025 to 12-Apr-2026",
+            data_lock_point="12-Apr-2026"
+        )
 
     return {
         "status": "success",
@@ -168,4 +202,3 @@ async def upload_file(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process line-listing file: {str(e)}")
-

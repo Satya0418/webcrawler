@@ -53,10 +53,11 @@ excel_calculus/
 │   │   ├── database.py             # Database engine & session maker
 │   │   └── main.py                 # FastAPI application entrypoint
 │   └── tests/
-│       ├── test_backend.py         # Core unit tests (7 tests)
-│       └── test_e2e_workflow.py    # Live HTTP end-to-end integration tests (9 tests)
+│       ├── test_backend.py         # 27 unit & regulatory rule tests (Section 25 checklist)
+│       └── test_e2e_workflow.py    # 9 end-to-end integration tests (36 total tests, 100% passing)
+│   └── scratch/                    # Audit logs & validation scripts
 ├── data/
-│   └── excel_calculus.db           # SQLite database (cases, exploded events, SMQ)
+│   └── excel_calculus.db           # SQLite database (datasets, cases, exploded events, SMQ, search runs)
 ├── docs/
 │   ├── ACTUAL_BUSINESS_PROCESS.md  # Complete 23-section business process document
 │   ├── DATA_MAPPING.md             # Complete 26-column PV data dictionary & mappings

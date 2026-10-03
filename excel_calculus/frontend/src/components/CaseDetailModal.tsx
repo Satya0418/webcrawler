@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import type { CaseDetail } from "../types";
 import { fetchCaseDetail, updateAssessment } from "../api";
-import { X, CheckCircle, AlertTriangle, XCircle, FileText, ShieldCheck } from "lucide-react";
+import { X, CheckCircle, AlertTriangle, XCircle, FileText, ShieldCheck, Pill, Stethoscope } from "lucide-react";
 
 interface Props {
   caseNumber: string;
@@ -88,6 +88,7 @@ export const CaseDetailModal: React.FC<Props> = ({
           <button
             onClick={onClose}
             style={{ background: "transparent", border: "none", color: "#cbd5e1", cursor: "pointer" }}
+            aria-label="Close"
           >
             <X size={22} />
           </button>
@@ -101,19 +102,24 @@ export const CaseDetailModal: React.FC<Props> = ({
             </div>
           ) : (
             <>
-              {/* Evidence Banner: WHY DID THIS CASE MATCH? */}
+              {/* Evidence Banner: WHY DID THE SYSTEM RETURN THIS CASE? */}
               {caseData.matches && caseData.matches.length > 0 && (
                 <div className="evidence-match-box">
                   <div className="evidence-match-title" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <ShieldCheck size={16} /> WHY DID THE SYSTEM RETURN THIS CASE?
+                    <ShieldCheck size={16} /> WHY DID THE SYSTEM RETURN THIS CASE? (DETERMINISTIC LINEAGE)
                   </div>
                   {caseData.matches.map((m, idx) => (
                     <div key={idx} className="evidence-match-text" style={{ marginTop: "0.25rem" }}>
                       <strong>Rule:</strong> {m.source} &nbsp;|&nbsp; 
-                      <strong>Matched:</strong> {m.term} &nbsp;|&nbsp; 
+                      <strong>Matched MedDRA PT:</strong> {m.term} {m.pt_code ? `[Code: ${m.pt_code}]` : ""} &nbsp;|&nbsp; 
                       <strong>Field:</strong> {m.field}
+                      {m.source_file && (
+                        <span style={{ color: "#475569", marginLeft: "0.5rem" }}>
+                          (Source: {m.source_file} &rarr; Sheet {m.source_sheet} &rarr; Row {m.source_row})
+                        </span>
+                      )}
                       <div style={{ fontStyle: "italic", marginTop: "0.2rem", color: "#065f46" }}>
-                        "{m.evidence}"
+                        &ldquo;{m.evidence}&rdquo;
                       </div>
                     </div>
                   ))}
@@ -129,6 +135,12 @@ export const CaseDetailModal: React.FC<Props> = ({
                     <span className="info-label">Product:</span>
                     <span className="info-value">{caseData.overview.product_name}</span>
                   </div>
+                  {caseData.overview.reporting_period && (
+                    <div className="info-row">
+                      <span className="info-label">Period / DLP:</span>
+                      <span className="info-value">{caseData.overview.reporting_period} (DLP: {caseData.overview.data_lock_point || "N/A"})</span>
+                    </div>
+                  )}
                   <div className="info-row">
                     <span className="info-label">Country:</span>
                     <span className="info-value">{caseData.overview.country}</span>
@@ -167,23 +179,35 @@ export const CaseDetailModal: React.FC<Props> = ({
                     <span className="info-label">Patient Demographics:</span>
                     <span className="info-value">{caseData.patient.age || "Unknown"}, {caseData.patient.sex || "Unknown"}</span>
                   </div>
-
-                  <div className="panel-title" style={{ marginTop: "0.5rem" }}>Administered Products ({caseData.products.length})</div>
-                  {caseData.products.map((p) => (
-                    <div key={p.id} style={{ 
-                      padding: "0.4rem 0.6rem", 
-                      borderRadius: "4px", 
-                      fontSize: "0.8rem", 
-                      background: p.is_suspect ? "#fef2f2" : "#f1f5f9",
-                      border: p.is_suspect ? "1px solid #fecaca" : "1px solid #e2e8f0",
-                      marginBottom: "0.35rem"
-                    }}>
-                      <div style={{ fontWeight: 600 }}>{p.brand_name || p.active_substance}</div>
-                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                        Role: <strong>{p.role}</strong> | Active: {p.active_substance}
-                      </div>
+                  {caseData.patient.death_cause && (
+                    <div className="info-row">
+                      <span className="info-label">Cause of Death:</span>
+                      <span className="info-value" style={{ color: "#dc2626", fontWeight: 600 }}>{caseData.patient.death_cause}</span>
                     </div>
-                  ))}
+                  )}
+
+                  <div className="panel-title" style={{ marginTop: "0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                    <Pill size={15} /> Administered Products ({caseData.products.length})
+                  </div>
+                  {caseData.products.length === 0 ? (
+                    <div style={{ fontSize: "0.78rem", color: "#64748b" }}>No additional products listed.</div>
+                  ) : (
+                    caseData.products.map((p) => (
+                      <div key={p.id} style={{ 
+                        padding: "0.4rem 0.6rem", 
+                        borderRadius: "4px", 
+                        fontSize: "0.8rem", 
+                        background: p.is_suspect ? "#fef2f2" : "#f1f5f9",
+                        border: p.is_suspect ? "1px solid #fecaca" : "1px solid #e2e8f0",
+                        marginBottom: "0.35rem"
+                      }}>
+                        <div style={{ fontWeight: 600 }}>{p.brand_name || p.active_substance}</div>
+                        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                          Role: <strong>{p.role}</strong> {p.active_substance ? `| Substance: ${p.active_substance}` : ""}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 {/* Column 2: Exploded Events */}
@@ -200,7 +224,7 @@ export const CaseDetailModal: React.FC<Props> = ({
                       >
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <span style={{ fontWeight: 700, color: ev.is_matched ? "#065f46" : "#0f172a" }}>
-                            {ev.position + 1}. {ev.preferred_term}
+                            {ev.position}. {ev.preferred_term ? `${ev.preferred_term} (PT)` : ev.normalized_term}
                           </span>
                           {ev.is_matched && (
                             <span className="badge badge-relevant" style={{ fontSize: "0.68rem" }}>
@@ -208,11 +232,18 @@ export const CaseDetailModal: React.FC<Props> = ({
                             </span>
                           )}
                         </div>
-                        <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.25rem" }}>
+                        {ev.pt_code && (
+                          <div style={{ fontSize: "0.72rem", color: "#065f46" }}>
+                            MedDRA PT Code: <strong>{ev.pt_code}</strong>
+                          </div>
+                        )}
+                        <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.2rem" }}>
                           Outcome: <strong>{ev.outcome || "Unknown"}</strong>
+                          {ev.seriousness && <span> | Serious: {ev.seriousness}</span>}
+                          {ev.listedness && <span> | Listed: {ev.listedness}</span>}
                         </div>
                         <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: "0.15rem", fontFamily: "ui-monospace, monospace" }}>
-                          Raw: [{ev.raw_verbatim}]
+                          Raw: {ev.raw_verbatim}
                         </div>
                       </div>
                     ))}
@@ -226,6 +257,15 @@ export const CaseDetailModal: React.FC<Props> = ({
                     {caseData.narrative || "No narrative text recorded for this report."}
                   </div>
 
+                  {caseData.patient.relevant_history && (
+                    <>
+                      <div className="panel-title" style={{ marginTop: "0.5rem" }}>Relevant Medical History</div>
+                      <div style={{ fontSize: "0.78rem", color: "#334155", background: "#f8fafc", padding: "0.5rem", borderRadius: "4px", border: "1px solid #e2e8f0", maxHeight: "100px", overflowY: "auto" }}>
+                        {caseData.patient.relevant_history}
+                      </div>
+                    </>
+                  )}
+
                   <div className="panel-title" style={{ marginTop: "0.5rem" }}>Source Lineage (Audit Trail)</div>
                   <div style={{ fontSize: "0.8rem", color: "#475569", background: "#fff", padding: "0.6rem", borderRadius: "4px", border: "1px solid #e2e8f0" }}>
                     <div><strong>Original File:</strong> {caseData.source_lineage.file}</div>
@@ -238,7 +278,7 @@ export const CaseDetailModal: React.FC<Props> = ({
               {/* Assessment Section */}
               <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "1rem" }}>
                 <div style={{ fontSize: "0.9rem", fontWeight: 700, marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <ShieldCheck size={18} color="#2563eb" /> Safety Relevance Assessment & Reviewer Determination
+                  <Stethoscope size={18} color="#2563eb" /> Safety Relevance Assessment & Reviewer Determination
                 </div>
                 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
@@ -259,6 +299,8 @@ export const CaseDetailModal: React.FC<Props> = ({
                       <option value="Lack of temporal association">Lack of temporal association</option>
                       <option value="Pre-existing baseline condition">Pre-existing baseline condition</option>
                       <option value="Unrelated procedural complication">Unrelated procedural complication</option>
+                      <option value="Literature screening record - not an individual spontaneous safety report">Literature screening record - not an individual spontaneous safety report</option>
+                      <option value="Secondary assessment: No concomitant CYP2D6 inhibitor interaction">Secondary assessment: No concomitant CYP2D6 inhibitor interaction</option>
                     </select>
                   </div>
                   <div>
@@ -274,6 +316,20 @@ export const CaseDetailModal: React.FC<Props> = ({
                       onChange={(e) => setReviewerNotes(e.target.value)}
                     />
                   </div>
+                </div>
+
+                <div style={{ marginTop: "0.75rem" }}>
+                  <label style={{ fontSize: "0.8rem", fontWeight: 600, color: "#475569", display: "block", marginBottom: "0.25rem" }}>
+                    Secondary Assessment Notes (CYP2D6 / Food Interaction / Missing Information details):
+                  </label>
+                  <input
+                    type="text"
+                    className="select-input"
+                    style={{ width: "100%" }}
+                    placeholder="Document concomitant inhibitor analysis, food intake documentation, or pre-existing clinical evidence..."
+                    value={secondaryResult}
+                    onChange={(e) => setSecondaryResult(e.target.value)}
+                  />
                 </div>
               </div>
             </>

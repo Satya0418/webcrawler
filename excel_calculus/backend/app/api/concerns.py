@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from excel_calculus.backend.app.database import get_db
 from excel_calculus.backend.app.models.entities import SafetyConcern
 
 router = APIRouter(prefix="/api/concerns", tags=["Safety Concerns"])
 
 class ConcernOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     product_name: str
     reporting_period: str
@@ -18,9 +20,6 @@ class ConcernOut(BaseModel):
     search_config: Optional[str]
     requires_secondary_assessment: bool
     secondary_assessment_instructions: Optional[str]
-
-    class Config:
-        from_attributes = True
 
 @router.get("", response_model=List[ConcernOut])
 def get_concerns(product: Optional[str] = None, db: Session = Depends(get_db)):

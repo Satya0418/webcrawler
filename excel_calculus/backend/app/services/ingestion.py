@@ -1,9 +1,10 @@
 import os
 import re
-import openpyxl
+import hashlib
 from datetime import datetime
+import openpyxl
 from sqlalchemy.orm import Session
-from excel_calculus.backend.app.models.entities import CaseRecord, CaseEvent, CaseProduct, AuditLog
+from excel_calculus.backend.app.models.entities import CaseRecord, CaseEvent, CaseProduct, AuditLog, Dataset
 
 class IngestionService:
     def __init__(self, db: Session):
@@ -11,15 +12,21 @@ class IngestionService:
 
     @staticmethod
     def clean_xml_hex(val: str) -> str:
+        """Removes Excel/XML hex artifacts such as _x000D_, _x0015_, _x0016_, etc."""
         if not val:
             return ""
         return re.sub(r"_x[0-9a-fA-F]{4}_", "", str(val))
 
     @staticmethod
     def normalize_term(val: str) -> str:
+        """
+        Equivalent to TRIM(event) in Excel / Power Query:
+        - Replaces tabs and newlines with spaces
+        - Collapses duplicate whitespace
+        - Strips leading and trailing whitespace
+        """
         if not val:
             return ""
-        # Remove extra whitespace and newlines
         clean = re.sub(r"[\r\n\t]+", " ", str(val))
         clean = re.sub(r"\s+", " ", clean).strip()
         return clean
@@ -30,43 +37,55 @@ class IngestionService:
         [PAIN IN EXTREMITY_x0015__x0016_]_x000D_
         Y / Y / Y_x000D_
         [GAIT DISTURBANCE_x0016_]...
-        Returns list of dicts: [{'term': 'PAIN IN EXTREMITY', 'raw': '...', 'flags': 'Y/Y/Y'}]
+
+        Preserves:
+        - raw_event_value: exact bracketed segment from raw cell
+        - normalized_event_text: cleaned, normalized uppercase medical event term
+        - flags: clinical assessment markers (seriousness, listedness, causality)
+        Guarantees that flags like Y/Y/Y or N/Y/Y NEVER pollute the medical event term.
         """
         if not raw_ev:
             return []
 
-        cleaned_text = self.clean_xml_hex(raw_ev)
-        
-        # Regex to capture bracketed term and optional trailing assessment flags
+        # Find bracketed expressions and any trailing flag lines
         pattern = re.compile(r'\[([^\]]+)\](?:\s*([YyNn\s/]+))?')
-        matches = pattern.findall(cleaned_text)
-        
+        matches = pattern.findall(raw_ev)
+
         events = []
         if matches:
             for term, flags in matches:
-                clean_t = self.normalize_term(term)
-                clean_flags = self.normalize_term(flags) if flags else ""
-                if clean_t:
-                    flag_parts = [f.strip() for f in clean_flags.split("/") if f.strip()]
+                # Raw representation preserving brackets and original content
+                raw_token = f"[{term}]"
+                # Strip XML hex and normalize
+                clean_term = self.clean_xml_hex(term)
+                norm_term = self.normalize_term(clean_term)
+
+                clean_flags = self.clean_xml_hex(flags) if flags else ""
+                norm_flags = self.normalize_term(clean_flags)
+
+                if norm_term:
+                    flag_parts = [f.strip() for f in norm_flags.split("/") if f.strip()]
                     seriousness = flag_parts[0] if len(flag_parts) > 0 else None
                     listedness = flag_parts[1] if len(flag_parts) > 1 else None
                     causality = flag_parts[2] if len(flag_parts) > 2 else None
-                    
+
                     events.append({
-                        "term": clean_t,
-                        "raw": term,
+                        "normalized_term": norm_term.upper(),
+                        "raw_verbatim": raw_token,
                         "seriousness": seriousness,
                         "listedness": listedness,
                         "causality": causality
                     })
         else:
-            # Fallback if not enclosed in brackets
+            # Fallback if events are not bracketed
+            cleaned_text = self.clean_xml_hex(raw_ev)
             lines = [self.normalize_term(l) for l in cleaned_text.splitlines() if self.normalize_term(l)]
             for l in lines:
-                if not re.match(r'^[YyNn\s/]+$', l): # not just flags
+                # Exclude lines that only contain assessment flags
+                if not re.match(r'^[YyNn\s/]+$', l):
                     events.append({
-                        "term": l,
-                        "raw": l,
+                        "normalized_term": l.upper(),
+                        "raw_verbatim": l,
                         "seriousness": None,
                         "listedness": None,
                         "causality": None
@@ -105,19 +124,19 @@ class IngestionService:
             line_clean = self.normalize_term(line)
             if not line_clean:
                 continue
-            
-            # Extract role (Suspect vs Concom)
+
+            # Role (Suspect vs Concom)
             role = "Suspect" if "suspect" in line_clean.lower() else ("Concom" if "concom" in line_clean.lower() else "Unknown")
-            
-            # Active substance in parentheses e.g. APO DEXAMETHASONE (DEXAMETHASONE)
+
+            # Active substance inside parenthesis e.g. APO DEXAMETHASONE (DEXAMETHASONE)
             active_sub = None
             paren_match = re.search(r'\(([^)]+)\)', line_clean)
             if paren_match:
                 active_sub = paren_match.group(1).strip()
-            
+
             # Brand name before parenthesis
             brand = line_clean.split("(")[0].strip() if paren_match else line_clean.split()[0]
-            
+
             products.append({
                 "raw": line_clean,
                 "brand": brand,
@@ -126,11 +145,51 @@ class IngestionService:
             })
         return products
 
-    def ingest_linelisting_file(self, file_path: str, primary_product_name: str = "Unknown"):
+    def ingest_linelisting_file(
+        self,
+        file_path: str,
+        primary_product_name: str = "Unknown",
+        reporting_period: str = None,
+        data_lock_point: str = None
+    ):
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
         file_name = os.path.basename(file_path)
+
+        # Compute SHA-256 hash of file for idempotent re-ingestion and audit
+        with open(file_path, "rb") as f:
+            file_hash = hashlib.sha256(f.read()).hexdigest()
+
+        # Deduce reporting period and DLP if not provided
+        if not reporting_period:
+            if "20260428" in file_name or "abiraterone" in primary_product_name.lower():
+                reporting_period = "29-Apr-2025 to 28-Apr-2026"
+                data_lock_point = "28-Apr-2026"
+            elif "20260412" in file_name or "oxycodone" in primary_product_name.lower():
+                reporting_period = "13-Apr-2025 to 12-Apr-2026"
+                data_lock_point = "12-Apr-2026"
+            else:
+                reporting_period = "Current Reporting Period"
+                data_lock_point = datetime.utcnow().strftime("%d-%b-%Y")
+
+        # Create or update Dataset
+        dataset_id = f"ds_{primary_product_name.lower()}_{file_hash[:8]}"
+        dataset = self.db.query(Dataset).filter_by(id=dataset_id).first()
+        if not dataset:
+            dataset = Dataset(
+                id=dataset_id,
+                dataset_type="LINE_LISTING",
+                product_name=primary_product_name,
+                reporting_period=reporting_period,
+                data_lock_point=data_lock_point,
+                source_filename=file_name,
+                source_file_hash=file_hash,
+                status="ACTIVE"
+            )
+            self.db.add(dataset)
+            self.db.flush()
+
         wb = openpyxl.load_workbook(file_path, data_only=True)
         sheet_name = wb.sheetnames[0]
         ws = wb[sheet_name]
@@ -140,8 +199,7 @@ class IngestionService:
             return {"status": "empty", "cases": 0, "events": 0}
 
         headers = [str(c).strip() if c is not None else "" for c in rows[0]]
-        
-        # Build index mapping
+
         def col_idx(name):
             return headers.index(name) if name in headers else -1
 
@@ -191,8 +249,11 @@ class IngestionService:
                 self.db.add(case_rec)
 
             seriousness_val = str(row[idx_seriousness]).strip() if (idx_seriousness >= 0 and row[idx_seriousness] is not None) else ""
-            
+
+            case_rec.dataset_id = dataset_id
             case_rec.product_name = primary_product_name
+            case_rec.reporting_period = reporting_period
+            case_rec.data_lock_point = data_lock_point
             case_rec.primary_product = primary_product_name
             case_rec.country = str(row[idx_country]).strip() if (idx_country >= 0 and row[idx_country] is not None) else ""
             case_rec.report_type = str(row[idx_report_type]).strip() if (idx_report_type >= 0 and row[idx_report_type] is not None) else ""
@@ -218,7 +279,7 @@ class IngestionService:
             case_rec.raw_source_sheet = sheet_name
             case_rec.raw_source_row = r_idx
 
-            # Clear existing child records if re-ingesting
+            # Clear existing child records if re-ingesting this case
             self.db.query(CaseEvent).filter_by(case_number=case_num).delete()
             self.db.query(CaseProduct).filter_by(case_number=case_num).delete()
 
@@ -227,25 +288,28 @@ class IngestionService:
             outcomes_map = self.parse_outcomes(raw_outcome_ev)
 
             for pos, ev_item in enumerate(parsed_events):
-                clean_term = ev_item["term"]
-                norm_upper = clean_term.upper()
-                pref_title = clean_term.title()
-                
-                # Check outcome match
+                norm_upper = ev_item["normalized_term"]
+                # Match outcome for this event
                 matched_outcome = outcomes_map.get(norm_upper, case_rec.case_outcome)
 
+                # IMPORTANT: preferred_term is NOT clean_term.title(). It is null until matched to MedDRA reference!
                 ev_rec = CaseEvent(
                     case_number=case_num,
-                    position=pos,
-                    raw_verbatim=ev_item["raw"],
+                    dataset_id=dataset_id,
+                    position=pos + 1,  # 1-indexed position
+                    raw_verbatim=ev_item["raw_verbatim"],
                     normalized_term=norm_upper,
-                    preferred_term=pref_title,
+                    preferred_term=None,  # Null until exact MedDRA lookup matches it! Never fabricate!
+                    pt_code=None,
                     soc=case_rec.primary_soc if pos == 0 else None,
                     event_onset=None,
                     event_outcome=matched_outcome,
                     seriousness_flag=ev_item["seriousness"],
                     listedness_flag=ev_item["listedness"],
-                    causality_flag=ev_item["causality"]
+                    causality_flag=ev_item["causality"],
+                    source_file=file_name,
+                    source_sheet=sheet_name,
+                    source_row=r_idx
                 )
                 self.db.add(ev_rec)
                 total_events += 1
@@ -255,6 +319,7 @@ class IngestionService:
             for prod_item in parsed_products:
                 prod_rec = CaseProduct(
                     case_number=case_num,
+                    dataset_id=dataset_id,
                     product_name_raw=prod_item["raw"],
                     brand_name=prod_item["brand"],
                     active_substance=prod_item["active_substance"],
@@ -265,14 +330,22 @@ class IngestionService:
 
             total_cases += 1
 
+        # Update dataset stats
+        dataset.total_cases = total_cases
+        dataset.total_events = total_events
+
         audit = AuditLog(
             user_id="system_ingestion",
-            action=f"Ingested {file_name}: {total_cases} cases, {total_events} exploded events, {total_products} products."
+            dataset_id=dataset_id,
+            action=f"Ingested {file_name} for {primary_product_name} ({reporting_period}): {total_cases} cases, {total_events} exploded events, {total_products} products."
         )
         self.db.add(audit)
         self.db.commit()
 
         return {
+            "dataset_id": dataset_id,
+            "product_name": primary_product_name,
+            "reporting_period": reporting_period,
             "file": file_name,
             "sheet": sheet_name,
             "total_cases": total_cases,

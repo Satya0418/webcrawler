@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import type { Section161ReportData } from "../types";
 import { fetchSection161Report } from "../api";
-import { Printer, Copy, Check, FileSpreadsheet, RefreshCw, ChevronRight, ShieldCheck, AlertCircle } from "lucide-react";
+import { Printer, Copy, Check, FileSpreadsheet, RefreshCw, ChevronRight, ShieldCheck, AlertCircle, LayoutList, Table } from "lucide-react";
 
 interface Props {
   product: string;
@@ -13,6 +13,7 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"official" | "reviewer">("official");
 
   useEffect(() => {
     loadTableData();
@@ -35,20 +36,52 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
   const copyTableToClipboard = () => {
     if (!reportData) return;
 
-    let text = `16.1 Summary of Safety Concerns\nProduct: ${reportData.product_name}\nReporting Period: ${reportData.reporting_period}\n\n${reportData.intro_text}\n\n`;
-    text += `Risk Category | Risk Term | Search Method | Number of Relevant Case Reports\n`;
-    text += `---|---|---|---\n`;
+    let tsv = `Risk Term\tNumber of Relevant Case Reports\n`;
+    let html = `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse: collapse; font-family: Calibri, 'Segoe UI', Arial, sans-serif; width: 100%; font-size: 11pt;">
+      <thead>
+        <tr style="background-color: #f1f5f9; font-weight: bold;">
+          <th align="left" style="border: 1px solid #94a3b8; padding: 8px;">Risk Term</th>
+          <th align="center" style="border: 1px solid #94a3b8; padding: 8px; width: 220px;">Number of Relevant Case Reports</th>
+        </tr>
+      </thead>
+      <tbody>`;
 
     for (const sec of reportData.table_sections) {
-      text += `**${sec.category_name}** | | |\n`;
+      tsv += `${sec.category_name.toUpperCase()}\t\n`;
+      html += `<tr style="background-color: #f8fafc; font-weight: bold;">
+        <td colspan="2" style="border: 1px solid #94a3b8; padding: 8px 10px; text-transform: uppercase;">${sec.category_name}</td>
+      </tr>`;
       for (const risk of sec.risks) {
-        text += `${sec.category_name} | ${risk.risk_term} | ${risk.search_method} | ${risk.number_of_relevant_cases}\n`;
+        tsv += `${risk.risk_term}\t${risk.number_of_relevant_cases}\n`;
+        html += `<tr>
+          <td style="border: 1px solid #cbd5e1; padding: 6px 10px; padding-left: 20px;">${risk.risk_term}</td>
+          <td align="center" style="border: 1px solid #cbd5e1; padding: 6px 10px;">${risk.number_of_relevant_cases}</td>
+        </tr>`;
       }
     }
 
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+    tsv += `Total\t${reportData.total_relevant_cases}\n`;
+    html += `<tr style="background-color: #f1f5f9; font-weight: bold;">
+      <td style="border: 1px solid #94a3b8; padding: 8px 10px;">Total</td>
+      <td align="center" style="border: 1px solid #94a3b8; padding: 8px 10px;">${reportData.total_relevant_cases}</td>
+    </tr></tbody></table>`;
+
+    if (navigator.clipboard && window.ClipboardItem) {
+      const textBlob = new Blob([tsv], { type: "text/plain" });
+      const htmlBlob = new Blob([html], { type: "text/html" });
+      navigator.clipboard.write([new ClipboardItem({ "text/plain": textBlob, "text/html": htmlBlob })]).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      }).catch(() => {
+        navigator.clipboard.writeText(tsv);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      });
+    } else {
+      navigator.clipboard.writeText(tsv);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }
   };
 
   if (loading && !reportData) {
@@ -71,7 +104,7 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      {/* Top Header Card */}
+      {/* Top Header Bar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -91,15 +124,59 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
         </div>
 
         <div style={{ display: "flex", gap: "0.5rem" }}>
+          {/* View Mode Toggle */}
+          <div style={{ display: "flex", backgroundColor: "#f1f5f9", borderRadius: "0.375rem", padding: "2px", border: "1px solid #e2e8f0" }}>
+            <button
+              onClick={() => setViewMode("official")}
+              style={{
+                padding: "0.35rem 0.65rem",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                border: "none",
+                borderRadius: "0.25rem",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.3rem",
+                backgroundColor: viewMode === "official" ? "#ffffff" : "transparent",
+                color: viewMode === "official" ? "#1e293b" : "#64748b",
+                boxShadow: viewMode === "official" ? "0 1px 2px rgba(0,0,0,0.06)" : "none"
+              }}
+              title="Official PBRER 2-column regulatory submission format"
+            >
+              <Table size={14} /> Official PBRER View
+            </button>
+            <button
+              onClick={() => setViewMode("reviewer")}
+              style={{
+                padding: "0.35rem 0.65rem",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                border: "none",
+                borderRadius: "0.25rem",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.3rem",
+                backgroundColor: viewMode === "reviewer" ? "#ffffff" : "transparent",
+                color: viewMode === "reviewer" ? "#1e293b" : "#64748b",
+                boxShadow: viewMode === "reviewer" ? "0 1px 2px rgba(0,0,0,0.06)" : "none"
+              }}
+              title="Reviewer working table with criteria, candidate cases, and review actions"
+            >
+              <LayoutList size={14} /> Reviewer & Audit View
+            </button>
+          </div>
+
           <button className="btn-secondary" onClick={loadTableData} title="Recalculate counts from indexed line listings">
             <RefreshCw size={15} /> Recalculate
           </button>
-          <button className="btn-secondary" onClick={copyTableToClipboard} title="Copy table for pasting directly into PBRER Word document">
+          <button className="btn-secondary" onClick={copyTableToClipboard} title="Copy official 2-column table ready to paste into Word or Excel">
             {copied ? <Check size={15} color="#16a34a" /> : <Copy size={15} />}
-            {copied ? "Copied to Clipboard!" : "Copy Table for Word"}
+            {copied ? "Copied Table!" : "Copy Table for Word"}
           </button>
           <button className="btn-secondary" onClick={() => window.print()} title="Print Section 16.1 Table">
-            <Printer size={15} /> Print / Export
+            <Printer size={15} /> Print
           </button>
         </div>
       </div>
@@ -111,19 +188,19 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
           <div className="metric-card-value" style={{ color: "#2563eb" }}>
             {reportData.total_relevant_cases}
           </div>
-          <div className="metric-card-sub">Included in Section 16.1</div>
+          <div className="metric-card-sub">Assessed as RELEVANT for Section 16.1</div>
         </div>
         <div className="metric-card">
           <div className="metric-card-title">Total Candidate Matches</div>
           <div className="metric-card-value">{reportData.total_candidate_cases}</div>
-          <div className="metric-card-sub">From line-listing calculus</div>
+          <div className="metric-card-sub">Awaiting or completed clinical review</div>
         </div>
         <div className="metric-card">
           <div className="metric-card-title">Important Identified Risks</div>
           <div className="metric-card-value" style={{ color: "#059669" }}>
             {reportData.table_sections.find((s) => s.category_name === "Important Identified Risks")?.risks.length || 0}
           </div>
-          <div className="metric-card-sub">Monitored Safety Concerns</div>
+          <div className="metric-card-sub">Safety Concerns</div>
         </div>
         <div className="metric-card">
           <div className="metric-card-title">Important Potential / Missing</div>
@@ -131,7 +208,7 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
             {(reportData.table_sections.find((s) => s.category_name === "Important Potential Risks")?.risks.length || 0) +
              (reportData.table_sections.find((s) => s.category_name === "Missing Information")?.risks.length || 0)}
           </div>
-          <div className="metric-card-sub">Potential & Missing Concerns</div>
+          <div className="metric-card-sub">Safety Concerns</div>
         </div>
       </div>
 
@@ -143,123 +220,215 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
             Table: Number of Case Reports Pertaining to Safety Concerns (PBRER Section 16.1)
           </div>
           <span style={{ fontSize: "0.8rem", color: "#64748b" }}>
-            Click &ldquo;Review Cases&rdquo; to inspect candidate line-listing records
+            {viewMode === "official"
+              ? "Official 2-column regulatory submission format. Click any risk row to inspect cases."
+              : "Reviewer view with criteria and direct case review actions."}
           </span>
         </div>
 
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th style={{ width: "35%" }}>Risk Term / Safety Concern</th>
-              <th style={{ width: "30%" }}>Search Method & Criteria</th>
-              <th style={{ width: "15%", textAlign: "center" }}>
-                Number of Relevant Case Reports
-              </th>
-              <th style={{ width: "10%", textAlign: "center" }}>Candidate Cases</th>
-              <th style={{ width: "10%", textAlign: "center" }}>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reportData.table_sections.map((section) => (
-              <React.Fragment key={section.category_name}>
-                {/* Category Header Row */}
-                <tr style={{ backgroundColor: "#f8fafc" }}>
-                  <td
-                    colSpan={5}
-                    style={{
-                      fontWeight: 800,
-                      fontSize: "0.85rem",
-                      letterSpacing: "0.03em",
-                      color: "#1e293b",
-                      paddingTop: "0.85rem",
-                      paddingBottom: "0.85rem",
-                      borderTop: "2px solid #e2e8f0",
-                      borderBottom: "1px solid #cbd5e1",
-                      textTransform: "uppercase"
-                    }}
-                  >
-                    <span style={{ display: "inline-block", width: "8px", height: "8px", backgroundColor: "#2563eb", borderRadius: "50%", marginRight: "0.5rem" }}></span>
-                    {section.category_name}
-                  </td>
-                </tr>
-
-                {/* Individual Safety Concern Rows */}
-                {section.risks.map((risk) => (
-                  <tr key={risk.concern_id} style={{ transition: "background-color 0.15s ease" }}>
-                    <td style={{ paddingLeft: "1.5rem" }}>
-                      <div style={{ fontWeight: 600, color: "#0f172a" }}>{risk.risk_term}</div>
-                      {risk.requires_secondary_assessment && (
-                        <span style={{ fontSize: "0.75rem", color: "#d97706", fontWeight: 500 }}>
-                          &bull; Requires Concomitant Assessment
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      <span className="badge" style={{ backgroundColor: "#f1f5f9", color: "#334155", marginRight: "0.4rem", fontSize: "0.7rem" }}>
-                        {risk.search_method}
-                      </span>
-                      <span style={{ fontSize: "0.8rem", color: "#64748b" }}>
-                        {risk.search_criteria}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: "center" }}>
-                      <span
-                        className="badge"
-                        style={{
-                          fontSize: "0.95rem",
-                          fontWeight: 700,
-                          padding: "0.35rem 0.75rem",
-                          backgroundColor: risk.number_of_relevant_cases > 0 ? "#eff6ff" : "#f1f5f9",
-                          color: risk.number_of_relevant_cases > 0 ? "#1d4ed8" : "#64748b",
-                          border: `1px solid ${risk.number_of_relevant_cases > 0 ? "#bfdbfe" : "#e2e8f0"}`
-                        }}
-                      >
-                        {risk.number_of_relevant_cases}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: "center", color: "#64748b", fontSize: "0.85rem", fontWeight: 500 }}>
-                      {risk.candidate_case_count}
-                    </td>
-                    <td style={{ textAlign: "center" }}>
-                      <button
-                        className="btn-secondary"
-                        onClick={() => onSelectConcern(risk.concern_id)}
-                        style={{
-                          padding: "0.3rem 0.65rem",
-                          fontSize: "0.8rem",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "0.25rem"
-                        }}
-                      >
-                        Review Cases <ChevronRight size={14} />
-                      </button>
+        {viewMode === "official" ? (
+          /* OFFICIAL PBRER 2-COLUMN TABLE */
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th style={{ width: "70%", padding: "0.75rem 1rem", fontSize: "0.85rem", textTransform: "uppercase" }}>
+                  Risk Term
+                </th>
+                <th style={{ width: "30%", textAlign: "center", padding: "0.75rem 1rem", fontSize: "0.85rem", textTransform: "uppercase" }}>
+                  Number of Relevant Case Reports
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {reportData.table_sections.map((section) => (
+                <React.Fragment key={section.category_name}>
+                  {/* Category Header Row */}
+                  <tr style={{ backgroundColor: "#f8fafc" }}>
+                    <td
+                      colSpan={2}
+                      style={{
+                        fontWeight: 800,
+                        fontSize: "0.85rem",
+                        letterSpacing: "0.03em",
+                        color: "#0f172a",
+                        padding: "0.75rem 1rem",
+                        borderTop: "2px solid #cbd5e1",
+                        borderBottom: "1px solid #cbd5e1",
+                        textTransform: "uppercase"
+                      }}
+                    >
+                      {section.category_name}
                     </td>
                   </tr>
-                ))}
-              </React.Fragment>
-            ))}
 
-            {/* Total Row */}
-            <tr style={{ backgroundColor: "#f1f5f9", fontWeight: 700, borderTop: "2px solid #cbd5e1" }}>
-              <td colSpan={2} style={{ paddingLeft: "1.5rem", fontSize: "0.9rem", color: "#0f172a" }}>
-                Total Relevant Case Reports across all Safety Concerns:
-              </td>
-              <td style={{ textAlign: "center" }}>
-                <span
-                  className="badge badge-relevant"
-                  style={{ fontSize: "1rem", fontWeight: 800, padding: "0.4rem 0.85rem" }}
-                >
-                  {reportData.total_relevant_cases}
-                </span>
-              </td>
-              <td style={{ textAlign: "center", color: "#334155" }}>
-                {reportData.total_candidate_cases}
-              </td>
-              <td></td>
-            </tr>
-          </tbody>
-        </table>
+                  {/* Individual Safety Concern Rows */}
+                  {section.risks.map((risk) => (
+                    <tr
+                      key={risk.concern_id}
+                      onClick={() => onSelectConcern(risk.concern_id)}
+                      style={{ cursor: "pointer", transition: "background-color 0.15s ease" }}
+                      title={`Click to review ${risk.candidate_case_count} candidate case(s)`}
+                    >
+                      <td style={{ padding: "0.65rem 1.25rem" }}>
+                        <div style={{ fontWeight: 600, color: "#1e293b" }}>{risk.risk_term}</div>
+                      </td>
+                      <td style={{ textAlign: "center", padding: "0.65rem 1rem" }}>
+                        <span
+                          className="badge"
+                          style={{
+                            fontSize: "0.95rem",
+                            fontWeight: 700,
+                            padding: "0.25rem 0.75rem",
+                            backgroundColor: risk.number_of_relevant_cases > 0 ? "#eff6ff" : "#f8fafc",
+                            color: risk.number_of_relevant_cases > 0 ? "#1d4ed8" : "#475569",
+                            border: `1px solid ${risk.number_of_relevant_cases > 0 ? "#bfdbfe" : "#e2e8f0"}`
+                          }}
+                        >
+                          {risk.number_of_relevant_cases}
+                        </span>
+                        {risk.candidate_case_count > 0 && risk.number_of_relevant_cases === 0 && (
+                          <span style={{ fontSize: "0.75rem", color: "#94a3b8", marginLeft: "0.5rem" }}>
+                            ({risk.candidate_case_count} pending review)
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+
+              {/* Total Row */}
+              <tr style={{ backgroundColor: "#f1f5f9", fontWeight: 700, borderTop: "2px solid #94a3b8" }}>
+                <td style={{ padding: "0.75rem 1rem", fontSize: "0.9rem", color: "#0f172a" }}>
+                  Total
+                </td>
+                <td style={{ textAlign: "center", padding: "0.75rem 1rem" }}>
+                  <span
+                    className="badge badge-relevant"
+                    style={{ fontSize: "1rem", fontWeight: 800, padding: "0.35rem 0.85rem" }}
+                  >
+                    {reportData.total_relevant_cases}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        ) : (
+          /* REVIEWER & AUDIT TABLE */
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th style={{ width: "35%" }}>Risk Term / Safety Concern</th>
+                <th style={{ width: "30%" }}>Search Method & Criteria</th>
+                <th style={{ width: "15%", textAlign: "center" }}>
+                  Number of Relevant Case Reports
+                </th>
+                <th style={{ width: "10%", textAlign: "center" }}>Candidate Cases</th>
+                <th style={{ width: "10%", textAlign: "center" }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reportData.table_sections.map((section) => (
+                <React.Fragment key={section.category_name}>
+                  {/* Category Header Row */}
+                  <tr style={{ backgroundColor: "#f8fafc" }}>
+                    <td
+                      colSpan={5}
+                      style={{
+                        fontWeight: 800,
+                        fontSize: "0.85rem",
+                        letterSpacing: "0.03em",
+                        color: "#1e293b",
+                        paddingTop: "0.85rem",
+                        paddingBottom: "0.85rem",
+                        borderTop: "2px solid #e2e8f0",
+                        borderBottom: "1px solid #cbd5e1",
+                        textTransform: "uppercase"
+                      }}
+                    >
+                      <span style={{ display: "inline-block", width: "8px", height: "8px", backgroundColor: "#2563eb", borderRadius: "50%", marginRight: "0.5rem" }}></span>
+                      {section.category_name}
+                    </td>
+                  </tr>
+
+                  {/* Individual Safety Concern Rows */}
+                  {section.risks.map((risk) => (
+                    <tr key={risk.concern_id} style={{ transition: "background-color 0.15s ease" }}>
+                      <td style={{ paddingLeft: "1.5rem" }}>
+                        <div style={{ fontWeight: 600, color: "#0f172a" }}>{risk.risk_term}</div>
+                        {risk.requires_secondary_assessment && (
+                          <span style={{ fontSize: "0.75rem", color: "#d97706", fontWeight: 500 }}>
+                            &bull; Requires Concomitant Assessment
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span className="badge" style={{ backgroundColor: "#f1f5f9", color: "#334155", marginRight: "0.4rem", fontSize: "0.7rem" }}>
+                          {risk.search_method}
+                        </span>
+                        <span style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                          {risk.search_criteria}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "center" }}>
+                        <span
+                          className="badge"
+                          style={{
+                            fontSize: "0.95rem",
+                            fontWeight: 700,
+                            padding: "0.35rem 0.75rem",
+                            backgroundColor: risk.number_of_relevant_cases > 0 ? "#eff6ff" : "#f1f5f9",
+                            color: risk.number_of_relevant_cases > 0 ? "#1d4ed8" : "#64748b",
+                            border: `1px solid ${risk.number_of_relevant_cases > 0 ? "#bfdbfe" : "#e2e8f0"}`
+                          }}
+                        >
+                          {risk.number_of_relevant_cases}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "center", color: "#64748b", fontSize: "0.85rem", fontWeight: 500 }}>
+                        {risk.candidate_case_count}
+                      </td>
+                      <td style={{ textAlign: "center" }}>
+                        <button
+                          className="btn-secondary"
+                          onClick={() => onSelectConcern(risk.concern_id)}
+                          style={{
+                            padding: "0.3rem 0.65rem",
+                            fontSize: "0.8rem",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.25rem"
+                          }}
+                        >
+                          Review Cases <ChevronRight size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+
+              {/* Total Row */}
+              <tr style={{ backgroundColor: "#f1f5f9", fontWeight: 700, borderTop: "2px solid #cbd5e1" }}>
+                <td colSpan={2} style={{ paddingLeft: "1.5rem", fontSize: "0.9rem", color: "#0f172a" }}>
+                  Total Relevant Case Reports across all Safety Concerns:
+                </td>
+                <td style={{ textAlign: "center" }}>
+                  <span
+                    className="badge badge-relevant"
+                    style={{ fontSize: "1rem", fontWeight: 800, padding: "0.4rem 0.85rem" }}
+                  >
+                    {reportData.total_relevant_cases}
+                  </span>
+                </td>
+                <td style={{ textAlign: "center", color: "#334155" }}>
+                  {reportData.total_candidate_cases}
+                </td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Regulatory Context Box */}
@@ -285,3 +454,4 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
     </div>
   );
 };
+

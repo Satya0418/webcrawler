@@ -14,8 +14,12 @@ export interface SafetyConcern {
 export interface MatchDetail {
   matched_field: string;
   matched_term: string;
+  pt_code?: string | null;
   reference_source: string;
   evidence: string;
+  source_file?: string | null;
+  source_sheet?: string | null;
+  source_row?: number | null;
 }
 
 export interface CandidateCaseRow {
@@ -23,6 +27,7 @@ export interface CandidateCaseRow {
   country: string;
   report_type: string;
   product_name?: string;
+  reporting_period?: string;
   age?: string;
   sex?: string;
   is_serious: boolean;
@@ -39,6 +44,7 @@ export interface CandidateCaseRow {
 }
 
 export interface SearchSummary {
+  search_run_id?: string;
   concern_id: string;
   concern_name: string;
   category: string;
@@ -58,14 +64,21 @@ export interface ExplodedEvent {
   position: number;
   raw_verbatim: string;
   normalized_term: string;
-  preferred_term: string;
+  preferred_term?: string | null;
+  pt_code?: string | null;
   soc?: string | null;
+  event_onset?: string | null;
   outcome?: string | null;
   seriousness?: string | null;
   listedness?: string | null;
   causality?: string | null;
   is_matched: boolean;
   match_reason?: string | null;
+  source_lineage?: {
+    file: string;
+    sheet: string;
+    row: number;
+  };
 }
 
 export interface CaseProductItem {
@@ -74,6 +87,10 @@ export interface CaseProductItem {
   brand_name?: string | null;
   active_substance?: string | null;
   role: string;
+  daily_dose?: string | null;
+  form?: string | null;
+  duration?: string | null;
+  indication_pt?: string | null;
   is_suspect: boolean;
 }
 
@@ -81,6 +98,8 @@ export interface CaseDetail {
   case_number: string;
   overview: {
     product_name: string;
+    reporting_period?: string | null;
+    data_lock_point?: string | null;
     country: string;
     report_type: string;
     initial_receipt_date: string;
@@ -89,8 +108,13 @@ export interface CaseDetail {
     listedness: string;
     case_outcome: string;
     primary_soc: string;
+    primary_event_flag?: string | null;
+    previous_submission?: string | null;
+    healthcare_prof?: string | null;
     case_classification: string;
     follow_up: string;
+    suspect_products?: string[];
+    concomitant_products?: string[];
   };
   patient: {
     age: string;
@@ -125,11 +149,26 @@ export interface CaseDetail {
   matches: Array<{
     field: string;
     term: string;
+    pt_code?: string | null;
     source: string;
     evidence: string;
+    source_file?: string | null;
+    source_sheet?: string | null;
+    source_row?: number | null;
   }>;
 }
 
+export interface DatasetInfo {
+  id: string;
+  product_name: string;
+  reporting_period?: string | null;
+  data_lock_point?: string | null;
+  filename: string;
+  cases: number;
+  events: number;
+  type: string;
+  created_at?: string | null;
+}
 
 export interface IngestionStatus {
   total_cases: number;
@@ -138,6 +177,7 @@ export interface IngestionStatus {
   total_safety_concerns: number;
   ingested_files: string[];
   products: string[];
+  datasets?: DatasetInfo[];
 }
 
 export interface UploadResult {
@@ -165,6 +205,7 @@ export interface Section161RiskItem {
   candidate_case_count: number;
   excluded_count: number;
   needs_review_count: number;
+  pending_count?: number;
   requires_secondary_assessment: boolean;
 }
 
@@ -182,5 +223,3 @@ export interface Section161ReportData {
   total_candidate_cases: number;
   table_sections: Section161CategoryGroup[];
 }
-
-

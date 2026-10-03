@@ -22,7 +22,10 @@ class ReportService:
         cases = self.db.query(CaseRecord).filter(CaseRecord.case_number.in_(distinct_case_nums)).all()
         cases_map = {c.case_number: c for c in cases}
 
-        # Segregate relevant vs excluded vs pending
+        # Strict segregation:
+        # RELEVANT: Only cases explicitly assessed by reviewer as RELEVANT
+        # NOT_RELEVANT: Explicitly excluded cases with reasons
+        # PENDING / NEEDS_REVIEW: Still candidate or under review
         relevant_cases = []
         excluded_cases = []
         pending_cases = []
@@ -43,6 +46,7 @@ class ReportService:
                 "country": case.country if case else "",
                 "report_type": case.report_type if case else "",
                 "product_name": case.product_name if case else "",
+                "reporting_period": case.reporting_period if case else concern.reporting_period,
                 "age": case.age if case else "",
                 "sex": case.sex if case else "",
                 "is_serious": case.is_serious if case else False,
@@ -52,6 +56,7 @@ class ReportService:
                     {
                         "matched_field": m.matched_field,
                         "matched_term": m.matched_term,
+                        "pt_code": m.pt_code,
                         "reference_source": m.reference_source,
                         "evidence": m.evidence
                     }
@@ -65,8 +70,10 @@ class ReportService:
                 "secondary_result": ass.secondary_assessment_result if ass else None
             }
 
-            if status == "RELEVANT" or (status == "CANDIDATE" and not any(a.status == "NOT_RELEVANT" for a in [ass] if ass)):
-                # Default candidate or confirmed relevant
+            # CRITICAL REGULATORY RULE:
+            # Candidates are NEVER counted as relevant!
+            # Only status == "RELEVANT" is counted towards the final regulatory total.
+            if status == "RELEVANT":
                 relevant_cases.append(case_item)
                 for term in case_item["matched_terms"]:
                     pt_counter[term] += 1
@@ -79,22 +86,30 @@ class ReportService:
             else:
                 pending_cases.append(case_item)
 
-        # Tabular summary of Preferred Terms
+        # Tabular summary of Preferred Terms among relevant cases (or candidate if none relevant yet)
+        target_pt_cases = relevant_cases if len(relevant_cases) > 0 else pending_cases
+        display_counter = Counter()
+        for ci in target_pt_cases:
+            for term in ci["matched_terms"]:
+                display_counter[term] += 1
+
         pt_summary_table = [
             {"preferred_term": pt, "case_count": count}
-            for pt, count in pt_counter.most_common()
+            for pt, count in display_counter.most_common()
         ]
 
         # Clinical summary text template
         clinical_narrative_summary = (
             f"During the review period ({concern.reporting_period}), the MAH retrieved {len(distinct_case_nums)} "
-            f"candidate case reports pertaining to the risk of {concern.name.lower()} using {concern.search_method} "
-            f"({concern.description}). "
-            f"Following clinical relevance assessment, {len(relevant_cases)} cases were determined to be relevant "
-            f"({serious_count} serious, {fatal_count} associated with a fatal outcome). "
+            f"candidate case reports pertaining to the safety concern of '{concern.name}' using {concern.search_method} "
+            f"({concern.description or ''}). "
+            f"Following clinical relevance assessment, {len(relevant_cases)} distinct cases were confirmed to be relevant "
+            f"({serious_count} serious, {fatal_count} fatal). "
+            f"{len(excluded_cases)} cases were determined to be not relevant following clinical evaluation. "
+            f"There are currently {len(pending_cases)} candidate cases awaiting review. "
             f"The events were categorized across {len(pt_summary_table)} Preferred Terms: "
-            + ", ".join([f"{item['preferred_term']} ({item['case_count']})" for item in pt_summary_table])
-            + ". Based on the review of these case reports, no new significant safety signals or changes in the benefit-risk balance were identified."
+            + (", ".join([f"{item['preferred_term']} ({item['case_count']})" for item in pt_summary_table]) if pt_summary_table else "None")
+            + ". Based on the evaluation of these cases, no new safety signals or modifications to the product benefit-risk profile were established."
         )
 
         return {
@@ -109,7 +124,7 @@ class ReportService:
             "metrics": {
                 "candidate_case_count": len(distinct_case_nums),
                 "total_event_matches": len(matches),
-                "relevant_case_count": len(relevant_cases),
+                "relevant_case_count": len(relevant_cases),  # Strict count of RELEVANT distinct cases
                 "excluded_case_count": len(excluded_cases),
                 "pending_review_count": len(pending_cases),
                 "serious_count": serious_count,
@@ -123,11 +138,18 @@ class ReportService:
         }
 
     def generate_section_16_1_table(self, product_name: str):
+        """
+        Generates the master PBRER Section 16.1 Summary of Safety Concerns table.
+        Rule:
+        - Number of Relevant Case Reports must be COUNT(DISTINCT Case Number WHERE status = 'RELEVANT')
+        - Never count candidate cases as relevant
+        - Never hard-code counts
+        """
         concerns = self.db.query(SafetyConcern).filter_by(product_name=product_name).all()
         if not concerns:
             concerns = self.db.query(SafetyConcern).all()
 
-        reporting_period = concerns[0].reporting_period if concerns else "Current Period"
+        reporting_period = concerns[0].reporting_period if concerns else "Current Reporting Period"
 
         categories_order = [
             "Important Identified Risks",
@@ -140,7 +162,22 @@ class ReportService:
         total_candidate = 0
 
         for c in concerns:
-            cat = c.category if c.category in category_map else "Important Identified Risks"
+            # Strictly filter for Section 16.1 safety concern categories
+            c_cat_lower = (c.category or "").lower()
+            if "section 9" in c_cat_lower:
+                continue
+
+            if c.category in category_map:
+                cat = c.category
+            elif "potential" in c_cat_lower:
+                cat = "Important Potential Risks"
+            elif "missing" in c_cat_lower:
+                cat = "Missing Information"
+            elif "identified" in c_cat_lower:
+                cat = "Important Identified Risks"
+            else:
+                continue
+
             matches = self.db.query(SearchMatch).filter_by(concern_id=c.id).all()
             distinct_cases = sorted(list(set(m.case_number for m in matches)))
 
@@ -150,15 +187,18 @@ class ReportService:
             relevant_count = 0
             excluded_count = 0
             needs_review_count = 0
+            pending_count = 0
 
             for c_num in distinct_cases:
                 st = ass_map.get(c_num, "CANDIDATE")
-                if st == "RELEVANT" or st == "CANDIDATE":
+                if st == "RELEVANT":
                     relevant_count += 1
                 elif st == "NOT_RELEVANT":
                     excluded_count += 1
                 elif st == "NEEDS_REVIEW":
                     needs_review_count += 1
+                else:
+                    pending_count += 1
 
             total_relevant += relevant_count
             total_candidate += len(distinct_cases)
@@ -169,10 +209,11 @@ class ReportService:
                 "category": cat,
                 "search_method": c.search_method,
                 "search_criteria": c.description,
-                "number_of_relevant_cases": relevant_count,
+                "number_of_relevant_cases": relevant_count,  # STRICTLY RELEVANT COUNT
                 "candidate_case_count": len(distinct_cases),
                 "excluded_count": excluded_count,
                 "needs_review_count": needs_review_count,
+                "pending_count": pending_count,
                 "requires_secondary_assessment": c.requires_secondary_assessment
             })
 
