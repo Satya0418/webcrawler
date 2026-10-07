@@ -275,14 +275,14 @@ class PDFReportService:
                     assessed_risks.append(r)
 
         if assessed_risks:
-            story.append(Paragraph("<b>16.3.1 Summary of Confirmed Relevant Risks</b>", ParagraphStyle(
+            story.append(Paragraph("<b>16.3.1 Summary of Identified Safety Concerns</b>", ParagraphStyle(
                 "SubSectionBold", parent=body_style, fontName="Times-Bold", fontSize=10, spaceBefore=6
             )))
             for ar in assessed_risks:
                 story.append(Paragraph(
                     f"&bull; <b>{ar.get('risk_term')}</b>: During this interval review, "
-                    f"<b>{ar.get('number_of_relevant_cases')}</b> distinct case report(s) were assessed and confirmed as clinically relevant "
-                    f"using deterministic {ar.get('search_method')} criteria ({ar.get('search_criteria')}).",
+                    f"<b>{ar.get('number_of_relevant_cases')}</b> distinct case report(s) were retrieved and evaluated "
+                    f"using predefined {ar.get('search_method')} criteria ({ar.get('search_criteria')}).",
                     body_style
                 ))
 

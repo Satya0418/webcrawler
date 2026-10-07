@@ -118,18 +118,31 @@ def test_6_relevance_assessment_update():
     assert result["reviewer_notes"] == payload["reviewer_notes"]
 
     sum_data = api_get(f"/search/{hep_concern['id']}")
-    assert sum_data["relevant_cases_count"] >= 1
+    assert sum_data["relevant_cases_count"] == 14  # Official retrieved count remains 14
+    assert sum_data["confirmed_relevant_count"] >= 1  # Clinical reviewer confirmed
 
 def test_7_pbrer_section_16_1_summary_table_generation():
     rep = api_get("/reports/section-16-1?product=Abiraterone")
     assert rep["title"] == "Section 16.1 Summary of Safety Concerns"
     assert rep["product_name"] == "Abiraterone"
-    assert rep["total_relevant_cases"] > 0
+    assert rep["total_relevant_cases"] == 28
     assert len(rep["table_sections"]) >= 3
     section_names = [s["category_name"] for s in rep["table_sections"]]
     assert "Important Identified Risks" in section_names
     assert "Important Potential Risks" in section_names
     assert "Missing Information" in section_names
+
+    risk_map = {
+        r["risk_term"]: r["number_of_relevant_cases"]
+        for sec in rep["table_sections"]
+        for r in sec["risks"]
+    }
+    assert risk_map["Hepatotoxicity"] == 14
+    assert risk_map["Osteoporosis including osteoporosis-related fractures"] == 1
+    assert risk_map["Rhabdomyolysis/Myopathy"] == 4
+    assert risk_map["Drug drug interaction with CYP2D6 inhibitors"] == 6
+    assert risk_map["Overdose due to medication error"] == 1
+    assert risk_map["Use in patients with severe renal impairment"] == 2
 
 def test_8_oxycodone_cross_product_validation():
     concerns = api_get("/concerns?product=Oxycodone")

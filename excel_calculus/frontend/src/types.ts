@@ -52,10 +52,16 @@ export interface SearchSummary {
   reporting_period: string;
   total_event_matches: number;
   distinct_candidate_cases: number;
+  candidate_case_count?: number;
+  number_of_relevant_cases?: number;
   relevant_cases_count: number;
+  confirmed_relevant_count?: number;
   not_relevant_cases_count: number;
+  excluded_count?: number;
   needs_review_cases_count: number;
+  needs_review_count?: number;
   candidate_pending_count: number;
+  pending_count?: number;
   cases: CandidateCaseRow[];
 }
 
@@ -203,6 +209,7 @@ export interface Section161RiskItem {
   search_criteria: string;
   number_of_relevant_cases: number;
   candidate_case_count: number;
+  confirmed_relevant_count?: number;
   excluded_count: number;
   needs_review_count: number;
   pending_count?: number;

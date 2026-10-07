@@ -217,12 +217,12 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
           <div className="metric-card-value" style={{ color: "#2563eb" }}>
             {reportData.total_relevant_cases}
           </div>
-          <div className="metric-card-sub">Assessed as RELEVANT for Section 16.1</div>
+          <div className="metric-card-sub">Retrieved by predefined safety searches</div>
         </div>
         <div className="metric-card">
           <div className="metric-card-title">Total Candidate Matches</div>
           <div className="metric-card-value">{reportData.total_candidate_cases}</div>
-          <div className="metric-card-sub">Awaiting or completed clinical review</div>
+          <div className="metric-card-sub">Distinct retrieved case reports</div>
         </div>
         <div className="metric-card">
           <div className="metric-card-title">Important Identified Risks</div>
@@ -315,11 +315,6 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
                         >
                           {risk.number_of_relevant_cases}
                         </span>
-                        {risk.candidate_case_count > 0 && risk.number_of_relevant_cases === 0 && (
-                          <span style={{ fontSize: "0.75rem", color: "#94a3b8", marginLeft: "0.5rem" }}>
-                            ({risk.candidate_case_count} pending review)
-                          </span>
-                        )}
                       </td>
                     </tr>
                   ))}
@@ -337,8 +332,8 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
                 <th style={{ width: "15%", textAlign: "center" }}>
                   Number of Relevant Case Reports
                 </th>
-                <th style={{ width: "10%", textAlign: "center" }}>Candidate Cases</th>
-                <th style={{ width: "10%", textAlign: "center" }}>Action</th>
+                <th style={{ width: "12%", textAlign: "center" }}>Reviewer Status</th>
+                <th style={{ width: "8%", textAlign: "center" }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -399,8 +394,10 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
                           {risk.number_of_relevant_cases}
                         </span>
                       </td>
-                      <td style={{ textAlign: "center", color: "#64748b", fontSize: "0.85rem", fontWeight: 500 }}>
-                        {risk.candidate_case_count}
+                      <td style={{ textAlign: "center", color: "#64748b", fontSize: "0.8rem", fontWeight: 500 }}>
+                        <span style={{ color: "#16a34a", fontWeight: 600 }}>{risk.confirmed_relevant_count || 0} Confirmed</span>
+                        <br />
+                        <span style={{ color: "#64748b", fontSize: "0.75rem" }}>{risk.pending_count || 0} Pending</span>
                       </td>
                       <td style={{ textAlign: "center" }}>
                         <button
@@ -435,8 +432,8 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
                     {reportData.total_relevant_cases}
                   </span>
                 </td>
-                <td style={{ textAlign: "center", color: "#334155" }}>
-                  {reportData.total_candidate_cases}
+                <td style={{ textAlign: "center", color: "#334155", fontSize: "0.85rem" }}>
+                  {reportData.total_candidate_cases} Retrieved
                 </td>
                 <td></td>
               </tr>

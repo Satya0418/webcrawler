@@ -415,3 +415,100 @@ def test_31_event_onset_and_product_fields(db):
     assert any(p.brand_name == "APO-ABIRATERONE" for p in prods)
     assert any(p.role == "Suspect" for p in prods)
 
+# 32. Validated Section 16.1 Benchmark Counts on 2026 Abiraterone Excel
+def test_32_section_16_1_validated_benchmark_counts(db):
+    report_service = ReportService(db)
+    table_data = report_service.generate_section_16_1_table("Abiraterone")
+    
+    risk_counts = {}
+    for sec in table_data["table_sections"]:
+        for r in sec["risks"]:
+            risk_counts[r["risk_term"]] = r["number_of_relevant_cases"]
+
+    expected_benchmarks = {
+        "Hepatotoxicity": 14,
+        "Cardiac disorders": 0,
+        "Osteoporosis including osteoporosis-related fractures": 1,
+        "Allergic alveolitis": 0,
+        "Increased exposure with food": 0,
+        "Rhabdomyolysis/Myopathy": 4,
+        "Cataract": 0,
+        "Drug drug interaction with CYP2D6 inhibitors": 6,
+        "Overdose due to medication error": 1,
+        "Use in patients with moderate/severe hepatic impairment and chronic liver disease": 0,
+        "Use in patients with severe renal impairment": 2,
+        "Use in patients with heart disease as specified in the safety criteria": 0,
+        "Use in patients with baseline hepatitis or significant abnormalities of liver function tests": 0
+    }
+
+    for risk_term, expected_count in expected_benchmarks.items():
+        assert risk_term in risk_counts, f"Risk '{risk_term}' missing from Section 16.1 table"
+        actual_count = risk_counts[risk_term]
+        assert actual_count == expected_count, (
+            f"Benchmark mismatch for '{risk_term}': expected {expected_count}, got {actual_count}"
+        )
+
+    assert table_data["total_relevant_cases"] == 28, (
+        f"Total retrieved cases mismatch: expected 28, got {table_data['total_relevant_cases']}"
+    )
+
+# 33. Assessment status change does not alter Section 16.1 retrieved-case count
+def test_33_assessment_status_change_does_not_alter_section_16_1_count(db):
+    report_service = ReportService(db)
+    
+    # Step 1: Initial Section 16.1 table has Hepatotoxicity = 14
+    init_table = report_service.generate_section_16_1_table("Abiraterone")
+    hep_risk = next(
+        r for sec in init_table["table_sections"] for r in sec["risks"] if r["risk_term"] == "Hepatotoxicity"
+    )
+    assert hep_risk["number_of_relevant_cases"] == 14
+
+    # Step 2: Manually assess candidate cases: one as RELEVANT, one as NOT_RELEVANT
+    cases = db.query(CaseRecord).filter_by(product_name="Abiraterone").all()
+    c1, c2 = cases[0], cases[1]
+    
+    for c_obj, status in [(c1, "RELEVANT"), (c2, "NOT_RELEVANT")]:
+        ass = db.query(RelevanceAssessment).filter_by(
+            case_number=c_obj.case_number, concern_id="abi_hepatotoxicity"
+        ).first()
+        if not ass:
+            ass = RelevanceAssessment(
+                case_id=c_obj.id, case_number=c_obj.case_number, concern_id="abi_hepatotoxicity", status=status
+            )
+            db.add(ass)
+        else:
+            ass.status = status
+    db.commit()
+
+    # Step 3: Regenerate Section 16.1 table
+    updated_table = report_service.generate_section_16_1_table("Abiraterone")
+    updated_hep_risk = next(
+        r for sec in updated_table["table_sections"] for r in sec["risks"] if r["risk_term"] == "Hepatotoxicity"
+    )
+    
+    # The official Section 16.1 count must remain strictly 14 (distinct retrieved cases)
+    assert updated_hep_risk["number_of_relevant_cases"] == 14, (
+        f"Official Section 16.1 count must NOT change with reviewer assessment, got {updated_hep_risk['number_of_relevant_cases']}"
+    )
+    # Reviewer assessment metrics must be tracked separately
+    assert updated_hep_risk["confirmed_relevant_count"] >= 1
+    assert updated_hep_risk["excluded_count"] >= 1
+
+# 34. Auto-execution when no SearchRun exists for a concern
+def test_34_auto_execution_when_no_search_run(db):
+    report_service = ReportService(db)
+    
+    # Deactivate active SearchRuns for Rhabdomyolysis
+    db.query(SearchRun).filter_by(concern_id="abi_rhabdomyolysis").update({"is_active": False})
+    db.commit()
+
+    # Generating Section 16.1 table should automatically execute the configured search
+    table_data = report_service.generate_section_16_1_table("Abiraterone")
+    rhabdo_risk = next(
+        r for sec in table_data["table_sections"] for r in sec["risks"] if "Rhabdomyolysis" in r["risk_term"]
+    )
+    assert rhabdo_risk["number_of_relevant_cases"] == 4, (
+        f"Auto-executed search must yield 4 cases for Rhabdomyolysis, got {rhabdo_risk['number_of_relevant_cases']}"
+    )
+
+

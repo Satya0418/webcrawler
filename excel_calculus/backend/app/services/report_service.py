@@ -1,7 +1,7 @@
 from collections import Counter
 from sqlalchemy.orm import Session
 from excel_calculus.backend.app.models.entities import (
-    SafetyConcern, CaseRecord, SearchRun, SearchMatch, RelevanceAssessment
+    SafetyConcern, CaseRecord, SearchRun, SearchMatch, RelevanceAssessment, Dataset
 )
 from excel_calculus.backend.app.services.pdf_service import PDFReportService
 
@@ -18,6 +18,10 @@ class ReportService:
         latest_run = self.db.query(SearchRun).filter_by(concern_id=concern_id, is_active=True).order_by(SearchRun.execution_time.desc()).first()
         if not latest_run:
             latest_run = self.db.query(SearchRun).filter_by(concern_id=concern_id).order_by(SearchRun.execution_time.desc()).first()
+        if not latest_run:
+            from excel_calculus.backend.app.services.search_engine import SearchEngineService
+            SearchEngineService(self.db).execute_concern_search(concern_id)
+            latest_run = self.db.query(SearchRun).filter_by(concern_id=concern_id, is_active=True).order_by(SearchRun.execution_time.desc()).first()
 
         matches = self.db.query(SearchMatch).filter_by(search_run_id=latest_run.id).all() if latest_run else self.db.query(SearchMatch).filter_by(concern_id=concern_id).all()
         distinct_case_nums = sorted(list(set(m.case_number for m in matches)))
@@ -122,9 +126,13 @@ class ReportService:
             "metrics": {
                 "candidate_case_count": len(distinct_case_nums),
                 "total_event_matches": len(matches),
-                "relevant_case_count": len(relevant_cases),  # Strict count of RELEVANT distinct cases
+                "number_of_relevant_cases": len(distinct_case_nums),
+                "relevant_case_count": len(relevant_cases),
+                "confirmed_relevant_count": len(relevant_cases),
                 "excluded_case_count": len(excluded_cases),
+                "excluded_count": len(excluded_cases),
                 "pending_review_count": len(pending_cases),
+                "pending_count": len(pending_cases),
                 "serious_count": serious_count,
                 "fatal_count": fatal_count
             },
@@ -139,16 +147,35 @@ class ReportService:
         """
         Generates the master PBRER Section 16.1 Summary of Safety Concerns table.
         Rule:
-        - Number of Relevant Case Reports must be COUNT(DISTINCT Case Number WHERE status = 'RELEVANT')
-        - Never count candidate cases as relevant
-        - Never hard-code counts
-        - Categories strictly: Important Identified Risks, Important Potential Risks, Missing Information
+        - The official Section 16.1 table represents the DISTINCT CASE REPORTS RETRIEVED
+          BY THE PREDEFINED SAFETY SEARCH (COUNT(DISTINCT SearchMatch.case_number)
+          for the current active SearchRun).
+        - Do NOT use assessment.status == 'RELEVANT' for the official count.
+        - Automatically execute configured search if no active SearchRun exists for this concern/dataset.
+        - Reviewer assessment counts (candidate, confirmed_relevant, excluded, needs_review, pending)
+          are tracked separately.
+        - Categories strictly: Important Identified Risks, Important Potential Risks, Missing Information.
+        - Never hard-code counts.
         """
         concerns = self.db.query(SafetyConcern).filter_by(product_name=product_name).all()
         if not concerns:
             concerns = self.db.query(SafetyConcern).all()
 
         reporting_period = concerns[0].reporting_period if concerns else "Current Reporting Period"
+
+        # Resolve active dataset to guarantee dataset/reporting-period isolation
+        active_dataset_query = self.db.query(Dataset).filter(
+            Dataset.product_name == product_name,
+            Dataset.status == "ACTIVE"
+        )
+        if reporting_period and reporting_period != "Current Period":
+            active_dataset_query = active_dataset_query.filter(Dataset.reporting_period == reporting_period)
+        active_dataset = active_dataset_query.order_by(Dataset.created_at.desc()).first()
+        if not active_dataset:
+            active_dataset = self.db.query(Dataset).filter_by(
+                product_name=product_name, status="ACTIVE"
+            ).order_by(Dataset.created_at.desc()).first()
+        active_dataset_id = active_dataset.id if active_dataset else None
 
         categories_order = [
             "Important Identified Risks",
@@ -176,10 +203,23 @@ class ReportService:
             else:
                 continue
 
-            # Query matches from the active/latest SearchRun
-            latest_run = self.db.query(SearchRun).filter_by(concern_id=c.id, is_active=True).order_by(SearchRun.execution_time.desc()).first()
+            # Query matches from the active SearchRun belonging to the active dataset
+            run_query = self.db.query(SearchRun).filter_by(concern_id=c.id, is_active=True)
+            if active_dataset_id:
+                run_query = run_query.filter(SearchRun.dataset_id == active_dataset_id)
+            latest_run = run_query.order_by(SearchRun.execution_time.desc()).first()
+
+            # If no SearchRun exists for this concern / dataset, automatically execute search
             if not latest_run:
-                latest_run = self.db.query(SearchRun).filter_by(concern_id=c.id).order_by(SearchRun.execution_time.desc()).first()
+                from excel_calculus.backend.app.services.search_engine import SearchEngineService
+                search_service = SearchEngineService(self.db)
+                search_service.execute_concern_search(c.id)
+                run_query = self.db.query(SearchRun).filter_by(concern_id=c.id, is_active=True)
+                if active_dataset_id:
+                    run_query = run_query.filter(SearchRun.dataset_id == active_dataset_id)
+                latest_run = run_query.order_by(SearchRun.execution_time.desc()).first()
+                if not latest_run:
+                    latest_run = self.db.query(SearchRun).filter_by(concern_id=c.id).order_by(SearchRun.execution_time.desc()).first()
 
             if latest_run:
                 matches = self.db.query(SearchMatch).filter_by(search_run_id=latest_run.id).all()
@@ -188,10 +228,11 @@ class ReportService:
 
             distinct_cases = sorted(list(set(m.case_number for m in matches)))
 
+            # Reviewer assessments (tracked separately for clinical audit)
             assessments = self.db.query(RelevanceAssessment).filter_by(concern_id=c.id).all()
             ass_map = {a.case_number: a.status for a in assessments}
 
-            relevant_count = 0
+            confirmed_relevant_count = 0
             excluded_count = 0
             needs_review_count = 0
             pending_count = 0
@@ -199,7 +240,7 @@ class ReportService:
             for c_num in distinct_cases:
                 st = ass_map.get(c_num, "CANDIDATE")
                 if st == "RELEVANT":
-                    relevant_count += 1
+                    confirmed_relevant_count += 1
                 elif st == "NOT_RELEVANT":
                     excluded_count += 1
                 elif st == "NEEDS_REVIEW":
@@ -207,7 +248,10 @@ class ReportService:
                 else:
                     pending_count += 1
 
-            total_relevant += relevant_count
+            # Official Section 16.1 count: DISTINCT CASE REPORTS RETRIEVED BY THE PREDEFINED SAFETY SEARCH
+            number_of_relevant_cases = len(distinct_cases)
+
+            total_relevant += number_of_relevant_cases
             total_candidate += len(distinct_cases)
 
             category_map[cat].append({
@@ -216,8 +260,9 @@ class ReportService:
                 "category": cat,
                 "search_method": c.search_method,
                 "search_criteria": c.description,
-                "number_of_relevant_cases": relevant_count,  # STRICTLY RELEVANT COUNT
+                "number_of_relevant_cases": number_of_relevant_cases,  # Official Section 16.1 count
                 "candidate_case_count": len(distinct_cases),
+                "confirmed_relevant_count": confirmed_relevant_count,
                 "excluded_count": excluded_count,
                 "needs_review_count": needs_review_count,
                 "pending_count": pending_count,

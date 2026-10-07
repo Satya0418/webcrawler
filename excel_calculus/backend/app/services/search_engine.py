@@ -6,12 +6,46 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from excel_calculus.backend.app.models.entities import (
     SafetyConcern, CaseRecord, CaseEvent, CaseProduct, 
-    SMQTerm, SearchRun, SearchMatch, RelevanceAssessment, AuditLog
+    SMQTerm, SearchRun, SearchMatch, RelevanceAssessment, AuditLog, Dataset
 )
 
 class SearchEngineService:
     def __init__(self, db: Session):
         self.db = db
+
+    def _get_active_dataset(self, concern: SafetyConcern):
+        dataset_query = self.db.query(Dataset).filter(
+            Dataset.product_name == concern.product_name,
+            Dataset.status == "ACTIVE"
+        )
+        if concern.reporting_period and concern.reporting_period != "Current Period":
+            dataset_query = dataset_query.filter(Dataset.reporting_period == concern.reporting_period)
+        active = dataset_query.order_by(Dataset.created_at.desc()).first()
+        if not active:
+            active = self.db.query(Dataset).filter_by(
+                product_name=concern.product_name, status="ACTIVE"
+            ).order_by(Dataset.created_at.desc()).first()
+        return active
+
+    def _filter_events_query(self, query, concern: SafetyConcern, active_dataset=None):
+        query = query.filter(CaseRecord.product_name == concern.product_name)
+        if active_dataset:
+            query = query.filter(CaseRecord.dataset_id == active_dataset.id)
+        elif concern.reporting_period and concern.reporting_period != "Current Period":
+            query = query.filter(
+                (CaseRecord.reporting_period == concern.reporting_period) | (CaseRecord.reporting_period.is_(None))
+            )
+        return query
+
+    def _filter_cases_query(self, query, concern: SafetyConcern, active_dataset=None):
+        query = query.filter(CaseRecord.product_name == concern.product_name)
+        if active_dataset:
+            query = query.filter(CaseRecord.dataset_id == active_dataset.id)
+        elif concern.reporting_period and concern.reporting_period != "Current Period":
+            query = query.filter(
+                (CaseRecord.reporting_period == concern.reporting_period) | (CaseRecord.reporting_period.is_(None))
+            )
+        return query
 
     def execute_concern_search(self, concern_id: str, reviewer_id: str = "reviewer"):
         concern = self.db.query(SafetyConcern).filter_by(id=concern_id).first()
@@ -21,6 +55,9 @@ class SearchEngineService:
         config = json.loads(concern.search_config) if concern.search_config else {}
         method = concern.search_method
 
+        active_dataset = self._get_active_dataset(concern)
+        dataset_id = active_dataset.id if active_dataset else None
+
         # Deactivate previous active runs for this concern so old runs remain historical & auditable
         self.db.query(SearchRun).filter_by(concern_id=concern_id).update({"is_active": False})
 
@@ -28,6 +65,7 @@ class SearchEngineService:
         run_id = f"run_{concern.id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:6]}"
         search_run = SearchRun(
             id=run_id,
+            dataset_id=dataset_id,
             product_name=concern.product_name,
             reporting_period=concern.reporting_period,
             concern_id=concern_id,
@@ -61,18 +99,13 @@ class SearchEngineService:
             # (Matches Excel: VLOOKUP(event, reference_PT_list, 1, FALSE))
             ref_lookup = {st.pt_name_upper: st for st in smq_records}
 
-            # Fetch events for the product in scope
-            events_query = self.db.query(CaseEvent, CaseRecord).join(
-                CaseRecord, CaseEvent.case_id == CaseRecord.id
-            ).filter(
-                CaseRecord.product_name == concern.product_name
-            )
-            if concern.reporting_period and concern.reporting_period != "Current Period":
-                events_query = events_query.filter(
-                    (CaseRecord.reporting_period == concern.reporting_period) | (CaseRecord.reporting_period.is_(None))
-                )
-
-            candidate_events = events_query.all()
+            candidate_events = self._filter_events_query(
+                self.db.query(CaseEvent, CaseRecord).join(
+                    CaseRecord, CaseEvent.case_id == CaseRecord.id
+                ),
+                concern,
+                active_dataset
+            ).all()
 
             for ev, case in candidate_events:
                 # Deterministic exact lookup
@@ -115,10 +148,12 @@ class SearchEngineService:
             # Filter reference terms down to sub-filter PTs
             ref_lookup = {st.pt_name_upper: st for st in smq_records if st.pt_name_upper in sub_pts}
 
-            candidate_events = self.db.query(CaseEvent, CaseRecord).join(
-                CaseRecord, CaseEvent.case_id == CaseRecord.id
-            ).filter(
-                CaseRecord.product_name == concern.product_name
+            candidate_events = self._filter_events_query(
+                self.db.query(CaseEvent, CaseRecord).join(
+                    CaseRecord, CaseEvent.case_id == CaseRecord.id
+                ),
+                concern,
+                active_dataset
             ).all()
 
             for ev, case in candidate_events:
@@ -151,8 +186,11 @@ class SearchEngineService:
 
             # Case-level primary SOC lookup from line listing
             # Deterministic comparison against actual line-listing SOC (no fuzzy keyword guessing)
-            soc_cases = self.db.query(CaseRecord).filter(
-                CaseRecord.product_name == concern.product_name,
+            soc_cases = self._filter_cases_query(
+                self.db.query(CaseRecord),
+                concern,
+                active_dataset
+            ).filter(
                 func.lower(CaseRecord.primary_soc) == soc_name
             ).all()
 
@@ -175,10 +213,13 @@ class SearchEngineService:
 
             # Event-level SOC mapping support if explicit event SOC is recorded
             if config.get("include_event_level", False):
-                ev_soc_matches = self.db.query(CaseEvent, CaseRecord).join(
-                    CaseRecord, CaseEvent.case_id == CaseRecord.id
+                ev_soc_matches = self._filter_events_query(
+                    self.db.query(CaseEvent, CaseRecord).join(
+                        CaseRecord, CaseEvent.case_id == CaseRecord.id
+                    ),
+                    concern,
+                    active_dataset
                 ).filter(
-                    CaseRecord.product_name == concern.product_name,
                     func.lower(CaseEvent.soc) == soc_name
                 ).all()
 
@@ -205,10 +246,13 @@ class SearchEngineService:
             pts = [config.get("pt")] if method == "SINGLE_PT" else config.get("pts", [])
             configured_pt_map = {p.strip().upper(): p.strip() for p in pts if p and p.strip()}
 
-            candidate_events = self.db.query(CaseEvent, CaseRecord).join(
-                CaseRecord, CaseEvent.case_id == CaseRecord.id
+            candidate_events = self._filter_events_query(
+                self.db.query(CaseEvent, CaseRecord).join(
+                    CaseRecord, CaseEvent.case_id == CaseRecord.id
+                ),
+                concern,
+                active_dataset
             ).filter(
-                CaseRecord.product_name == concern.product_name,
                 CaseEvent.normalized_term.in_(list(configured_pt_map.keys()))
             ).all()
 
@@ -239,10 +283,13 @@ class SearchEngineService:
                 "fluoxetine", "paroxetine", "bupropion", "quinidine", "duloxetine", "terbinafine", "codeine"
             ])]
 
-            matching_events = self.db.query(CaseEvent, CaseRecord).join(
-                CaseRecord, CaseEvent.case_id == CaseRecord.id
+            matching_events = self._filter_events_query(
+                self.db.query(CaseEvent, CaseRecord).join(
+                    CaseRecord, CaseEvent.case_id == CaseRecord.id
+                ),
+                concern,
+                active_dataset
             ).filter(
-                CaseRecord.product_name == concern.product_name,
                 CaseEvent.normalized_term.in_(initial_pts)
             ).all()
 
@@ -284,8 +331,11 @@ class SearchEngineService:
 
         elif method == "NARRATIVE":
             keywords = [k.strip().lower() for k in config.get("keywords", [])]
-            cases = self.db.query(CaseRecord).filter(
-                CaseRecord.product_name == concern.product_name,
+            cases = self._filter_cases_query(
+                self.db.query(CaseRecord),
+                concern,
+                active_dataset
+            ).filter(
                 CaseRecord.narrative.isnot(None)
             ).all()
 
@@ -431,9 +481,15 @@ class SearchEngineService:
             "reporting_period": concern.reporting_period,
             "total_event_matches": len(matches),
             "distinct_candidate_cases": len(distinct_cases),
-            "relevant_cases_count": relevant_count,
+            "candidate_case_count": len(distinct_cases),
+            "number_of_relevant_cases": len(distinct_cases),
+            "relevant_cases_count": len(distinct_cases),
+            "confirmed_relevant_count": relevant_count,
+            "excluded_count": not_relevant_count,
             "not_relevant_cases_count": not_relevant_count,
+            "needs_review_count": needs_review_count,
             "needs_review_cases_count": needs_review_count,
+            "pending_count": candidate_count,
             "candidate_pending_count": candidate_count,
             "cases": case_rows
         }
