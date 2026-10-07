@@ -1,0 +1,3799 @@
+
+============================== FRAME 1 (00:00) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_001.jpg ==============================
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 2 (00:20) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_002.jpg ==============================
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 3 (00:40) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_003.jpg ==============================
+DGmail
+Nextrove Outlook
+• Mail - Nilima Cl
+(2) Chat | In:
+→
+teams.cloud.microsoft
+& Apotex - Docun
+al Apotex Phase 2
+• PBRER-PSUR Si
++
+Ask Gemini
+*
+Finish update
+Search (Ctri+Alt+E)
+14:58
+Chat (Ctrl+Shift+2)
+Transfer
+Consult
+Dial pad
+00
+Hold
+Chat
+82
+People
+View
++
+Apps
+More
+Camera
+Mic
+Stop sharing
+Leave
+IY
+NC
+Il teams.cloud.microsoft is sharing your screen.
+Indraprakash Yadav
+Stop sharing
+Hide
+Search
+ENG
+IN
+21:49
+24-09-2026
+Nilima Chaudhari
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 4 (01:00) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_004.jpg ==============================
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas Data
+Review
+View
+Help
+Table Design
+a From Text/CSV
+B From Web
+Get
+Data ~
+i From Table/Range
+Get & Transform Data
+à Recent Sources
+Là Existing Connections
+Refresh
+All ~
+• Queries & Connections
+E) Properties
+2, Edit Links
+Queries & Connections
+Sort
+Filter
+le Advanced
+Sort & Filter
+Flash Fill
+go Consolidate
+EX Remove Duplicates
+* Relationships
+Text to
+Columns Eo Data Validation -
+i Manage Data Model
+Data Tools
+A1
+Case Number
+4 Case Number = Event Verbatim
+2025AP034098
+(HYPERTENSION)
+N/N/Y
+D
+E
+G
+117
+2026AP000177
+[HOT FLUSH]
+N/N/Y
+118
+2026AP003160
+(CONSTIPATION!)
+N/N/Y
+[ASTHENIA]
+N/Y/Y
++
+2026AP003259
+(HOT FLUSH]
+N/N/Y
+H
+Sign in
+What-If
+Analysis "
+Forecast
+Forecast
+Sheet
+-
+LS Share
+aB Group
+@Ungroup
+EE Subtotal
+Outline
+M
+N
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+119
+120
+121
+122
+123
+124
+Ready
+1EA46255A95542CBA5AF218A05E670D|
+Search
+Table2
+Tablei
+Il teams.cloud.microsoft is sharing your screen.
+Stop sharing
+Hide
+Count: 240
+ENG
+IN
+100%
+21:49
+24-09-2026
+Nilima Chaudhari
+
+============================== FRAME 5 (01:20) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_005.jpg ==============================
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas Data
+Review
+View
+Help
+Table Design
+a From Text/CSV
+ô From Web
+Get
+Data ~
+El From Tally Range
+Get & Transform Data
+From Table/Range
+A1
+Create a new query linked to the
+Ca
+20:
+selected Excel table or named
+range.
+à Recent Sources
+L& Existing Connections
+Refresh
+All ~
+• Queries & Connections
+E Properties
+2, Edit Links
+Queries & Connections
+Sort
+Filter
+Advanced
+Sort & Filter
+Case Number
+D
+117
+If the selected data isn't part of a
+table or named range, it will be
+converted into a table.
+2026AP000177
+(HOT FLUSHI)
+N/N/Y
+118
+2026AP003160
+(CONSTIPATIONI
+N/N/Y
+[ASTHENIA!]
+N/Y/Y
+2026AP003259
+(HOT FLUSH.)
+N/N/Y
+Sign in
+Flash Fill
+go Consolidate
+EX Remove Duplicates
+* Relationships
+Text to
+Columns Ed Data Validation ~
+i Manage Data Model
+Data Tools
+What-If
+Forecast
+Analysis ~
+Sheet
+Forecast
+-
+LS Share
+aE Group
+*E Ungroup
+EE Subtotal
+Outline
+G
+H
+N
+IY
+Indraprakash Yadav
+119
+120
+121
+122
+123
+124
+Ready
+NC
+Nilima Chaudhari
+1EA46255A95542CBA5AF218A05E670D|
+Search
+Table2
+Table2 (2)
+Table2_3 Table2 (4)
+-
+ài a
+Sheet3 ... • : •|
+Count: 240
+• •
+ENG
+IN
+21:49
+24-09-2026
+Nilima Chaudhari
+
+============================== FRAME 6 (01:40) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_006.jpg ==============================
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas Data
+Review
+View
+a From Text/CSV
+6 From
+Get
+Data ~
+it From
+La Recent Sources
+• Queries & Connections
+= I Table2 (4) - Power Query Editor
+File
+Home
+Transform
+Add Column
+View
+A1
+Close &
+Case Num
+2025AP03
+Close
+1 Properties
+LET Advanced Editor
+Refresh
+Preview - EE Manage •
+Query
+Choose
+Remove
+Columns " Columns "
+Keep
+Remove
+Manage Columns
+Reduce Rows
+Sort
+117
+2026AP00
+118
+2026AP00:
+Search
+Help
+Table Design
+T Clear
+8 Flash Fill
+go Consolidate
+rh
+Split
+Data Type: -
+Group
+# Use First Row as Headers -
+By
+42 Replace Values
+5h Merge Queries -
+Append Queries -
+12) Combine Files
+insolin
+Combine
+Manage
+Parameters *
+Parameters
+119
+120
+121
+122
+123
+124
+Ready
+2026AP00
+1EA46255A95542CBA5AF218A05E670D
+Search
+Table2
+Table2 (2)
+Table2_3
+Table2 (4)
+Sheet3
+Count: 240
+Nilima Chaudhari
+Sign in
+LS Share
+@E Group
+X
+sup
+Data source
+sclungs
+Data Sources
+N
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+• •
+ENG
+100%
+21:50
+24-09-2026
+
+============================== FRAME 7 (02:00) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_007.jpg ==============================
+9 - C
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_ Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+View
+Help
+Table Design
+Get
+Data ~
+a From Text/CSV
+à From
+it From
+à Recent Sources
+• Queries & Connections
+T Clear
+8 Flash Fill
+= I Table2 (4) - Power Query Editor
+File
+Home
+Transform
+Add Column
+View
+A1
+Close &
+Refresh
+Preview +
+1 Properties
+LET Advanced Editor
+# Manage •
+LIL
+Case Num
+2025AP03
+Close
+Query
+Choose
+Remove
+Columns + Columns *
+Manage Columns
+Keep
+Remove
+Rows - Rows "
+Reduce Rows
+rh
+Split
+Column -
+Data Type: Text •
+Group
+i Use First Row as Headers •
+42 Replace Values
+Combine
+Manage
+Parameters •
+Sort
+Parameters
+117
+2026AP00
+Queries (5)
+Table2
+Table2 (2)
+Table2 (3)
+I. A®, Case Number
+2025AP002474
+118
+Table2 3
+Table2 (4)
+2026AP00:
+2
+2025AP006502
+2025AP006551
+• Table. TransformColumnTypes(Source, (("Case Number", type text), ("Event Verbatim",
+- A®, Event Verbatim
+(PAIN IN EXTREMITY]
+Y/Y/Y
+(GAIT DISTURBANCE]
+Y/Y/Y
+(BONE PAIN)
+[DEATH)
+Y/Y/Y
+[CONDITION AGGRAVATED)
+119
+2026AP00
+[PAIN IN EXTREMITY]
+Y/Y/Y
+[GAIT DISTURBANCE)
+Y/Y/Y
+[BONE PAIN]
+120
+121
+122
+123
+124
+2 COLUMNS, 120 ROWS Column profiling based on top 1000 rows
+1EA46255A95542CBA5AF218A05E670D|
+Table2
+Table2 (2)
+Table2_3
+Table2 (4)
+Sheet3
+Ready
+Search
+Nilima Chaudhari
+Sign in
+go Consolidate
+X
+LS Share
+@E Group
+X
+sup
+Data source
+settings
+Data Sources
+• New Source -
+Recent Sources
+#I Enter Data
+New Query
+Query Settings
+• PROPERTIES
+Name
+Table2 (4)
+All Properties
+4 APPLIED STEPS
+Source
+X Changed Type
+N
+PREVIEW DOWNLOADED AT 21:50
+Count: 240
+ENG
+100%
+21:50
+24-09-2026
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 8 (02:20) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_008.jpg ==============================
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_ Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+View
+Help
+Table Design
+= | Table2 (4) - Power Query Editor
+Get
+Data ~
+a From Text/CSV
+à From
+it From
+à Recent Sources
+•Queries & Connections
+T Clear
+B Flash Fill
+go Consolidate
+A1
+Case Num
+2025AP03
+File
+Home
+Transform
+Add Column
+View
+Ea Conditional Column
+i Index Column -
+Column From Cushom Invoke Custom
+Examples y
+Column
+Function
+C Duplicate Column
+General
+TASC
+Tel Merge Columns
+123 Extract -
+Format
+Parse -
+From Text
+10°
+Statistics Standard Scientific
+Trigonometry -
+98 Rounding -
+E Information-
+Date
+Duration
+From Number
+From Date & Time
+117
+2026AP00
+118
+Queries (5)
+Table2
+Table2 (2)
+Table2 (3)
+Table2__3
+Table2 (4)
+I. A®, Case Number
+2025AP002474
+2026AP00:
+2
+2025AP006502
+2025AP006551
+• Table. TransformColumnTypes(Source, (("Case Number", type text), ("Event Verbatim",
+] A®, Event Verbatim
+[PAIN IN EXTREMITY]
+Y/Y/Y
+[GAIT DISTURBANCE)
+Y/Y/Y
+(BONE PAIN]
+(DEATH)
+Y/Y/Y
+[CONDITION AGGRAVATED)
+119
+2026AP00
+120
+121
+122
+123
+124
+[PAIN IN EXTREMITY]
+Y/Y/Y
+[GAIT DISTURBANCE)
+Y/Y/Y
+[BONE PAIN]
+v/v./v
+2 COLUMNS, 120 ROWS Column profiling based on top 1000 rows
+1EA46255A95542CBA5AF218A05E670D|
+Table2
+Table2 (2)
+Table2_3
+Table2 (4)
+Sheet3
+Ready
+Count: 240
+Search
+Nilima Chaudhari
+Sign in
+LS Share
+-E Group
+sup
+N
+Query Settings
+• PROPERTIES
+Name
+Table2 (4)
+All Properties
+4 APPLIED STEPS
+Source
+X Changed Type
+PREVIEW DOWNLOADED AT 21:50
+ENG
+100%
+21:50
+24-09-2026
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 9 (02:40) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_009.jpg ==============================
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_ Interval Linelisting - Excel Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+View
+Help
+Table Design
+a From Text/CSV
+6 From
+Get
+Data ~
+i From
+To Recent Sources
+• Queries & Connections
+Clear
+= | Table2 (4) - Power Query Editor
+File
+Home
+Transform
+Add Column
+View
+A1
+Custom Column
+Column From Custom Invoke Custom
+скаріся
+Column
+Case Num
+2025AP03
+Add a column that is computed from the other columns.
+General
+117
+2026AP00
+118
+Queries (5)
+E Table2
+Table2 (2)
+Table2 (3)
+Table2 3
+Table2 (4)
+New column name
+Custom
+Custom column formula O
+201
+2026AP00:
+201
+201
+119
+Learn about Power Query formulas
+2026AP00
+[PAIN I
+Y/Y/1
+[GAIT d
+V No syntax errors have been detected.
+120
+121
+122
+123
+124
+[BONE H
+2 COLUMNS, 120 ROWS Column profiling based on top 1000 rows
+1EA46255A95542CBA5AF218A05E670D|
+Table2
+Table2 (2)
+Table2_3
+Table2 (4)
+Sheet3
+Ready
+Search
+Nilima Chaudhari
+8l Flash Fill
+Available columns
+Case Number
+Event Verbatin
+Sign in
+LS Share
+g° Consolidate
+aB Group
+sup
+N
+uery Settings
+ROPERTIES
+ame
+Table2 (4)
+ll Properties
+PPLIED STEPS
+Source
+* Changed Type
+X
+Cancel
+Count: 240
+PREVIEW DOWNLOADED AT 21:50
+ENG
+^ :
+100%
+21:51
+24-09-2026
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 10 (03:00) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_010.jpg ==============================
+9 - 9. =
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+View
+Help
+Table Design
+a From Text/CSV
+Get
+a From Web
+Data ~
+i From Table/Range
+Get & Transform Data
+% Recent Sources
+Là Existing Connections
+• Queries & Connections
+E Properties
+Refresh
+All v
+2, Edit Links
+Queries & Connections
+& Clear
+le Reapply
+Sort
+Filter
+le Advanced
+Sort & Filter
+Query
+Flash Fill
+EX Remove Duplicates
+Text to
+Columns Eo Data Validation -
+Data Tools
+go Consolidate
+g Relationships
+* Manage Data Model
+B130
+[HOT FLUSHI]
+Case Number - Event Verbatim
+2025AP002474
+Y/Y/Y
+2025AP002474
+9
+2025AP002474
+[PROSTATE CANCER
+Y/Y/Y
+10
+2025AP002474
+11 2025AP002474
+[INFLAMMATION
+N/ Y/Y
+12 2025AP002474
+13 2025AP002474
+[DRY MOUTH
+N/ Y/Y
+14 2025AP002474
+[DRY THROAT
+15 2025AP002474
+N/ Y /Y
+16 2025AP002474
+17 2025AP002474
+[COUGH
+N/N/Y
+18 2025AP002474
+[FATIGUE
+19 2025AP002474
+20 2025AP002474
+N/N/Y
+21 2025AP006502
+22 2025AP006551
+23
+2025AP007195
+24
+2025AP007654
+25
+2025AP007853
+26
+2025AP007865
+27
+2025AP007867
+28
+2025AP007885
+29
+2025AP007888
+•
+D
+F
+DEATHWY / Y/ Y
+[CONDITION AGGRAVATEDIY / Y / N[FALLY / N/ N
+[HOSPITALISATIONY / Y / Y
+[DEATHY /Y/Y
+[DEATHUJY / Y / Y[OEDEMA PERIPHERALJN / N/ Y
+[PROSTATE CANCERY / Y/ Y
+[MALIGNANT NEOPLASM PROGRESSION!]Y / Y / Y
+[DEATHO)Y / Y/Y
+[MALIGNANT NEOPLASM PROGRESSIONIY / Y / Y
+1EA46255A95542CBA5AF218A05E670D
+Ready
+Tabla
+Table2 (2)
+Table2_3 Table2 (4)
+Sheet3
+Search
+-
+di
+Nilima Chaudhari
+Sign in
+What-If
+Analysis ~
+Forecast
+Forecast
+Sheet
+-
+LS Share
+aE Group
+@Ungroup
+El Subtotal
+Outline
+J-
+ENG
+IN
+100%
+21:51
+24-09-2026
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 11 (03:20) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_011.jpg ==============================
+9 - 9-
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_ Interval Linelisting - Excel
+Search
+Sign in
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+View
+Help
+Table Design
+a From Text/CSV
+From Web
+Get
+Data ~
+i From Table/Range
+Get & Transform Data
+% Recent Sources
+_& Existing Connections
+Refresh
+All v
+• Queries & Connections
+E Properties
+2, Edit Links
+Queries & Connections
+Sort
+Filter
+, Advanced
+Sort & Filter
+Query
+Flash Fill
+Ex Remove Duplicates
+Text to
+Columns Eo Data Validation -
+Data Tools
+LS Share
+go Consolidate
+* Relationships
+( Manage Data Model
+What-If
+Analysis
+Forecast
+Forecast
+Sheet
+aE Group
+éE Ungroup
+EE Subtotal
+Outline
+C2
+PAIN IN EXTREMITY, GAIT DISTURBANCE, BONE PAIN, PROSTATE CANCER, INFLAMMATION, DRY MOUTH, DRY THROAT, COUGH, FATIGUE
+A
+1
+Case Number • Event Verbatim
+2025AP002474
+2025AP006502
+2025AP006551
+2025AP007195
+2025AP007654
+2025AP007853
+8
+2025AP007865
+2025AP007867
+10 2025AP007885
+11 2025AP007888
+12 2025AP008086
+13 2025AP008103
+14 2025AP008309
+15 2025AP009593
+16 2025AP009983
+17 2025AP010784
+18 2025AP011174
+19 2025AP011218
+20 2025AP011932
+21 2025AP012194
+22 2025AP012292
+23 2025AP012293
+Custom
+[PAIN IN EXTREMITYUJY / Y / Y[GAIT DISTURBANCEIJY / Y / Y[BONE PAINIJY / Y / Y[PROSTATE CAPAIN IN EXTREMITY. GAIT DISTURBANCE, BONE PAIN, PROSTATE CANCER, INI
+[CONDITION AGGRAVATEDIJY / Y / N[FALLY / N/ N
+[HOSPITALISATIONY / Y / Y
+CONDITION AGGRAVATED, FALL
+HOSPITALISATION
+[DEATH]Y / Y / Y
+(DEATHY / Y / Y[OEDEMA PERIPHERALJN / N/ Y
+PROSTATE CANCERY / Y / Y
+[MALIGNANT NEOPLASM PROGRESSIONUY / Y / Y
+DEATH, OEDEMA PERIPHERAL
+PROSTATE CANCER
+MALIGNANT NEOPLASM PROGRESSION
+[DEATHY / Y / Y
+[MALIGNANT NEOPLASM PROGRESSIONDY / Y / Y
+MALIGNANT NEOPLASM PROGRESSION
+[MUSCLE ATROPHYY / Y / Y[ASTHENIAJY / Y / Y
+MUSCLE ATROPHY, ASTHENIA
+ASTHENIAWY / Y / Y|FALLIJY / Y / Y[BLOOD POTASSIUM ABNORMAL]N / Y / Y
+ASTHENIA, FALL, BLOOD POTASSIUM ABNORMAL
+INCREASED DOSE ADMINISTEREDUY / Y / Y[PRODUCT DISPENSING ERRORIY / Y / Y[ATRIAI INCREASED DOSE ADMINISTERED, PRODUCT DISPENSING ERROR, ATRIAL F
+(HOSPITALISATIONY / Y / Y
+[MALIGNANT NEOPLASM PROGRESSIONWY / Y / Y
+MALIGNANT NEOPLASM PROGRESSION
+[DEATHaJY / Y / Y[HOSPITALISATION)Y / Y/ Y
+[DEATHY /Y/ Y
+DEATHWY / Y / Y[LIVER FUNCTION TEST INCREASEDIN/ N/ Y
+[DEATH]Y / Y / Y[LIVER FUNCTION TEST INCREASEDIN/ N/ Y
+DEATH, HOSPITALISATION
+DEATH, LIVER FUNCTION TEST INCREASED
+1EA46255A95542CBA5AF218A05E670D
+Table2
+Table2 (2)
+Table2_3
+Table2 (4)
+Sheet3
++
+Ready
+100%
+Search
+ENG
+IN
+21:51
+24-09-2026
+Nilima Chaudhari
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 12 (03:40) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_012.jpg ==============================
+9- C-
+Abiraterone_20260428_CAN-KUW-OMAN-UAEPBRER_Interval Linelisting - Excel
+Search
+Sign in
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+View
+Help
+Table Design
+a From Text/CSV
+From Web
+Get
+Data ~
+i From Table/Range
+Get & Transform Data
+% Recent Sources
+& Existing Connections
+Refresh
+All v
+•Queries & Connections
+E Properties
+2, Edit Links
+Queries & Connections
+Clear
+Sort
+, Advanced
+Sort & Filter
+Query
+41 Flash Fill
+=X Remove Duplicates
+Text to
+Columns Eo Data Validation -
+Data Tools
+LS Share
+8o Consolidate
+c Relationships
+( Manage Data Model
+What-lf
+Analysis "
+Forecast
+Forecast
+Sheet
+aE Group
+@E Ungroup
+EE Subtotal
+Outline
+A2
+2025AP002474
+Case Number - Event Verbatim
+Custom
+2025AP002474
+2025AP006502
+2025AP006551
+AYA DISTURBANE Y BONE PANY Y PROSTATE CA EXTREMITY, CAT DISTUR ANCE BONE PAN, PROSTATE CANCER NU
+[CONDITION AGRAVATEDIJY / Y / N[FALLJY / N/ N
+2025AP007195
+[HOSPITALISATIONY / Y / Y
+CONDITION AGGRAVATED, FALL
+HOSPITALISATION
+2025AP007654
+[DEATHU]Y / Y / Y
+2025AP007853
+(DEATHI]Y / Y / Y[OEDEMA PERIPHERALJN / N/ Y
+8
+2025AP007865
+PROSTATE CANCERWY / Y / Y
+2025AP007867
+MALIGNANT NEOPLASM PROGRESSIONDY / Y / Y
+DEATH, OEDEMA PERIPHERAL
+PROSTATE CANCER
+MALIGNANT NEOPLASM PROGRESSION
+10 2025AP007885
+[DEATHY / Y / Y
+11 2025AP007888
+[MALIGNANT NEOPLASM PROGRESSIONDY / Y / Y
+MALIGNANT NEOPLASM PROGRESSION
+12 2025AP008086
+[MUSCLE ATROPHYUY / Y / Y[ASTHENIA]Y / Y / Y
+MUSCLE ATROPHY, ASTHENIA
+13 2025AP008103
+[ASTHENIAWY / Y / Y|FALLIJY / Y / Y[BLOOD POTASSIUM ABNORMALJN / Y / Y
+ASTHENIA, FALL, BLOOD POTASSIUM ABNORMAL
+14 2025AP008309
+INCREASED DOSE ADMINISTEREDUY / Y / Y[PRODUCT DISPENSING ERRORIJY / Y / Y[ATRIAI INCREASED DOSE ADMINISTERED, PRODUCT DISPENSING ERROR, ATRIAL F
+15 2025AP009593
+16 2025AP009983
+17 2025AP010784
+18 2025AP011174
+HOSPITALISATIONIY / Y / Y
+[MALIGNANT NEOPLASM PROGRESSIONDY / Y / Y
+MALIGNANT NEOPLASM PROGRESSION
+19 2025AP011218
+20 2025AP011932
+21 2025AP012194
+DEATH, HOSPITALISATION
+22 2025AP012292
+23 2025AP012293
+(DEATHaJY / Y / Y[HOSPITALISATIONI)Y / Y / Y
+[DEATHY / Y /Y
+DEATHY / Y / Y[LIVER FUNCTION TEST INCREASEDIN / N/ Y
+DEATH, LIVER FUNCTION TEST INCREASED
+[DEATHU]Y / Y / Y[LIVER FUNCTION TEST INCREASEDJN / N/ Y
+DEATH, LIVER FUNCTION TEST INCREASED
+COPATLA MIRARLAAA DIACAACINLIMAROALRLAL RIAAAIIRANTIRLERCENAATUEL ARATI DADIARAANIA DIACRO ARRANAL DIAAALICART AATUEMIA PATIA-
+1EA46255A95542CBA5AF218A05E670D
+Ready
+Count: 3
+100%
+Search
+ENG
+IN
+21:52
+24-09-2026
+Nilima Chaudhari
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 13 (04:00) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_013.jpg ==============================
+9 - Q-
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+Sign in
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+View
+Help
+Table Design
+From Text/CSV
+From Web
+Get
+Data ~
+ie From Table/Range
+Get & Transform Data
+% Recent Sources
+_& Existing Connections
+Refresh
+All v
+• Queries & Connections
+E Properties
+3, Edit Links
+Queries & Connections
+Clear
+Sort
+Filter
+s Advanced
+Sort & Filter
+Query
+Flash Fill
+Ex Remove Duplicates
+Text to
+Columns Eo Data Validation -
+Data Tools
+LS Share
+go Consolidate
+g Relationships
+EB Manage Data Model
+What-If
+Analysis"
+Forecast
+Forecast
+Sheet
+aE Group
+éE Ungroup
+EM Subtotal
+Outline
+2R x 2C
+Case Number
+Case Number - Event Verbatim
+Custom
+2
+2025AP002474
+[PAIN IN EXTREMITYUIY / Y / YIGAIT -ISTURBANCEJIY / Y / YIBONE PAINIIY / Y / YIPROSTATE C/PAIN IN EXTREMITY, GAIT DISTURBANCE, BONE PAIN, PROSTATE CANCER, INI
+2025AP006502
+[DEATHO]Y / Y / Y
+2025AP006551
+2025AP007195
+[CONDITION AGRAVATEDIJY / Y / N[FALLJY / N/ N
+[HOSPITALISATIONDY / Y / Y
+CONDITION AGGRAVATED, FALL
+HOSPITALISATION
+2025AP007654
+[DEATHUJY / Y / Y
+2025AP007853
+(DEATHIJY / Y / Y[OEDEMA PERIPHERALJN / N/ Y
+DEATH, OEDEMA PERIPHERAL
+2025AP007865
+PROSTATE CANCERWY / Y / Y
+PROSTATE CANCER
+2025AP007867
+[MALIGNANT NEOPLASM PROGRESSIONY / Y / Y
+MALIGNANT NEOPLASM PROGRESSION
+10 2025AP007885
+[DEATHW]Y / Y/ Y
+11 2025AP007888
+[MALIGNANT NEOPLASM PROGRESSIONDY / Y / Y
+MALIGNANT NEOPLASM PROGRESSION
+12 2025AP008086
+[MUSCLE ATROPHYWY / Y / Y[ASTHENIAJY / Y / Y
+MUSCLE ATROPHY, ASTHENIA
+13 2025AP008103
+14 2025AP008309
+[ASTHENIAIJY / Y / Y[FALLIJY / Y / Y[BLOOD POTASSIUM ABNORMALJN / Y / Y
+ASTHENIA, FALL, BLOOD POTASSIUM ABNORMAL
+[INCREASED DOSE ADMINISTEREDUY / Y / Y[PRODUCT DISPENSING ERRORIJY / Y / Y[ATRIAI INCREASED DOSE ADMINISTERED, PRODUCT DISPENSING ERROR, ATRIAL F
+15 2025AP009593
+16 2025AP009983
+DEATH
+17 2025AP010784
+(HOSPITALISATIONUY / Y / Y
+HOSPITALISATION
+18 2025AP011174
+[MALIGNANT NEOPLASM PROGRESSIONDY / Y / Y
+MALIGNANT NEOPLASM PROGRESSION
+19 2025AP011218
+DEATH
+20 2025AP011932
+21 2025AP012194
+[DEATHaJY / Y / Y[HOSPITALISATIONIJY / Y / Y
+22 2025AP012292
+[DEATHUJY / Y / Y
+DEATH, HOSPITALISATION
+DEATH
+[DEATHWY / Y / Y[LIVER FUNCTION TEST INCREASEDIN / N/ Y
+DEATH, LIVER FUNCTION TEST INCREASED
+23 2025AP012293
+[DEATHUJY / Y / Y[LIVER FUNCTION TEST INCREASEDIN / N/ Y
+DEATH, LIVER FUNCTION TEST INCREASED
+IACATLIA ELIMIDADIALIOAAA DIACAACIN MEARO AURIAL AIAAAIRAATALENEAATCL AEATI RADIANAANIA DIACRAE ADAAMILAL DIARALCART IATLEMIA CATINI-
+1EA46255A95542CBA5AF218A05E670D
+Table2
+Table2 (2)
+Table2_3
+Table2 (4)
+Sheet3
++
+Ready
+Count: 4
+100%
+ENG
+Search
+21:52
+24-09-2026
+Nilima Chaudhari
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 14 (04:20) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_014.jpg ==============================
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+View
+Help
+Table Design
+Query
+Get
+Data ~
+a From Text/CSV
+à From
+i From
+To Recent Sources
+• Queries & Connections
+T Clear
+8 Flash Fill
+go Consolidate
+= | Table2_3 (2) - Power Query Editor
+File
+Home
+Transform
+Add Column
+View
+A1
+Close &
+Refresh
+Preview +
+- Properties
+1) Advanced Editor
+# Manage •
+LIJ
+Choose
+Remove
+Columns + Columns »
+Event Vert
+98 (HYPERTE
+Close
+Query
+Manage Columns
+99
+[INSOMNIA
+100 [DRUG INE
+101 [LIVER FU
+Queries (5)
+Table2
+102 [LIVER FU
+103 [LIVER FU
+Table2 (2)
+Table2 (3)
+A®, Case Number
+2025AP002474
+104 [LIVER FU
+105 [LIVER FU
+Table2 3
+Table2_3 (2)
+106 [LIVER FU
+107 [LIVER FU
+108 [LIVER FU
+2
+2025AP006502
+109 [LIVER FU
+110 (HEPATIC
+2025AP006551
+111 [HYPERTE
+112 [HOT FLU:
+113 [FATIGUEI
+114 [DIARRHC
+2025AP007195
+115 OEDEMA
+116 [BLOOD F
+117 [HYPERTE
+118 (HOT FLU: 3 COLUMNS, 120 ROWS
+Column profiling based on top 1000 rows
+119 [CONSTIPATIONIN/ N/ Y[ASTHENIAJN / Y / Y
+120 [HOT FLUSHIN/ N/ Y
+Keep
+Remove
+Rows - Rows -
+Reduce Rows
+Spins
+Data Type: Text -
+Group
+i Use First Row as Headers •
+42 Replace Values
+Combine
+Manage
+Parameters »
+Sort
+instorm
+Parameters
+• Table. TransformColumnTypes(Source, (("Case Number", type text), ("Event Verbatim",
+] A®, Event Verbatim
+- A° Custom
+[PAIN IN EXTREMITY]
+PAIN IN EXTREMITY, GAIT DISTURBANCE, BONE PAIN, PROS
+Y/Y/Y
+[GAIT DISTURBANCE)
+Y/Y/Y
+[BONE PAIN)
+v
+(DEATH]
+Y/Y/Y
+[CONDITION AGGRAVATED]
+Y/Y/N
+[FALL]
+Y/N/N
+DEATH
+CONDITION AGGRAVATED, FALL
+[HOSPITALISATION]
+Y/Y/Y
+HOSPITALISATION
+CONSTIPATION, ASTHENIA
+HOT FLUSH
+1EA46255A95542CBA5AF218A05E670D
+Table2
+Table2 (2)
+Table2_3
+Table2 (4)
+Sheet3
+•..
+Ready
+Count: 360
+Search
+Nilima Chaudhari
+Sign in
+LS Share
+@E Group
+X
+sup
+Data source
+settings
+Data Sources
+• New Source -
+Recent Sources -
+#I Enter Data
+New Query
+Query Settings
+• PROPERTIES
+Name
+Tabie2_3 (2)
+All Properties
+4 APPLIED STEPS
+Source
+X Changed Type
+D PRES:SUE
+X
+PREVIEW DOWNLOADED AT 21:52
+ENG
+IN
+" Ф
+100%
+21:52
+24-09-2026
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 15 (04:40) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_015.jpg ==============================
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+View
+Help
+Table Design
+Query
+Get
+Data ~
+a From Text/CSV
+è From
+i From
+La Recent Sources
+• Queries & Connections
+IT Clear
+3 Flash Fill
+go Consolidate
+= I Table2_3 (2) - Power Query Editor
+File
+Home
+Transform
+Add Column
+View
+13 Properties
+A1
+Close &
+Refresh
+1) Advanced Editor
+Choose
+X
+Remove
+# Manage •
+Columns - Columns-
+Event Vert
+98 HYPERTE
+CIOSC
+Query
+Manage Columns
+Keep
+Rows " Rows*
+Reduce Rows
+99
+[INSOMNIA
+Queries (5)
+100 [DRUG INE
+101 [LIVER FU
+Table2
+102 [LIVER FU
+Table2 (2)
+103 [LIVER FU
+Table2 (3)
+104 [LIVER FU
+105 [LIVER FU
+Table2_3
+Table2_3 (2)
+106 [LIVER FU
+- A®C Event Verbatim
+[PAIN IN EXTREMITY]
+Y/Y/Y
+[GAIT DISTURBANCE]
+Y/Y/Y
+[BONE PAIN)
+107 [LIVER FU
+108 [LIVER FU
+2
+109 [LIVER FU
+110 (HEPATIC
+3 1
+111 [HYPERTE
+112 [HOT FLU:
+113 [FATIGUEI
+114 [DIARRHC
+115 OEDEMA
+[DEATH)
+Y/Y/Y
+[CONDITION AGGRAVATED]
+Y/Y/N
+[FALL]
+Y/N/N
+[HOSPITALISATION]
+Y/Y/Y
+116 [BLOOD F
+117 [HYPERTE
+118 (HOT FLU:3 COLUMNS, 120 ROWS
+Column profiling based on top 1000 rows
+119 [CONSTIPATIONIN / N/ YASTHENIAJN / Y / Y
+120 [HOT FLUSHUN / N/ Y
+Split
+Data Type: Text -
+Group
+• Use First Row as Headers -
+By
+4½ Replace Values
+Combine
+Sort
+insolit
+Manage
+Parameters •
+Parameters
+• Table. TransformColumnTypes (Source, (f"Case Number", type text), ("Event Verbatim",
+- A° Custom
+PAIN IN EXTREMITY, GAIT DISTURBANCE, BONE PAIN, PROSTATE CANC.
+DEATH
+CONDITION AGGRAVATED, FALL
+HOSPITALISATION
+CONSTIPATION, ASTHENIA
+HOT FLUSH
+1EA46255A95542CBA5AF218A05E670D
+Table2
+Table2 (2)
+Table2_3
+Table2 (4)
+Sheet3
+•..
+Ready
+Count: 360
+Search
+Nilima Chaudhari
+Sign in
+LS Share
+aE Group
+sup
+Data source
+settings
+Data Sources
+• New Source -
+Recent Sources -
+#I Enter Data
+New Query
+Query Settings
+• PROPERTIES
+Name
+Table2_3 (2)
+All Properties
+4 APPLIED STEPS
+Source
+X Changed Type
+D PRES:SUF
+X
+PREVIEW DOWNLOADED AT 21:52
+ENG
+IN
+" Ф)
+100%
+21:53
+24-09-2026
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 16 (05:00) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_016.jpg ==============================
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+View
+Help
+Table Design
+Query
+Get
+Data ~
+a From Text/CSV
+6 From
+i From
+à Recent Sources
+• Queries & Connections
+A1 FAL
+& Clear
+3 Flash Fill
+File
+= | Table2_3 (2) - Power Query Editor
+Home
+Transform
+Add Calums
+2 Properties
+A1
+Close &
+Refresh
+1) Advanced Editor
+# Manage •
+Event Vert
+98 HYPERTE
+CIOSC
+Query
+99 (INSOMNIA
+Queries (5)
+100 [DRUG INE
+101 [LIVER FU
+Table2
+102 [LIVER FU
+Table2 (2)
+abe
+103 [LIVER FU
+Table2 (3)
+104 [LIVER FU
+105 [LIVER FU
+Table2_3
+Table2_3 (2)
+106 [LIVER FU
+107 [LIVER FU
+108 [LIVER FU
+2
+109 [LIVER FU
+110 (HEPATIC
+111 [HYPERTE
+112 [HOT FLU:
+113 [FATIGUEI
+114 [DIARRHC
+115 OEDEMA
+116 BLOOD F
+117 [HYPERTE
+118 (HOT FLU: 3 COLUMNS, 120 ROWS
+Column profiling ba
+119 [CONSTIPATIONIN / N/ YASTHENIAJN / Y / \
+120 [HOT FLUSHUN / N/ Y
+1EA46255A95542CBA5AF218A05E670D
+Ready
+Search
+Nilima Chaudhari
+Split Column by Delimiter
+Specify the delimiter used to split the text column.
+Select or enter delimiter
+Comma
+Split at
+O Left-most delimiter
+• Right-most delimiter
+• Each occurrence of the delimiter
+4 Advanced options
+Split into
+• Columns
+• Rows
+Quote Character
+Split using special characters
+HOT FLUSH
+Table2
+Table2 (2)
+Table2_3
+Table2 (4)
+Sheet3
+Sign in
+LS Share
+go Consolidate
+X
+aE Group
+sup
+purce
+ngs
+Durces
+• New Source -
+Recent Sources
+#I Enter Data
+New Query
+Lery Settings
+ROPERTIES
+ame
+Table2_3 (2)
+Properties
+PPLIED STEPS
+Source
+K Changed Type
+D PRES:SUE
+OK
+Cancel
+PREVIEW DOWNLOADED AT 21:52
+Count: 360
+ENG
+IN
+" Ф
+100%
+21:53
+24-09-2026
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 17 (05:20) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_017.jpg ==============================
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+View
+Help
+Table Design
+Query
+Get
+Data ~
+a From Text/CSV
+à From
+it From
+To Recent Sources
+•Queries & Connections
+T Clear
+El Flash Fill
+= I Table2_3 (2) - Power Query Editor
+File
+Home
+Transform
+Add Column
+View
+A1
+Close &
+Refresh
+Preview "
+2 Properties
+1) Advanced Editor
+# Manage •
+LI-
+Choose
+Remove
+Columns + Columns *
+rh
+Split
+Column -
+Data Type: Text -
+Group
+It Use First Row as Headers •
+By
+4, Replace Values
+Transform
+Combine
+Manage
+Parameters •
+Event Vert
+98 HYPERTE
+CIOSC
+Query
+Manage Columns
+99
+[INSOMNIA
+100 [DRUG INE
+101 [LIVER FU
+Queries (5)
+Table2
+102
+[LIVER FU
+103
+[LIVER FU
+Table2 (2)
+Table2 (3)
+Number
+2474
+104 [LIVER FU
+105 [LIVER FU
+Table2_3
+Table2_3 (2)
+106 [LIVER FU
+107 [LIVER FU
+108 [LIVER FU
+2474
+109 [LIVER FU
+110 (HEPATIC
+111 [HYPERTE
+112 [HOT FLU:
+113 [FATIGUEI
+114 [DIARRHC
+3 2474
+115 OEDEMA
+116 [BLOOD F
+117 [HYPERTE
+118 (HOT FLU:3 COLUMNS, 226 ROWS
+Column profiling based on top 1000 rows
+119 [CONSTIPATIONIN / N/ YASTHENIAJN / Y / Y
+120 [HOT FLUSHIN/ N/ Y
+Keep
+Remove
+Rows - Rows -
+Reduce Rows
+Sort
+Parameters
+• Table. TransformColumnTypes(#"Split Column by Delimiter", (("Custom", type text)))
+- A®, Event Verbatim
+- AB Custom
+[PAIN IN EXTREMITY]
+PAIN IN EXTREMITY
+Y/Y/Y
+[GAIT DISTURBANCE]
+Y/Y/Y
+[BONE PAIN)
+GAIT DISTUREANCE
+[PAIN IN EXTREMITY]
+Y/Y/Y
+[GAIT DISTURBANCE)
+Y/Y/Y
+[BONE PAIN)
+[PAIN IN EXTREMITY]
+Y/Y/Y
+[GAIT DISTURBANCE]
+BONE PAIN
+CONSTIPATION, ASTHENIA
+HOT FLUSH
+1EA46255A95542CBA5AF218A05E670D|
+Table2
+Table2 (2)
+Table2_3
+Table2 (4)
+Sheet3
++
+Ready
+Search
+Nilima Chaudhari
+Sign in
+go Consolidate
+X
+LS Share
+@E Group
+X
+sup
+Data source
+settings
+Data Sources
+• New Source -
+* Recent Sources
+#I Enter Data
+New Query
+Query Settings
+• PROPERTIES
+Name
+Table2_3 (2)
+All Properties
+4 APPLIED STEPS
+Source
+Changed Type
+Split Column by Delimiter
+X Changed Type1
+D PRES:SUF
+PREVIEW DOWNLOADED AT 21:53
+Count: 360
+ENG
+" Ф)
+100%
+21:53
+24-09-2026
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 18 (05:40) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_018.jpg ==============================
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+Table Name:
+Table2_3_2
+@ Resize Table
+Properties
+I Summarize with Pivot Table
+- Remove Duplicates
+, Convert to Range
+Tools
+Export Refresh
+Slicer
+El Properties
+Open in Browser
+& Unlink
+External Table Data
+View
+Help
+- Header Row
+• Total Row
+~ Banded Rows
+Table Design
+Query
+- Filter Button
+First Column
+Last Column
+Banded Columns
+Table Style Options
+C13
+FALL
+A
+Case Number • Event Verbatim
+2
+3
+2025AP002474
+2025AP002474
+[PAIN IN EXTREMITYUY / Y / Y[GAIT DISTURBANCEIJY / Y / Y[BONE PAINIJY / Y / Y[PROSTATE CAPAIN IN EXTREMITY
+[PAIN IN EXTREMITY)Y / Y / [GAIT DISTURBANCE)Y / Y / Y[BONE PAIN)Y / Y / Y[PROSTATE CA GAIT DISTURBANCE
+2025AP002474
+2025AP002474
+[PAIN IN EXTREMITYUJY / Y / Y[GAIT DISTURBANCEIJY / Y / Y[BONE PAINIJY / Y / Y[PROSTATE CA BONE PAIN
+[PAIN IN EXTREMITYWY / Y / Y|GAIT DISTURBANCEJJY / Y / Y[BONE PAINY / Y / Y[PROSTATE CA PROSTATE CANCER
+2025AP002474
+[PAIN IN EXTREMITYWY / Y / Y[GAIT DISTURBANCE)Y / Y / Y[BONE PAINI)Y / Y / Y[PROSTATE CA INFLAMMATION
+2025AP002474
+[PAIN IN EXTREMITY / Y / Y|GAIT DISTURBANCE)Y / Y / Y[BONE PAINY / Y / Y[PROSTATE CA DRY MOUTH
+2025AP002474
+[PAIN IN EXTREMITYWY / Y / Y[GAIT DISTURBANCEIJY / Y / Y[BONE PAINIJY / Y/ Y[PROSTATE CA DRY THROAT
+2025AP002474
+10 2025AP002474
+[PAIN IN EXTREMITY]Y / Y / Y[GAIT DISTURBANCEIJY / Y / Y[BONE PAIN)Y / Y / Y[PROSTATE CA COUGH
+11 2025AP006502
+[PAIN IN EXTREMITYUJY / Y / Y[GAIT DISTURBANCEIJY / Y / Y[BONE PAINIJY / Y / Y[PROSTATE C/ FATIGUE
+[DEATH]Y / Y / Y
+12 2025AP006551
+[CONDITION AGGRAVATEDIJY / Y / NIFALLY / N/ N
+CONDITION AGGRAVATED
+13 2025AP006551
+[CONDITION AGGRAVATEDIY / Y / NIFALLY / N/ N
+14 2025AP007195
+[HOSPITALISATIONY / Y / Y
+15 2025AP007654
+16 2025AP007853
+17 2025AP007853
+18 2025AP007865
+19 2025AP007867
+[DEATHY / Y/ Y[OEDEMA PERIPHERALIN / N/Y
+[DEATHWY / Y / YOEDEMA PERIPHERALJN / N/ Y
+PROSTATE CANCERY / Y/Y
+[MALIGNANT NEOPLASM PROGRESSIONDY / Y / Y
+OEDEMA PERIPHERAL
+PROSTATE CANCER
+MALIGNANT NEOPLASM PRO
+20 2025AP007885
+21 2025AP007888
+22
+2025AP008086
+23 2025AP008086
+[MALIGNANT NEOPLASM PROGRESSION]Y / Y / Y
+[MUSCLE ATROPHYWY / Y / Y[ASTHENIAJY / Y / Y
+[MUSCLE ATROPHYWY / Y / Y[ASTHENIA]Y / Y / Y
+1EA46255AL 5542CBA5AF218A05E670D
+MALIGNANT NEOPLASM PRO
+MUSCLE ATROPHY
+ASTHENIA
+Ready
+Search
+Nilima Chaudhari
+Sign in
+-
+LS Share
+Table Styles
+Queries & Connections
+Queries
+Connections
+5 queries
+Em Table2
+138 rows loaded.
+• Table2 (2)
+1 Download did not complete.
+I Table2 (3)
+120 rows loaded. 1 error.
+• Table2_3
+226 rows loaded.
+• Table2_3 (2)
+226 rows loaded.
+ENG
+^ :
++ 100%
+"Ф -
+21:54
+24-09-2026
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 19 (06:00) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_019.jpg ==============================
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+Table Name:
+Table2_3_2
+@ Resize Table
+Properties
+I Summarize with Pivot Table
+- Remove Duplicates
+, Convert to Range
+Tools
+Export Refresh
+Slicer
+El Properties
+Open in Browser
+& Unlink
+External Table Data
+View
+Help
+- Header Row
+• Total Row
+~ Banded Rows
+Table Design
+Query
+- Filter Button
+First Column
+Last Column
+Banded Columns
+Table Style Options
+C10
+FATIGUE
+1
+Case Number • Event Verbatim
+[PAIN IN EXTREMITYJY / Y / Y[GAIT DISTURBANCEIJY / Y / Y[BONE PAINIJY / Y / Y[PROSTATE CAPAIN IN EXTREMITY
+[PAIN IN EXTREMITYUJY / Y / Y[GAIT DISTURBANCEIJY / Y / Y[BONE PAIN)Y / Y / Y[PROSTATE CA GAIT DISTURBANCE
+[PAIN IN EXTREMITYUJY / Y / Y|GAIT DISTURBANCEIJY / Y / YIBONE PAINIJY / Y / Y[PROSTATE C/ BONE PAIN
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+[PAIN IN EXTREMITYWY / Y / Y|GAIT DISTURBANCEJJY / Y / Y[BONE PAINY / Y / Y[PROSTATE CA PROSTATE CANCER
+[PAIN IN EXTREMITYWY / Y / [GAIT DISTURBANCE)Y / Y / Y[BONE PAINI)Y / Y / Y[PROSTATE C/ INFLAMMATION
+[PAIN IN EXTREMITY)Y / Y / Y[GAIT DISTURBANCEIJY / Y / Y[BONE PAIN)Y / Y / Y[PROSTATE CA DRY MOUTH
+[PAIN IN EXTREMITYWY / Y / Y|GAIT DISTURBANCEY / Y / Y[BONE PAINY / Y / Y[PROSTATE CA DRY THROAT
+[PAIN IN EXTREMITY]Y / Y / [GAIT DISTURBANCEIJY / Y / Y[BONE PAINIJY / Y / Y[PROSTATE CA COUGH
+PAIN IN EXTREMITYUJY / Y / Y[GAIT DISTURBANCEIJY / Y / Y[BONE PAINJY / Y / YIPROSTATE C/ FATIGUE +
+[DEATH]Y / Y / Y
+[CONDITION AGGRAVATEDIJY / Y / NIALLY / N/ N
+13 2025AP006551
+14 2025AP007195
+15 2025AP007654
+16 2025AP007853
+17 2025AP007853
+18 2025AP007865
+19 2025AP007867
+20 2025AP007885
+21 2025AP007888
+22
+2025AP008086
+23
+2025AP008086
+[CONDITION AGGRAVATEDY / Y / NFALLY / N/ N
+[HOSPITALISATIONY / Y / Y
+DEATHY / Y / Y
+DEATHWY / Y / YOEDEMA PERIPHERALIN/ N/ Y
+[DEATHWY / Y / YOEDEMA PERIPHERALJN / N/ Y
+PROSTATE CANCERY / Y / Y
+[MALIGNANT NEOPLASM PROGRESSIONIJY / Y / Y
+(DEATHaJY / Y/Y
+[MALIGNANT NEOPLASM PROGRESSIONWJY / Y / Y
+[MUSCLE ATROPHYIJY / Y / Y[ASTHENIA]Y / Y / Y
+[MUSCLE ATROPHYWY / Y / Y[ASTHENIA]Y / Y / Y
+CASTIANERAL DAD DATAIN AMADMANIM
+CONDITION AGGRAVATED
+FALL
+HOSPITALISATION
+DEATH
+DEATH
+OEDEMA PERIPHERAL
+PROSTATE CANCER
+MALIGNANT NEOPLASM PRO
+DEATH
+MALIGNANT NEOPLASM PRO
+MUSCLE ATROPHY
+ASTHENIA
+AATURIA
+Table2_3
+Table2_3 (2)
+Table2 (4)
+Sheet3
+Sheet2
+Shee ...
++
+Ready
+Search
+Nilima Chaudhari
+Sign in
+Table Styles
+Queries & Connections
+Queries
+Connections
+5 queries
+Em Table2
+138 rows loaded.
+• Table2 (2)
+1 Download did not complete.
+I Table2 (3)
+120 rows loaded. 1 error.
+• Table2_3
+226 rows loaded.
+Table2_3 (2)
+226 rows loaded.
+^ :
+ENG
+IN
+" Ф
+LS Share
++ 100%
+21:54
+24-09-2026
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 20 (06:20) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_020.jpg ==============================
+9 - 0-
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+View
+Help
+Table Design
+Table Name:
+Table2_4
+@ Resize Table
+Properties
+* Summarize with Pivot Table
+- Remove Duplicates
+Convert to Range
+Tools
+Export Refresh
+Slicer
+El Properties
+Open in Browser
+& Unlink
+External Table Data
+~ Header Row
+Total Row
+~ Banded Rows
+First Column
+Last Column
+Banded Columns
+Table Style Options
+D2
+fx
+=TRIM(L@Custom])
+E
+- Hypotesis
+BONE PAIN
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+Death
+CONDITION AGGRAVATED
+14 HOSPITALISATION
++
+#N/A
+#N/A
+#N/A
+Death
+Death
+17 OEDEMA PERIPHERAL
+18 PROSTATE CANCER
+19 MALIGNANT NEOPLASM PROGRESSION
+#N/A
+#N/A
+#N/A
+Death
+21 MALIGNANT NEOPLASM PROGRESSION
+22 MUSCLE ATROPHY
+23 ASTHENIA
+#N/A
+#N/A
+#N/A
+Table2_3
+Table2_3 (2)
+Table2 (4)
+Sheet3
+Sheet2
+Shee ...
+Ready
+Search
+Nilima Chaudhari
+Query
+- Filter Button
+H
+Sign in
+Table Styles
+Queries & Connections
+Queries
+Connections
+5 queries
+I Table2
+138 rows loaded.
+• Table2 (2)
+1 Download did not complete.
+I Table2 (3)
+120 rows loaded. 1 error.
+• Table2_3
+226 rows loaded.
+# Table2_3 (2)
+226 rows loaded.
+ENG
+" Ф
+LS Share
++ 100%
+21:54
+24-09-2026
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 21 (06:40) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_021.jpg ==============================
+9 - Ç
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+A A
+= = = ₴B
+Paste
+%
+U-B- 2-A-
+Clipboard
+Font
+Alignment
+Number
+View
+Help
+I Conditional Formatting ~
+* Format as Table ~
+12 Cell Styles
+Styles
+SUM
+X
+=vl
+D
+E
+PAIN IN EXTREMITY
+- Hypotesis
+BONE PAIN
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+Death
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+CONDITION AGGRAVATED
+14 HOSPITALISATION
+#N/A
+#N/A
+#N/A
+Death
+Death
+17 OEDEMA PERIPHERAL
+18 PROSTATE CANCER
+19 MALIGNANT NEOPLASM PROGRESSION
+#N/A
+#N/A
+#N/A
+Death
+21 MALIGNANT NEOPLASM PROGRESSION
+22 MUSCLE ATROPHY
+23 ASTHENIA
+#N/A
+#N/A
+#N/A
+Table2_3
+Table2_3 (2)
+Table2 (4)
+Sheet3
+Sheet2
+Shee ...
+Enter
+Search
+Nilima Chaudhari
+@ Insert ~
+2 Delete -
+It Format-
+Cells
+EvIL
+@VLOOKUP
+Sign in
+LS Share
+0-
+Templates
+EE
+Merge
+Editing
+Library
+Al Data
+Analysis
+Al Tools
+Export
+Split
+to Image
+Output Conversion
+Create
+PDF
+Sign
+WPS PDF
+G
+H
+Queries & Connections
+Looks for a value in the leftmost column of a table, and then returns a value in the same row from a colu
+in an ascending order
+5 queries
+Em Table2
+138 rows loaded.
+• Table2 (2)
+1 Download did not complete.
+I Table2 (3)
+120 rows loaded. 1 error.
+• Table2_3
+226 rows loaded.
+• Table2_3 (2)
+226 rows loaded.
+ENG
+IN
+21:55
+24-09-2026
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+
+============================== FRAME 22 (07:00) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_022.jpg ==============================
+9 - 0-
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+Aptos Narrow
+~ 11
+=
+General
+%
+U -
+4 -
+A ~
+9p-
+Clipboard
+Font
+Alignment
+Number
+View
+Help
+Conditional Formatting
+2 Format as Table ~
+52 Cell Styles -
+Styles
+F2
+=vlook
+D
+- Hypotesis
+BONE PAIN
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+Death
+12 CONDITION AGGRAVATED
+14 HOSPITALISATION
+Death
+Death
+17 OEDEMA PERIPHERAL
+18 PROSTATE CANCER
+19 MALIGNANT NEOPLASM PROGRESSION
+Death
+21 MALIGNANT NEOPLASM PROGRESSION
+22 MUSCLE ATROPHY
+23 ASTHENIA
+Table2_3
+Table2__3 (2)
+Table2 (4)
+Sheet3
+Sheet2
+Shee
+Ready
+Search
+Nilima Chaudhari
+E
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+Call Insert ~
+2x Delete
+i Format -
+Cells
+F
+G
+#NAME?
+2 • 27-
+0-
+Editing
+H
+Templates
+Library
+Sign in
+Al Data
+Analysis
+Al Tools
+Export
+Split
+Merge
+to Image
+Output Conversion
+Create
+PDF
+Sign
+WPS PDF
+Queries & Connections
+Queries
+Connections
+5 queries
+Em Table2
+138 rows loaded.
+• Table2 (2)
+1 Download did not complete.
+I Table2 (3)
+120 rows loaded. 1 error.
+•m Table2_3
+226 rows loaded.
+• Table2_3 (2)
+226 rows loaded.
+LS Share
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+ENG
++ 100%
+"4 -
+21:55
+24-09-2026
+
+============================== FRAME 23 (07:20) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_023.jpg ==============================
+9 - 0-
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+A A
+= = = ₴b
+U -
+4- A-
+Clipboard
+Font
+Alignment
+Number
+View
+Help
+I Conditional Formatting
+* Format as Table ~
+12 Cell Styles "
+Styles
+F2
+X
+=VLOOKUP|[@Column1],
+E
+- Hypotesis
+3
+BONE PAIN
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+CONDITION AGGRAVATED
+Death
+14 HOSPITALISATION
+Death
+Death
+17 OEDEMA PERIPHERAL
+18 PROSTATE CANCER
+19 MALIGNANT NEOPLASM PROGRESSION
+Death
+21 MALIGNANT NEOPLASM PROGRESSION
+22 MUSCLE ATROPHY
+23 ASTHENIA
+Sheet3
+Sheet2
+Sheet1
+Enter
+Search
+Nilima Chaudhari
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+Sign in
+@ Insert ~
+2 Delete -
+(i Format -
+Cells
+0-
+Templates
+EE
+Merge
+Editing
+Library
+Al Data
+Analysis
+Al Tools
+Export
+Split
+to Image i
+Output Conversion
+Create
+PDF
+Sign
+WPS PDF
+LL
+G
+H
+Queries & Connections
+EVLOOKUP(I@Column1)
+VLOOKUP(lookup_value, table_array, col_index_ num, [range, lookup) innections
+5 queries
+Em Table2
+138 rows loaded.
+• Table2 (2)
+1 Download did not complete.
+I Table2 (3)
+120 rows loaded. 1 error.
+# Table2_3
+226 rows loaded.
+• Table2_3 (2)
+226 rows loaded.
+LS Share
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+ENG
+21:55
+24-09-2026
+
+============================== FRAME 24 (07:40) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_024.jpg ==============================
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+A A
+= ₴b
+I 4-B- 2-A-
+View
+Help
+I Conditional Formatting
+* Format as Table "
+12 Cell Styles "
+Clipboard
+Font
+Alignment
+Number
+Styles
+A1
+X
+=VLOOKUP|[@Column1],Sheet1!B:B,fal
+A
+PT List
+2
+Bilirubin excretion disorder
+Cholaemia
+Cholestasis
+Cholestatic liver injury
+6
+Cholestatic pruntus
+Drug-induced liver injury
+Hepatitis cholestatic
+Hyperbilirubinaemia
+10
+Icterus index increased
+Jaundice
+12
+Jaundice cholestatic
+13
+Jaundice hepatocellular
+14
+Mixed liver injury
+15
+Ocular icterus
+16
+(Parenteral nutrition associated liver disease
+17
+Suspected drug-induced liver injury
+18
+Deficiency of bile secretion
+19
+Yellow skin
+20
+21
+Acquired hepatocerebral degeneration
+Acute hepatic failure
+Table2 3(2)
+Table2 (4)
+Sheet3
+Sheet2
+Sheet1
+- Bilirubin excretion disorder
+Cholaemia
+Cholestasis
+Cholestatic liver injury
+Cholestatic pruritus
+Drug-induced liver injury
+Hepatitis cholestatic
+Hyperbilirubinaemia
+Icterus index increased
+Jaundice
+Jaundice cholestatic
+Jaundice hepatocellular
+Mixed liver injury
+Ocular icterus
+Parenteral nutrition associated liver disease
+Suspected drug-induced liver injury
+Deficiency of bile secretion
+Yellow skin
+Acquired hepatocerebral degeneration
+Acute hepatic failure
+Enter
+Search
+Nilima Chaudhari
+@ Insert ~
+2 Delete -
+# Format -
+Cells
+0-
+Editing
+Templates
+Library
+Al Data
+Analysis
+Al Tools
+Sign in
+Export
+Split
+Merge
+to Image i
+Output Conversion
+LS Share
+Create
+PDF
+Sign
+WPS PDF
+Queries & Connections
+Bone
+VLOOKUP(lookup_value, table, array, col_index_num, [range, lookup) pnnections
+FALSE
+Returns the logical value FALSE
+- queries
+Bone
+Idiopa
+Osteo
+Osteo
+Osteo
+Osteo
+Postm
+Radia
+Resor
+Senile
+Aceta
+Atypic
+Em Table2
+138 rows loaded.
+• Table2 (2)
+1 Download did not complete.
+# Table2 (3)
+120 rows loaded. 1 error.
+# Table2_3
+226 rows loaded.
+• Table2_3 (2)
+226 rows loaded.
+Body !
+Body t
+Body !
+Bone
+Bone
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+ENG
+IN
+21:56
+24-09-2026
+
+============================== FRAME 25 (08:00) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_025.jpg ==============================
+9 - C-
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+Aptos Narrow
+U ~
+# -
+- 11 ~ A A
+4 -
+General
+Clipboard
+Font
+Alignment
+Number
+View
+Help
+Table Design
+Query
+Conditional Formatting "
+El Insert ~
+* Format as Table -
+2x Delete
+I Cell Styles -
+i Format -
+Styles
+Cells
+F2
+=VLOOKUP|[@Column1],Sheet1!B:BFALSE)
+E
+- Hypotesis
+PAIN IN EXTREMITY
+BONE PAIN
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+Death
+12 CONDITION AGGRAVATED
+14 HOSPITALISATION
+Death
+Death
+#N/A
+#N/A
+#N/A
+17 OEDEMA PERIPHERAL
+18 PROSTATE CANCER
+19 MALIGNANT NEOPLASM PROGRESSION
+#N/A
+#N/A
+#N/A
+Death
+21 MALIGNANT NEOPLASM PROGRESSION
+22 MUSCLE ATROPHY
+23 ASTHENIA
+Table2_3
+Table2_3 (2)
+Table2 (4)
+Sheet3
+Sheet2
+Shee ...
+#N/A
+#N/A
+#N/A
+BALA
++
+Ready
+Search
+Nilima Chaudhari
+G
+- Column=
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#N/A
+W
+2 • 27-
+0-
+Editing
+H
+Templates
+Library
+Sign in
+Al Data
+Analysis
+Al Tools
+Export
+Split
+Merge
+to Image
+Output Conversion
+Create
+PDF
+Sign
+WPS PDF
+Queries & Connections
+Queries
+Connections
+5 queries
+I Table2
+138 rows loaded.
+• Table2 (2)
+1 Download did not complete.
+I Table2 (3)
+120 rows loaded. 1 error.
+I Table2_3
+226 rows loaded.
+• Table2_3 (2)
+226 rows loaded.
+LS Share
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+ENG
++ 100%
+21:56
+24-09-2026
+
+============================== FRAME 26 (08:20) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_026.jpg ==============================
+5 - P-
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+Sign in
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+=
+A A
+= = 2
+U -
+L -
+4 - A -
+Clipboard
+Font
+Alignment
+Number
+View
+Help
+Table Design
+Query
+I Conditional Formatting ~
+l Insert -
+* Format as Table ~
+2 Delete -
+I Cell Styles
+(i Format -
+Styles
+Cells
+0-
+Templates
+F2
+=VLOOKUP|[@Column1],Sheet1!B:B,1,H8FALSE)
+E
+* Hypotesis
+PAIN IN EXTREMITY
+BONE PAIN
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+Death
+12 CONDITION AGGRAVATED
+14 HOSPITALISATION
+Death
+Death
+#N/A
+#N/A
+#N/A
+17 OEDEMA PERIPHERAL
+18 PROSTATE CANCER
+19 MALIGNANT NEOPLASM PROGRESSION
+#N/A
+#N/A
+#N/A
+Death
+21 MALIGNANT NEOPLASM PROGRESSION
+22 MUSCLE ATROPHY
+23 ASTHENIA
+Table2 3
+Table2_3 (2)
+Table2 (4)
+Sheet3
+Sheet2
+Shee ...
+#N/A
+#N/A
+#N/A
+JALA
++
+Search
+Editing
+Library
+Al Data
+Analysis
+Al Tools
+Export
+Split
+Merge
+to Image
+Output Conversion
+Create
+PDF
+Sign
+WPS PDF
+H
+- Column•
+=VLOOKUP([@Column1],Sheet1IB:B,1,
+Queries & Connections
+H VLOOKUP(lookup_value, table array, col_index_ num, [range_lookupl) nnections
+#VALUE!
+5 queries
+#VALUE!
+#VALUE!
+#VALUE!
+Im Table2
+138 rows loaded.
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+# Table2 (2)
+1 Download did not complete.
+I Table2 (3)
+120 rows loaded. 1 error.
+• Table2_3
+226 rows loaded.
+• Table2_3 (2)
+226 rows loaded.
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#VALUE!
+#N/A
+^ :
+ENG
+IN
+LS Share
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+21:56
+24-09-2026
+Nilima Chaudhari
+
+============================== FRAME 27 (08:40) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_027.jpg ==============================
+9 - 9-
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+Aptos Narrow
+~ 11
+=
+General
+%
+U -
+# -
+A
+500
+Clipboard
+Font
+Alignment
+Number
+View
+Help
+Conditional Formatting "
+* Format as Table "
+12 Cell Styles ~
+Styles
+G12
+E
+- Hypotesis
+BONE PAIN
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+12 CONDITION AGGRAVATED
+Death
+14 HOSPITALISATION
+#N/A
+#N/A
+#N/A
+Death
+Death
+17 OEDEMA PERIPHERAL
+18 PROSTATE CANCER
+19 MALIGNANT NEOPLASM PROGRESSION
+#N/A
+#N/A
+#N/A
+Death
+21 MALIGNANT NEOPLASM PROGRESSION
+22 MUSCLE ATROPHY
+23 ASTHENIA
+#N/A
+#N/A
+#N/A
+Table2 3
+Table2_3 (2)
+Table2 (4)
+Sheet3
+Sheet2
+Shee ...
+Ready
+O
+Search
+Nilima Chaudhari
+Call Insert ~
+Ex Delete
+i Format -
+Cells
+G
+- Column-
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+#N/A
+Death
+#N/A
+#N/A
+#N/A
+Death
+Death
+#N/A
+#N/A
+#N/A
+Death
+#N/A
+#N/A
+#N/A
+2 • 28~
+0-
+Editing
+H
+Templates
+Library
+Sign in
+Al Data
+Analysis
+Al Tools
+Export
+Split
+Merge
+to Image
+Output Conversion
+Create
+PDF
+Sign
+WPS PDF
+Queries & Connections
+Queries
+Connections
+5 queries
+Im Table2
+138 rows loaded.
+# Table2 (2)
+1 Download did not complete.
+I Table2 (3)
+120 rows loaded. 1 error.
+• Table2_3
+226 rows loaded.
+• Table2_3 (2)
+226 rows loaded.
+LS Share
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+()
+ENG
+IN
++ 100%
+21:57
+24-09-2026
+
+============================== FRAME 28 (09:00) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_028.jpg ==============================
+9 - 9-
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+=
+Aptos Narrow
+U -
+- 11 ~ A A*
+# -
+a - A-
+General
+%
+9р-
+Clipboard
+Font
+Alignment
+Number
+View
+Help
+Conditional Formatting "
+Format as Table ~
+12 Cell Styles -
+Styles
+all Insert ~
+Ex Delete
+( Format -
+Cells
+2 • 28~
+O -
+Editing
+G12
+fx
+A
+Case Number!
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+BONE PAIN
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+2025AP002474
+10 2025AP002474
+11 2025AP006502
+12 2025AP006551
+CONDITION AGGRAVATED
+13
+2025AP006551|
+14 2025AP007195
+15 2025AP007654
+16 2025AP007853
+17 2025AP007853
+18 2025AP007865
+19 2025AP007867
+OEDEMA PERIPHERAL
+PROSTATE CANCER
+MALIGNANT NEOPLASM PROGRESSION
+20 2025AP007885 g
+21 2025AP007888
+MALIGNANT NEOPLASM PROGRESSION
+22
+2025AP008086
+MUSCLE ATROPHY
+23 2025AP008086
+ASTHENIA
+STUCULA
+Table2_3
+Table2_3 (2)
+Table2 (4)
+Sheet3
+D
+GAIT DISTURBANCE
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+CONDITION AGGRAVATED
+OEDEMA PERIPHERAL
+PROSTATE CANCER
+MALIGNANT NEOPLASM PROGRESSION
+MALIGNANT NEOPLASM PROGRESSION
+MUSCLE ATROPHY
+ASTHENIA
+Sheet2
+Shee ...
+Ready
+Search
+Nilima Chaudhari
+Templates
+Library
+Sign in
+Al Data
+Analysis
+Al Tools
+Export
+Split
+Merge
+to Image
+Output Conversion
+Create
+PDF
+Sign
+WPS PDF
+Queries & Connections
+Queries
+Connections
+5 queries
+Im Table2
+138 rows loaded.
+I Table2 (2)
+1 Download did not complete.
+I Table2 (3)
+120 rows loaded. 1 error.
+• Table2_3
+226 rows loaded.
+• Table2_3 (2)
+226 rows loaded.
+LS Share
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+ENG
+IN
++ 100%
+FФ @
+21:57
+24-09-2026
+
+============================== FRAME 29 (09:20) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_029.jpg ==============================
+9 - 9-
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+=
+Aptos Narrow
+- 11 ~ A A*
+General
+Clipboard
+Font
+Alignment
+Number
+View
+Help
+Table Design
+Query
+Conditional Formatting "
+SEE Insert ~
+Format as Table ~
+# Delete -
+12 Cell Styles -
+i Format -
+Styles
+Cells
+2 • 28~
+O -
+%
+I U -
+9p-
+Editing
+D11
+fx
+=TRIM(I@Custom])
+A
+Case Number - Custom
+2
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+10
+2025AP002474
+11 2025AP006002
+12 2025AP006551
+13
+2025AP006551
+14 2025AP007195
+15 2025AP007654
+16 2025AP007853
+17 2025AP007853
+18 2025AP007865
+19 2025AP007867
+20 2025AP007885
+21
+2025AP007888
+22
+2025AP008086
+23
+2025AP008086
+BONE PAIN
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+CONDITION AGGRAVATED
+OEDEMA PERIPHERAL
+PROSTATE CANCER
+MALIGNANT NEOPLASM PROGRESSION
+MALIGNANT NEOPLASM PROGRESSION
+MUSCLE ATROPHY
+ASTHENIA
+ATICALA
+Table2_3
+Table2_3 (2)
+Table2 (4)
+Sheet3
+• Column1
+PAIN IN EXTREMITY
+GAIT DISTURBANCE
+BONE PAIN
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+COUGH
+FATIGUE
+DEATH
+CONDITION AGGRAVATED
+FALL
+HOSPITALISATION
+DEATH
+DEATH
+OEDEMA PERIPHERAL
+PROSTATE CANCER
+MALIGNANT NEOPLASM PROGRESSION
+DEATH
+MALIGNANT NEOPLASM PROGRESSION
+MUSCLE ATROPHY
+ASTHENIA
+AATUFAILA
+Sheet2
+Shee ...
+Ready
+Search
+Nilima Chaudhari
+Sign in
+LS Share
+Templates
+Library
+Al Data
+Analysis
+Al Tools
+Export
+Split
+Merge
+to Image
+Output Conversion
+Create
+PDF
+Sign
+WPS PDF
+Queries & Connections
+Queries
+Connections
+5 queries
+Im Table2
+138 rows loaded.
+I Table2 (2)
+1 Download did not complete.
+I Table2 (3)
+120 rows loaded. 1 error.
+• Table2_3
+226 rows loaded.
+• Table2_3 (2)
+226 rows loaded.
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+()
+ENG
+IN
++ 100%
+21:57
+24-09-2026
+
+============================== FRAME 30 (09:40) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_030.jpg ==============================
+9 - 9-
+Abiraterone_20260428_CAN-KUW-OMAN-UAE PBRER_Interval Linelisting - Excel
+Search
+File
+Home
+WPS PDF
+Insert
+Page Layout
+Formulas
+Data
+Review
+=
+Aptos Narrow
+I U -
+- 11 ~ A A*
+#- 4- A -
+General
+Clipboard
+Font
+Alignment
+Number
+View
+Help
+Table Design
+Query
+Conditional Formatting "
+Call Insert ~
+* Format as Table "
+# Delete -
+12 Cell Styles -
+i Format -
+Styles
+Cells
+2 • 28~
+Editing
+D15
+=TRIM(L@Custom])
+A
+Case Number * Custom
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+2025AP002474
+10 2025AP002474
+11
+2025AP006502
+12 2025AP006551
+13
+2025AP006551
+14 2025AP007195
+15 2025AP007654
+16 2025AP007853
+17 2025AP007853
+18 2025AP007865
+19 2025AP007867
+20 2025AP007885
+21
+2025AP007888
+22
+2025AP008086
+23
+2025AP008086
+- Column1
+BONE PAIN
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+CONDITION AGGRAVATED
+OEDEMA PERIPHERAL
+PROSTATE CANCER
+MALIGNANT NEOPLASM PROGRESSION
+MALIGNANT NEOPLASM PROGRESSION
+MUSCLE ATROPHY
+ATICAILA
+Table2_3
+Table2_3 (2)
+Table2 (4)
+Sheet3
+Sheet2
+Shee ...
+Ready
+Search
+Nilima Chaudhari
+GAIT DISTURBANCE
+PROSTATE CANCER
+INFLAMMATION
+DRY MOUTH
+DRY THROAT
+CONDITION AGGRAVATED
+HOSPITALISATION
+OEDEMA PER HERAL
+PROSTATE CANCER
+MALIGNANT NEOPLASM PROGRESSION
+MALIGNANT NEOPLASM PROGRESSION
+MUSCLE ATROPHY
+ASTHENIA
+Sign in
+LS Share
+Templates
+Library
+Al Data
+Analysis
+Al Tools
+Export
+Split
+Merge
+to Image
+Output Conversion
+Create
+PDF
+Sign
+WPS PDF
+Queries & Connections
+Queries
+Connections
+5 queries
+Im Table2
+138 rows loaded.
+I Table2 (2)
+1 Download did not complete.
+I Table2 (3)
+120 rows loaded. 1 error.
+• Table2_3
+226 rows loaded.
+• Table2_3 (2)
+226 rows loaded.
+IY
+Indraprakash Yadav
+NC
+Nilima Chaudhari
+()
+ENG
+IN
+" 4)
++ 100%
+21:58
+24-09-2026
+
+============================== FRAME 31 (10:00) - /Users/satya/projects/webcrwler/excel_calculus/data/nilima_frames/frame_031.jpg ==============================
+Gle
+= File
+• Pan
+R Select
+PC
+Of
+Re
+Home
+Edit
+Fe
+°A Add Picture
+Edit Content Add Text "#, Table recognition
+:=
+Ez
+S Pro
+Re
+An
+H
++
+Page
+Comment
+Tool
+Fill & Sign
+Protect
+Convert
+A WPS AI
+Q
+PDF Converter -
+2 PDF to Image
+E Split and Merge -
+A Text Comment
+Highlight -
+¡Ai Text Box
+Sign -
+"A, OCR PDF
+A, Extract Text -
+Q
+You are currently in guest mode. Sign in to activate more features and services.
+Sign In Now
+www
+No literature articles relevant to the risks were retrieved during the reporting period. The
+number of case reports received by the MAH pertaining to the above mentioned safety
+concerns are presented in the table below. These case reports are discussed in detail in
+Section 16.3.
+Risk Term
+Number of Relevant
+Case Reports
+Sign in
+XA -
+Show
+Upgrade Now
+X
+Not uploaded
+& Share
+100%
+8-
+U
+$ Full translation
+IY
+Indraprakash Yadav
+Important Identified Risks
+Hepatotoxicity
+Cardiac disorders
+Osteoporosis including osteoporosis related fractures
+Allergic alveolitis
+Increased exposure with food
+Rhabdomyoly sis/Myopathy
+Important Potential Risks
+NC
+Nilima Chaudhari
+This document contains 3 signatures, where 3 signature validity is unknown.
+24/215
+Back to Page 22
+Al Cross-Reference Close
+Search
+View
+00
+100%
+^ :
+ENG
+IN
++
+21:58
+24-09-2026
+Nilima Chaudhari

@@ -145,29 +145,119 @@ Once launched:
 - **Web Application Dashboard**: Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
 - **Interactive Swagger API Documentation**: Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-### Docker Deployment
+### Docker Deployment with Production Nginx Reverse Proxy
 
-#### Option A: Docker Compose (Recommended)
+The project includes a production-grade multi-container architecture managed by Docker Compose. Nginx serves as the single public entry point, terminating client connections and forwarding requests to the internal FastAPI service while keeping the database private.
+
+#### Architecture Overview
+
+```
+Internet / Client Ingress
+          │
+          ▼ (Public Port 80)
+┌────────────────────────────────────────────────────────┐
+│  NGINX Reverse Proxy (nginx:alpine)                    │
+│  • Public port: 80:80                                  │
+│  • Client max body size: 100M                          │
+│  • Timeouts: connect 60s, read 300s, send 300s         │
+│  • Passes Host, X-Real-IP, X-Forwarded-For, Proto      │
+└──────────────────────────┬─────────────────────────────┘
+                           │ Internal Docker Network (bridge)
+                           ▼ http://pdf-extractor:8000
+┌────────────────────────────────────────────────────────┐
+│  FastAPI PDF Extractor Engine (python:3.11-slim)       │
+│  • Internal port: 8000 (Private, not exposed to host)  │
+│  • Uvicorn with --proxy-headers --forwarded-allow-ips  │
+│  • 30-minute background folder scanner                 │
+└──────────────────────────┬─────────────────────────────┘
+                           │ Internal Docker Network (bridge)
+                           ▼ postgresql://db:5432
+┌────────────────────────────────────────────────────────┐
+│  PostgreSQL Production Database (postgres:15-alpine)   │
+│  • Internal port: 5432 (Private, not exposed to host)  │
+│  • Persistent volume: postgres_data                    │
+└────────────────────────────────────────────────────────┘
+```
+
+#### Key Architecture Highlights
+- **Public Entry Point**: Port `80` (handled exclusively by Nginx).
+- **Backend Internal Port**: `8000` (service `pdf-extractor`, private to Docker network).
+- **Database Internal Port**: `5432` (service `db`, private to Docker network).
+- **Upload Limit**: Configured to `100M` to support large PDF document uploads and batch processing.
+- **Extended Timeouts**: `proxy_read_timeout 300s` and `proxy_send_timeout 300s` to accommodate long-running OCR operations.
+- **Reverse Proxy Headers**: Passes `Host`, `X-Real-IP`, `X-Forwarded-For`, and `X-Forwarded-Proto` to Uvicorn for client traceability.
+- **Production HTTPS Ready**: `nginx/nginx.conf` contains ready-to-enable TLS/SSL templates.
+
+#### Local Docker Startup
+
 ```bash
-# Build and start in detached mode with persistent volumes
+# 1. Build and start all 3 containers in detached mode
 docker compose up -d --build
 
-# Check health and container status
+# 2. Check container status and healthchecks
 docker compose ps
 
-# View live container logs
+# 3. Stream real-time logs across all services
 docker compose logs -f
 
-# Stop and clean up containers
+# 4. View logs for a specific service
+docker compose logs -f nginx
+docker compose logs -f pdf-extractor
+docker compose logs -f db
+
+# 5. Stop the stack
 docker compose down
 ```
 
-#### Option B: Docker CLI Direct
+#### Public Access Points (via Nginx Port 80)
+- **Web Dashboard**: [http://localhost/](http://localhost/)
+- **Visual Product Catalog**: [http://localhost/catalog](http://localhost/catalog)
+- **Interactive API Documentation (Swagger)**: [http://localhost/docs](http://localhost/docs)
+- **Clean Short Product View**: [http://localhost/p/ofloxacin](http://localhost/p/ofloxacin)
+- **Clean Short Subsection View**: [http://localhost/p/ofloxacin/16.1](http://localhost/p/ofloxacin/16.1)
+- **Health Validation Endpoint**: [http://localhost/api/health](http://localhost/api/health)
+
+#### How to Validate Health via Nginx
+
+Run a `curl` request against the Nginx reverse proxy to verify the complete path (**Nginx → FastAPI → PostgreSQL**):
+
+```bash
+curl -i http://localhost/api/health
+```
+
+Expected HTTP `200 OK` response:
+```json
+{
+  "status": "healthy",
+  "engine": "deterministic_hierarchical_extractor",
+  "database": {
+    "status": "healthy",
+    "dialect": "postgresql",
+    "connected": true
+  },
+  "background_scanner": {
+    "status": "running",
+    "watch_directory": "/app/watch_pdfs",
+    "interval_minutes": 30,
+    "target_section": "16",
+    "total_products_indexed": 33
+  },
+  "version": "1.1.0"
+}
+```
+
+You can also test the Nginx-level probe:
+```bash
+curl -i http://localhost/nginx-health
+# Returns HTTP 200: healthy
+```
+
+#### Option B: Standalone Docker CLI (Direct Backend Testing)
 ```bash
 # 1. Build image
 docker build -t pdf-extractor:latest .
 
-# 2. Run container with volume mounts and port mapping
+# 2. Run container directly
 docker run -d \
   --name pdf-extractor \
   -p 8000:8000 \

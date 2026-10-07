@@ -24,7 +24,7 @@ echo " Interactive API Docs: http://${HOST}:${PORT}/docs"
 echo "=========================================================="
 
 if [ "$WORKERS" -gt 1 ] || [ "${ENV}" = "production" ]; then
-    exec .venv/bin/uvicorn backend.main:app --host "$HOST" --port "$PORT" --workers "$WORKERS"
+    exec .venv/bin/uvicorn backend.main:app --host "$HOST" --port "$PORT" --workers "$WORKERS" --proxy-headers --forwarded-allow-ips='*'
 else
-    exec .venv/bin/uvicorn backend.main:app --host "$HOST" --port "$PORT" --reload
+    exec .venv/bin/uvicorn backend.main:app --host "$HOST" --port "$PORT" --reload --proxy-headers --forwarded-allow-ips='*'
 fi
