@@ -59,6 +59,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    networks:
+      default:
+        aliases:
+          - pdf_section_extractor
+          - pdf-extractor
     restart: unless-stopped
 
   # ============================================================================
@@ -68,7 +73,8 @@ services:
     image: nginx:alpine
     container_name: pdf_extractor_nginx
     depends_on:
-      - pdf-extractor
+      pdf-extractor:
+        condition: service_healthy
     ports:
       - "${HTTPS_PORT:-8443}:443"
     volumes:
