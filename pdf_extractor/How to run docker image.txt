@@ -18,7 +18,7 @@ ls -l certs/
 4. Ensure nginx configuration exists:
 ls -l nginx/nginx.conf
 
-5. Build and start the stack (Database + Python App + Nginx Reverse Proxy):
+5. Build and start the stack:
 docker compose up --build -d
 (or docker-compose up --build -d depending on docker version)
 
@@ -26,10 +26,10 @@ docker compose up --build -d
 docker ps
 
 You should see:
-- pdf_extractor_nginx listening on 0.0.0.0:443->443/tcp
+- pdf_extractor_nginx listening on 0.0.0.0:8443->443/tcp
 - pdf_section_extractor exposing 8000 (internal to Docker network)
-- pdf_extractor_postgres
+- pdf_extractor_postgres exposing 5432 (internal to Docker network)
 
 7. Test HTTPS health check locally:
-curl -k https://localhost/api/health
+curl -k https://localhost:8443/api/health
 # Expected output: {"status":"healthy",...}
