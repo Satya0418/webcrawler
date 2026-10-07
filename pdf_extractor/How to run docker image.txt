@@ -1,0 +1,35 @@
+How to run docker image with Nginx HTTPS Reverse Proxy
+
+1. Switch user (if needed):
+su - snd-svc-apo@nextrove.cloud
+
+2. Navigate to your project directory:
+cd /home/iyadav-inf@nextrove.cloud/pdf_extractor
+(or your respective pdf_extractor deployment folder)
+
+3. Ensure SSL Certificates are in the project folder:
+Since you generated the certs in ~/certs, copy or link them to ./certs:
+cp -r ~/certs ./certs
+
+Verify cert files exist:
+ls -l certs/
+# Should show server.crt and server.key
+
+4. Ensure nginx configuration exists:
+ls -l nginx/nginx.conf
+
+5. Build and start the stack (Database + Python App + Nginx Reverse Proxy):
+docker compose up --build -d
+(or docker-compose up --build -d depending on docker version)
+
+6. Verify all containers are healthy & running:
+docker ps
+
+You should see:
+- pdf_extractor_nginx listening on 0.0.0.0:443->443/tcp
+- pdf_section_extractor exposing 8000 (internal to Docker network)
+- pdf_extractor_postgres
+
+7. Test HTTPS health check locally:
+curl -k https://localhost/api/health
+# Expected output: {"status":"healthy",...}

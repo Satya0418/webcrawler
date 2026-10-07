@@ -53,3 +53,9 @@ uploads/*
 .DS_Store
 .vscode/
 .idea/
+
+# SSL / TLS Certificates
+certs/
+*.crt
+*.key
+*.pem

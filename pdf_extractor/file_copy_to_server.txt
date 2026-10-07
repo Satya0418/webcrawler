@@ -1,0 +1,10 @@
+Files to copy / sync to the server for Nginx HTTPS reverse proxy:
+
+1. pdf_extractor/docker-compose.yml
+2. pdf_extractor/nginx/nginx.conf
+3. pdf_extractor/.env.example (or update existing .env with HTTPS_PORT=443)
+4. Verify certs/ exists on server with server.crt and server.key
+
+SCP command example (from local machine if pushing directly):
+scp pdf_extractor/docker-compose.yml snd-svc-apo@nextrove.cloud:<path_to_pdf_extractor>/docker-compose.yml
+scp -r pdf_extractor/nginx snd-svc-apo@nextrove.cloud:<path_to_pdf_extractor>/

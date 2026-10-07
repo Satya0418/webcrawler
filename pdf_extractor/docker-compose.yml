@@ -31,8 +31,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "${PORT:-8000}:8000"
+    expose:
+      - "8000"
     environment:
       - HOST=0.0.0.0
       - PORT=8000
@@ -59,6 +59,21 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    restart: unless-stopped
+
+  # ============================================================================
+  # Nginx Reverse Proxy (SSL / TLS Termination for AWS Load Balancer)
+  # ============================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: pdf_extractor_nginx
+    depends_on:
+      - pdf-extractor
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
     restart: unless-stopped
 
 volumes:
