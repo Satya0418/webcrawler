@@ -382,6 +382,7 @@ async def product_catalog(db: Session = Depends(get_db)):
     return HTMLResponse(content=catalog_html)
 
 
+@app.get("/health", include_in_schema=False)
 @app.get("/api/health")
 async def health_check():
     """Comprehensive system, database, and background scanner health check."""
