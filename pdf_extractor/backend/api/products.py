@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, status
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,31 @@ class ProductQueryRequest(BaseModel):
     embed_only: bool = Field(False, description="If format=html and embed_only=True, returns embeddable snippet without <html><body>")
     include_tables: bool = Field(True, description="Whether to include structured tables in the response")
     include_html: bool = Field(True, description="Whether to include rendered HTML in the response")
+
+
+class SignalAndRiskItem(BaseModel):
+    title: str = Field(..., description="Section or subsection title identifier, e.g. 'summary_of_safety_concerns'")
+    Data: str = Field(..., description="Actual extracted Section 16 HTML content string")
+
+
+class SignalAndRiskResponse(BaseModel):
+    responseType: str = Field("SignalAndRisk", description="Response type category")
+    submissionId: str = Field(..., description="Echo of received submissionId")
+    responseData: List[SignalAndRiskItem] = Field(..., description="List of extracted section entries")
+
+
+class SignalAndRiskIntegrationRequest(BaseModel):
+    submissionId: Optional[str] = Field(None, description="Unique submission identifier (e.g. 'a0CAq00004acdq7MAA')")
+    productName: Optional[str] = Field(None, description="Medicine or product name to search for (e.g. 'amikacin')")
+    submission_id: Optional[str] = Field(None, description="Alternative snake_case submission identifier")
+    product_name: Optional[str] = Field(None, description="Alternative snake_case product name")
+    startDate: Optional[Any] = Field(None, description="Optional start date (ignored)")
+    endDate: Optional[Any] = Field(None, description="Optional end date (ignored)")
+    start_date: Optional[Any] = Field(None, description="Optional start date (ignored)")
+    end_date: Optional[Any] = Field(None, description="Optional end date (ignored)")
+
+    model_config = ConfigDict(extra="ignore")
+
 
 
 def find_product_record(db: Session, raw_query: str) -> Optional[ProductSectionRecord]:
@@ -454,6 +479,65 @@ async def post_product_section_16(
         return {"Data": resp_data.get("Data") or resp_data["data"]["html"]}
 
     return resp_data
+
+
+@router.post(
+    "/products/signal-and-risk",
+    response_model=SignalAndRiskResponse,
+    summary="Teammate Integration: Fetch Section 16 Signal and Risk data by submission and product",
+)
+@router.post(
+    "/signal-and-risk",
+    response_model=SignalAndRiskResponse,
+    summary="Teammate Integration: Fetch Section 16 Signal and Risk data by submission and product (short alias)",
+)
+async def post_signal_and_risk(
+    req: SignalAndRiskIntegrationRequest,
+    db: Session = Depends(get_db),
+    _auth: bool = Depends(verify_api_key),
+):
+    """
+    **Teammate Integration Endpoint**:
+    Receives submissionId and productName, looks up the indexed PDF Section 16 data,
+    and returns a SignalAndRisk payload containing the extracted HTML inside JSON.
+    """
+    # 1. Validate required fields
+    raw_sub_id = req.submissionId if req.submissionId is not None else req.submission_id
+    if raw_sub_id is None or not str(raw_sub_id).strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Field 'submissionId' is required and cannot be empty.",
+        )
+    sub_id = str(raw_sub_id).strip()
+
+    raw_prod_name = req.productName if req.productName is not None else req.product_name
+    if raw_prod_name is None or not str(raw_prod_name).strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Field 'productName' is required and cannot be empty.",
+        )
+    prod_name = str(raw_prod_name).strip()
+
+    # 2. Look up product record in indexed database
+    record = find_product_record(db, prod_name)
+    if not record or record.status != "success" or not record.extracted_html or not record.extracted_html.strip():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No indexed Section 16 data found for product '{prod_name}'.",
+        )
+
+    # 3. Return Section 16 HTML data inside JSON structure (tables strictly omitted)
+    clean_html = strip_html_tables(record.extracted_html or "")
+    return {
+        "responseType": "SignalAndRisk",
+        "submissionId": sub_id,
+        "responseData": [
+            {
+                "title": "summary_of_safety_concerns",
+                "Data": clean_html,
+            }
+        ],
+    }
 
 
 @router.get("/products/search", summary="Search available indexed products")

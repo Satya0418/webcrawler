@@ -108,3 +108,59 @@ Whenever a new PDF is added:
    http://127.0.0.1:8000/p/<new_medicine_name>/16.1
    ```
 4. It also automatically appears in the visual catalog at [http://127.0.0.1:8000/catalog](http://127.0.0.1:8000/catalog).
+
+---
+
+## 🤝 Teammate Integration API (`SignalAndRisk`)
+
+For automated partner integrations that query by `submissionId` and `productName` and require Section 16 HTML output:
+
+- **Primary URL**: `POST http://127.0.0.1:8000/api/v1/products/signal-and-risk`
+- **Short Alias URL**: `POST http://127.0.0.1:8000/api/v1/signal-and-risk`
+- **Reverse Proxy Base URL**: `http://localhost/api/v1/products/signal-and-risk` (Port 80 via Nginx)
+
+### Request Payload (`POST application/json`)
+```json
+{
+  "submissionId": "a0CAq00004acdq7MAA",
+  "productName": "amikacin"
+}
+```
+
+### Response (`200 OK application/json`)
+```json
+{
+  "responseType": "SignalAndRisk",
+  "submissionId": "a0CAq00004acdq7MAA",
+  "responseData": [
+    {
+      "title": "summary_of_safety_concerns",
+      "Data": "<!DOCTYPE html>...the actual extracted Section 16 HTML...</html>"
+    }
+  ]
+}
+```
+
+### cURL Example
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/products/signal-and-risk" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "submissionId": "a0CAq00004acdq7MAA",
+    "productName": "amikacin"
+  }'
+```
+
+### Postman Setup
+- **Method**: `POST`
+- **URL**: `http://127.0.0.1:8000/api/v1/products/signal-and-risk`
+- **Headers**:
+  - `Content-Type`: `application/json`
+- **Body**: (Select **raw** -> **JSON**)
+  ```json
+  {
+    "submissionId": "a0CAq00004acdq7MAA",
+    "productName": "amikacin"
+  }
+  ```
+

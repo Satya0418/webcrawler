@@ -150,29 +150,13 @@ document.querySelectorAll('.pill-btn').forEach(btn => {
   });
 });
 
-// 3b. Table Mode Option Helpers
+// 3b. Table Mode Option Helpers (Tables are omitted)
 function getSelectedTableMode() {
-  const radio = document.querySelector('input[name="tableOptionRadio"]:checked');
-  return radio ? radio.value : 'neglect';
+  return 'neglect';
 }
 
 function setSelectedTableMode(mode) {
-  if (mode === 'add') {
-    if (optAddTable) optAddTable.checked = true;
-    if (optAddTableLabel) optAddTableLabel.classList.add('active');
-    if (optNeglectTableLabel) optNeglectTableLabel.classList.remove('active');
-  } else {
-    if (optNeglectTable) optNeglectTable.checked = true;
-    if (optNeglectTableLabel) optNeglectTableLabel.classList.add('active');
-    if (optAddTableLabel) optAddTableLabel.classList.remove('active');
-  }
-}
-
-if (optNeglectTable) {
-  optNeglectTable.addEventListener('change', () => setSelectedTableMode('neglect'));
-}
-if (optAddTable) {
-  optAddTable.addEventListener('change', () => setSelectedTableMode('add'));
+  // Tables are permanently omitted (neglect mode)
 }
 
 if (btnResNeglectTable) {

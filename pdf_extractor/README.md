@@ -400,6 +400,45 @@ Multipart form upload of one or more `.pdf` files.
 ### 5. `GET /api/download/{filename}`
 Streams the requested TXT, JSON, CSV, or Excel file download.
 
+### 6. `POST /api/v1/products/signal-and-risk` (Teammate Integration)
+Dedicated integration endpoint for automated partner pipelines that query by `submissionId` and `productName` and receive the product's Section 16 HTML inside JSON:
+
+- **Primary URL**: `POST http://127.0.0.1:8000/api/v1/products/signal-and-risk`
+- **Alias URL**: `POST http://127.0.0.1:8000/api/v1/signal-and-risk`
+- **Nginx Reverse Proxy Base URL**: `http://localhost/api/v1/products/signal-and-risk`
+
+**Request Body**:
+```json
+{
+  "submissionId": "a0CAq00004acdq7MAA",
+  "productName": "amikacin"
+}
+```
+
+**Response (`200 OK`)**:
+```json
+{
+  "responseType": "SignalAndRisk",
+  "submissionId": "a0CAq00004acdq7MAA",
+  "responseData": [
+    {
+      "title": "summary_of_safety_concerns",
+      "Data": "<!DOCTYPE html>...the actual extracted Section 16 HTML...</html>"
+    }
+  ]
+}
+```
+
+**cURL Example**:
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/products/signal-and-risk" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "submissionId": "a0CAq00004acdq7MAA",
+    "productName": "amikacin"
+  }'
+```
+
 ---
 
 ## 6. Automated Test Suite
