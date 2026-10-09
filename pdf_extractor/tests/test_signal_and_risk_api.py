@@ -27,18 +27,20 @@ def test_signal_and_risk_post_success():
 
     body = res.json()
 
-    # Exact response keys
-    assert set(body.keys()) == {"responseType", "submissionId", "responseData"}
+    # Response keys include productName
+    assert set(body.keys()) == {"responseType", "submissionId", "productName", "responseData"}
     assert body["responseType"] == "SignalAndRisk"
     assert body["submissionId"] == "a0CAq00004acdq7MAA"
+    assert "amikacin" in body["productName"].lower()
 
     # Exactly one entry backed by real extracted data (no fabricated 16.2)
     assert isinstance(body["responseData"], list)
     assert len(body["responseData"]) == 1
 
     entry = body["responseData"][0]
-    assert set(entry.keys()) == {"title", "Data"}
+    assert set(entry.keys()) == {"productName", "title", "Data"}
     assert entry["title"] == "summary_of_safety_concerns"
+    assert "amikacin" in entry["productName"].lower()
 
     # Verifies real Section 16 HTML content string
     html = entry["Data"]
@@ -60,8 +62,10 @@ def test_signal_and_risk_alias_endpoint():
     body = res.json()
     assert body["responseType"] == "SignalAndRisk"
     assert body["submissionId"] == "a0CAq00004acdq7MAA"
+    assert "amikacin" in body["productName"].lower()
     assert len(body["responseData"]) == 1
     assert body["responseData"][0]["title"] == "summary_of_safety_concerns"
+    assert "amikacin" in body["responseData"][0]["productName"].lower()
     assert "Amikacin" in body["responseData"][0]["Data"]
 
 

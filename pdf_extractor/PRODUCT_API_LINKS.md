@@ -132,8 +132,10 @@ For automated partner integrations that query by `submissionId` and `productName
 {
   "responseType": "SignalAndRisk",
   "submissionId": "a0CAq00004acdq7MAA",
+  "productName": "amikacin",
   "responseData": [
     {
+      "productName": "amikacin",
       "title": "summary_of_safety_concerns",
       "Data": "<!DOCTYPE html>...the actual extracted Section 16 HTML...</html>"
     }

@@ -44,6 +44,7 @@ class ProductQueryRequest(BaseModel):
 
 
 class SignalAndRiskItem(BaseModel):
+    productName: Optional[str] = Field(None, description="Matched product or medicine name")
     title: str = Field(..., description="Section or subsection title identifier, e.g. 'summary_of_safety_concerns'")
     Data: str = Field(..., description="Actual extracted Section 16 HTML content string")
 
@@ -51,6 +52,7 @@ class SignalAndRiskItem(BaseModel):
 class SignalAndRiskResponse(BaseModel):
     responseType: str = Field("SignalAndRisk", description="Response type category")
     submissionId: str = Field(..., description="Echo of received submissionId")
+    productName: Optional[str] = Field(None, description="Echo of requested and matched product name")
     responseData: List[SignalAndRiskItem] = Field(..., description="List of extracted section entries")
 
 
@@ -528,11 +530,14 @@ async def post_signal_and_risk(
 
     # 3. Return Section 16 HTML data inside JSON structure (tables strictly omitted)
     clean_html = strip_html_tables(record.extracted_html or "")
+    matched_product = record.product_name or prod_name
     return {
         "responseType": "SignalAndRisk",
         "submissionId": sub_id,
+        "productName": matched_product,
         "responseData": [
             {
+                "productName": matched_product,
                 "title": "summary_of_safety_concerns",
                 "Data": clean_html,
             }
