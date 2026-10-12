@@ -135,3 +135,26 @@ def test_signal_and_risk_multiple_indexed_products():
         assert "<!DOCTYPE html>" in html
         assert "</html>" in html
         assert "<table" not in html, f"Tables must be stripped from {prod}"
+
+
+def test_signal_and_risk_browser_get_support():
+    """Verifies that visiting the URL via GET in a browser with query params returns valid payload."""
+    res = client.get("/api/v1/products/signal-and-risk?productName=amikacin")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["responseType"] == "SignalAndRisk"
+    assert "amikacin" in body["productName"].lower()
+    assert body["responseData"][0]["title"] == "summary_of_safety_concerns"
+    assert "<!DOCTYPE html>" in body["responseData"][0]["Data"]
+
+
+def test_signal_and_risk_singular_alias():
+    """Verifies that typing /product/ (singular) works for both GET and POST."""
+    res_post = client.post("/api/v1/product/signal-and-risk", json={"submissionId": "sub_1", "productName": "amikacin"})
+    assert res_post.status_code == 200
+    assert "amikacin" in res_post.json()["productName"].lower()
+
+    res_get = client.get("/api/v1/product/signal-and-risk?productName=amikacin")
+    assert res_get.status_code == 200
+    assert "amikacin" in res_get.json()["productName"].lower()
+

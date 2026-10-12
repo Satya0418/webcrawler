@@ -489,6 +489,11 @@ async def post_product_section_16(
     summary="Teammate Integration: Fetch Section 16 Signal and Risk data by submission and product",
 )
 @router.post(
+    "/product/signal-and-risk",
+    response_model=SignalAndRiskResponse,
+    include_in_schema=False,
+)
+@router.post(
     "/signal-and-risk",
     response_model=SignalAndRiskResponse,
     summary="Teammate Integration: Fetch Section 16 Signal and Risk data by submission and product (short alias)",
@@ -543,6 +548,51 @@ async def post_signal_and_risk(
             }
         ],
     }
+
+
+@router.get(
+    "/products/signal-and-risk",
+    response_model=SignalAndRiskResponse,
+    summary="Fetch Section 16 Signal and Risk data via GET query for browser testing",
+)
+@router.get(
+    "/product/signal-and-risk",
+    response_model=SignalAndRiskResponse,
+    include_in_schema=False,
+)
+@router.get(
+    "/signal-and-risk",
+    response_model=SignalAndRiskResponse,
+    include_in_schema=False,
+)
+async def get_signal_and_risk(
+    productName: Optional[str] = Query(None, description="Medicine or product name (e.g. 'amikacin')"),
+    submissionId: Optional[str] = Query("browser_test", description="Submission identifier"),
+    product_name: Optional[str] = Query(None, include_in_schema=False),
+    submission_id: Optional[str] = Query(None, include_in_schema=False),
+    db: Session = Depends(get_db),
+    _auth: bool = Depends(verify_api_key),
+):
+    """
+    Browser Testing Helper:
+    Allows directly testing this endpoint in any web browser address bar with query parameters,
+    e.g. /api/v1/products/signal-and-risk?productName=amikacin
+    """
+    prod = (productName or product_name or "").strip()
+    sub = (submissionId or submission_id or "browser_test").strip()
+    if not prod:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Query parameter 'productName' is required. "
+                "Example in browser: /api/v1/products/signal-and-risk?productName=amikacin"
+            ),
+        )
+    return await post_signal_and_risk(
+        SignalAndRiskIntegrationRequest(submissionId=sub, productName=prod),
+        db=db,
+        _auth=_auth,
+    )
 
 
 @router.get("/products/search", summary="Search available indexed products")
