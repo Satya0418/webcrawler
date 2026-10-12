@@ -1,0 +1,30 @@
+services:
+  # ============================================================================
+  # Medicine Safety Web Crawler & Scraper Backend Service
+  # ============================================================================
+  crawler-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: medicine_crawler_backend
+    ports:
+      - "${PORT:-8001}:8001"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8001
+      - WORKERS=${WORKERS:-2}
+      - DEBUG=False
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./medicine_safety.db}
+    volumes:
+      - crawler_data:/app/data
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8001/api/health" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  crawler_data:
+    driver: local
