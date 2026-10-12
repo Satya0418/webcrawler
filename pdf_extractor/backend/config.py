@@ -96,3 +96,9 @@ MAX_HEADING_LENGTH = 150
 HEADER_MARGIN_RATIO = 0.12  # Top 12%
 FOOTER_MARGIN_RATIO = 0.10  # Bottom 10%
 
+# Salesforce Integration Webhook / Callback URL
+SALESFORCE_CALLBACK_URL = os.getenv(
+    "SALESFORCE_CALLBACK_URL",
+    "https://apocompliance--dev.sandbox.my.salesforce-sites.com/services/apexrest/updateSubmissionResponse",
+)
+

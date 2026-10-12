@@ -8,13 +8,17 @@ from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 
-from backend.config import API_KEY
+import logging
+import httpx
+
+from backend.config import API_KEY, SALESFORCE_CALLBACK_URL
 from backend.database.db import get_db
 from backend.database.models import ProductSectionRecord
 from backend.extraction.section_extractor import SectionExtractor
 from backend.services.export_service import ExportService
 from backend.services.scanner_service import scanner_service, normalize_product_name
 
+logger = logging.getLogger("pdf_extractor.products")
 router = APIRouter(prefix="/api/v1", tags=["Client Products API"])
 
 
@@ -65,6 +69,8 @@ class SignalAndRiskIntegrationRequest(BaseModel):
     endDate: Optional[Any] = Field(None, description="Optional end date (ignored)")
     start_date: Optional[Any] = Field(None, description="Optional start date (ignored)")
     end_date: Optional[Any] = Field(None, description="Optional end date (ignored)")
+    callbackUrl: Optional[str] = Field(None, description="Optional custom Salesforce callback webhook URL")
+    callback_url: Optional[str] = Field(None, description="Optional custom Salesforce callback webhook URL")
 
     model_config = ConfigDict(extra="ignore")
 
@@ -483,6 +489,35 @@ async def post_product_section_16(
     return resp_data
 
 
+async def send_salesforce_callback(payload: dict, callback_url: Optional[str] = None) -> dict:
+    """
+    Dispatches the extracted Section 16 Signal and Risk payload to the Salesforce
+    Apex REST webhook endpoint (updateSubmissionResponse).
+    """
+    target_url = (callback_url or SALESFORCE_CALLBACK_URL or "").strip()
+    if not target_url:
+        logger.warning("No Salesforce callback URL configured; skipping outbound webhook.")
+        return {"status": "skipped", "detail": "No callback URL configured"}
+
+    logger.info("Dispatching Salesforce callback for submissionId '%s' to %s", payload.get("submissionId"), target_url)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                target_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            logger.info("Salesforce callback returned status %s", resp.status_code)
+            return {
+                "status": "delivered" if resp.status_code in (200, 201, 204) else "failed",
+                "status_code": resp.status_code,
+                "url": target_url,
+            }
+    except Exception as exc:
+        logger.error("Failed to send Salesforce callback to %s: %s", target_url, exc)
+        return {"status": "error", "error": str(exc), "url": target_url}
+
+
 @router.post(
     "/products/signal-and-risk",
     response_model=SignalAndRiskResponse,
@@ -506,6 +541,7 @@ async def post_signal_and_risk(
     """
     **Teammate Integration Endpoint**:
     Receives submissionId and productName, looks up the indexed PDF Section 16 data,
+    dispatches an outbound callback to Salesforce (updateSubmissionResponse),
     and returns a SignalAndRisk payload containing the extracted HTML inside JSON.
     """
     # 1. Validate required fields
@@ -536,7 +572,7 @@ async def post_signal_and_risk(
     # 3. Return Section 16 HTML data inside JSON structure (tables strictly omitted)
     clean_html = strip_html_tables(record.extracted_html or "")
     matched_product = record.product_name or prod_name
-    return {
+    response_payload = {
         "responseType": "SignalAndRisk",
         "submissionId": sub_id,
         "productName": matched_product,
@@ -548,6 +584,13 @@ async def post_signal_and_risk(
             }
         ],
     }
+
+    # 4. Outbound callback to Salesforce updateSubmissionResponse webhook
+    target_callback = (req.callbackUrl or req.callback_url or SALESFORCE_CALLBACK_URL or "").strip()
+    if target_callback:
+        await send_salesforce_callback(response_payload, target_callback)
+
+    return response_payload
 
 
 @router.get(
@@ -568,8 +611,10 @@ async def post_signal_and_risk(
 async def get_signal_and_risk(
     productName: Optional[str] = Query(None, description="Medicine or product name (e.g. 'amikacin')"),
     submissionId: Optional[str] = Query("browser_test", description="Submission identifier"),
+    callbackUrl: Optional[str] = Query(None, description="Optional custom Salesforce callback webhook URL"),
     product_name: Optional[str] = Query(None, include_in_schema=False),
     submission_id: Optional[str] = Query(None, include_in_schema=False),
+    callback_url: Optional[str] = Query(None, include_in_schema=False),
     db: Session = Depends(get_db),
     _auth: bool = Depends(verify_api_key),
 ):
@@ -580,6 +625,7 @@ async def get_signal_and_risk(
     """
     prod = (productName or product_name or "").strip()
     sub = (submissionId or submission_id or "browser_test").strip()
+    cb = (callbackUrl or callback_url or "").strip() or None
     if not prod:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -589,7 +635,7 @@ async def get_signal_and_risk(
             ),
         )
     return await post_signal_and_risk(
-        SignalAndRiskIntegrationRequest(submissionId=sub, productName=prod),
+        SignalAndRiskIntegrationRequest(submissionId=sub, productName=prod, callbackUrl=cb),
         db=db,
         _auth=_auth,
     )

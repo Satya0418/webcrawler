@@ -158,3 +158,29 @@ def test_signal_and_risk_singular_alias():
     assert res_get.status_code == 200
     assert "amikacin" in res_get.json()["productName"].lower()
 
+
+def test_signal_and_risk_salesforce_callback_invoked(monkeypatch):
+    """Verifies that send_salesforce_callback is invoked with the expected payload."""
+    called_payloads = []
+
+    async def fake_send_callback(payload, callback_url=None):
+        called_payloads.append((payload, callback_url))
+        return {"status": "delivered", "status_code": 200}
+
+    from backend.api import products
+    monkeypatch.setattr(products, "send_salesforce_callback", fake_send_callback)
+
+    payload = {
+        "submissionId": "salesforce_test_sub_101",
+        "productName": "amikacin",
+    }
+    res = client.post("/api/v1/products/signal-and-risk", json=payload)
+    assert res.status_code == 200
+    assert len(called_payloads) == 1
+
+    callback_data, callback_url = called_payloads[0]
+    assert callback_data["submissionId"] == "salesforce_test_sub_101"
+    assert callback_data["productName"] == "Amikacin"
+    assert callback_data["responseData"][0]["title"] == "summary_of_safety_concerns"
+    assert "updateSubmissionResponse" in callback_url
+
