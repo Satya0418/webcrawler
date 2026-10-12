@@ -57,7 +57,10 @@ def export_drug_csv(drug: Any, changes: List[Any]) -> str:
     active_ingr = _get_val(drug, "active_ingredient", "")
     app_num = _get_val(drug, "application_number", "")
 
-    for c in changes:
+    # Filter to latest date only
+    latest_changes = filter_latest_date_changes(changes)
+
+    for c in latest_changes:
         s_date = _get_val(c, "source_date", "")
         s_date_str = str(s_date)[:10] if s_date else ""
         s_id = _get_val(c, "source_record_id", "")
@@ -88,8 +91,194 @@ def export_drug_csv(drug: Any, changes: List[Any]) -> str:
     return output.getvalue()
 
 
+def filter_latest_date_changes(changes: List[Any]) -> List[Any]:
+    """Filters changes to only those matching the most recent source_date."""
+    if not changes:
+        return []
+    dates = []
+    for c in changes:
+        s_date = _get_val(c, "source_date")
+        if s_date:
+            dates.append(str(s_date)[:10])
+    if not dates:
+        return changes
+    latest_date_str = max(dates)
+    return [c for c in changes if str(_get_val(c, "source_date", ""))[:10] == latest_date_str]
+
+
+def clean_clinical_text(raw_text: str) -> str:
+    """Cleans clinical text from editorial boilerplate, cross-references, and extra ellipses."""
+    if not raw_text:
+        return ""
+    # Cut off section 17 / Patient counseling / Medication guide
+    stop_match = re.search(r"(?i)(?:^|\n)\s*(?:17\b|PCI/PI/MG|Patient\s+Counseling|MEDICATION\s+GUIDE)", raw_text)
+    if stop_match:
+        raw_text = raw_text[:stop_match.start()]
+
+    # First strip editorial / guidance boilerplate tags
+    text = re.sub(r"<\/?(?:i|em|u|strong|b)>\s*(?:Additions\s+and(?:/or)?\s+revisions\s+underlined|Newly\s+added\s+information|New\s+subsection\s+added)\s*:?\s*<\/?(?:i|em|u|strong|b)>", "", raw_text, flags=re.IGNORECASE)
+    text = re.sub(r"(?i)^(?:Additions\s+and(?:/or)?\s+revisions\s+underlined|Newly\s+added\s+information|New\s+subsection\s+added)\s*:?", "", text)
+
+    # Strip bracketed cross-references like [see Warnings and Precautions (5.1)], including tags inside
+    text = re.sub(r"\[\s*(?:<[^>]+>\s*)*see(?:\s*<[^>]+>)*\s*[^\]]+\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\[\s*see\s+[^\]]+\]", "", text, flags=re.IGNORECASE)
+
+    # Clean ellipses . . . replaced by newline to keep separation intact
+    text = re.sub(r"(?:\.\s*){3,}", "\n", text)
+    text = re.sub(r"…", "\n", text)
+
+    # Strip empty HTML tags
+    for _ in range(3):
+        text = re.sub(r"<([a-z0-9]+)[^>]*>\s*</\1>", "", text, flags=re.IGNORECASE)
+
+    # Split inline bullets into separate lines if '•' appears mid-line
+    text = re.sub(r"\s*•\s*", "\n• ", text)
+
+    lines = text.split("\n")
+    cleaned_lines = []
+    for line in lines:
+        l = line.strip()
+        if not l or l in ("...", "…") or re.match(r"^[\.\s…]+$", l):
+            continue
+        if re.match(r"(?i)^(additions\s+and(?:/or)?\s+revisions\s+underlined|newly\s+added|new\s+subsection\s+added)", l):
+            continue
+        # Strip section numbers from start, even if inside/after tags: <strong>6.2 Postmarketing... -> <strong>Postmarketing...
+        l = re.sub(r"^((?:<[^>]+>\s*)*)[1-9]\d*(?:\.\d+)+\s*", r"\1", l)
+        cleaned_lines.append(l)
+
+    return "\n".join(cleaned_lines)
+
+
+def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = True) -> str:
+    """
+    Generate clean, semantic HTML without CSS classes or styles,
+    matching pdf_extractor output format for Salesforce (Nilima) and clean downloads.
+    Strictly filters to the latest date only.
+    """
+    d_name = _get_val(drug, "display_name", "Drug")
+    display_clean = d_name.title() if d_name.isupper() else d_name
+    active_ingr = _get_val(drug, "active_ingredient", "") or "Not specified"
+    app_num = _get_val(drug, "application_number", "") or "N/A"
+
+    # Filter to latest date only
+    latest_changes = filter_latest_date_changes(changes)
+
+    # Extract latest date string
+    latest_date_str = ""
+    if latest_changes:
+        s_date = _get_val(latest_changes[0], "source_date")
+        if s_date:
+            latest_date_str = str(s_date)[:10]
+
+    # Deduplicate changes by section on the latest date
+    unique_sections = {}
+    for c in latest_changes:
+        sec = _get_val(c, "section", "Safety Information") or "Safety Information"
+        txt = _get_val(c, "updated_text", "") or ""
+        if sec not in unique_sections or len(txt) > len(_get_val(unique_sections[sec], "updated_text", "")):
+            unique_sections[sec] = c
+
+    html_parts = []
+    html_parts.append(f"<h2>{html.escape(display_clean)} - Safety Information</h2>")
+    meta = []
+    if latest_date_str:
+        meta.append(f"<strong>Approval Date:</strong> {html.escape(latest_date_str)}")
+    if active_ingr:
+        meta.append(f"<strong>Active Ingredient:</strong> {html.escape(active_ingr)}")
+    if app_num and app_num != "N/A":
+        meta.append(f"<strong>Application:</strong> {html.escape(app_num)}")
+    if meta:
+        meta_str = " | ".join(meta)
+        html_parts.append(f"<p>{meta_str}</p>")
+
+    bullet_pat = re.compile(r"^[•\-*]\s*")
+
+    for sec, rec in unique_sections.items():
+        raw_text = _get_val(rec, "updated_text", "") or ""
+        cleaned_text = clean_clinical_text(raw_text)
+        if not cleaned_text:
+            continue
+
+        html_parts.append(f"<h2>{html.escape(sec)}</h2>")
+
+        lines = [l.strip() for l in cleaned_text.split("\n") if l.strip()]
+        i = 0
+        n = len(lines)
+
+        while i < n:
+            line = lines[i]
+
+            # Check if this line starts a bullet list
+            if line.startswith(("•", "-", "*")):
+                bullet_items = []
+                while i < n and lines[i].startswith(("•", "-", "*")):
+                    b_txt = bullet_pat.sub("", lines[i])
+                    b_clean = re.sub(r"<\/?(?:u|i|em|strong|b)>", "", b_txt).strip()
+                    # Check for bold prefix in bullet e.g. 'Skin and Appendages: ...'
+                    kv_bullet = re.match(r"^([A-Za-z\s\-]+:)\s*(.*)", b_clean)
+                    if kv_bullet:
+                        bullet_items.append(f"<li><strong>{html.escape(kv_bullet.group(1))}</strong> {html.escape(kv_bullet.group(2))}</li>")
+                    else:
+                        bullet_items.append(f"<li>{html.escape(b_clean)}</li>")
+                    i += 1
+                inner = "".join(bullet_items)
+                html_parts.append(f"<ul>{inner}</ul>")
+                continue
+
+            # Check if line is a subheading (e.g. 'Postmarketing Experience')
+            clean_no_tags = re.sub(r"<\/?(?:strong|b|i|u|em)>", "", line).strip()
+            subhead_match = re.match(r"^([A-Z][A-Za-z\s\(\)\-]{3,60})$", clean_no_tags)
+            if subhead_match and not line.endswith(".") and not line.endswith(":"):
+                html_parts.append(f"<h3>{html.escape(subhead_match.group(1))}</h3>")
+                i += 1
+                continue
+
+            # Check for key-value bold prefix e.g. "Gastrointestinal: text..." or "<b>Skin and Appendages:</b> text"
+            clean_text_line = re.sub(r"<\/?(?:u|i|em)>", "", line).strip()
+            kv_match = re.match(r"^(?:<strong>|<b>)?([A-Za-z\s\-]+:)(?:</strong>|</b>)?\s*(.*)", clean_text_line)
+            if kv_match:
+                prefix = re.sub(r"<\/?(?:strong|b|i|u)>", "", kv_match.group(1)).strip()
+                content = re.sub(r"<\/?(?:strong|b|i|u)>", "", kv_match.group(2)).strip()
+                html_parts.append(f"<p><strong>{html.escape(prefix)}</strong> {html.escape(content)}</p>")
+                i += 1
+                continue
+
+            # Regular paragraph line
+            clean_line = re.sub(r"<\/?(?:strong|b|i|u|em)>", "", line).strip()
+            if clean_line:
+                html_parts.append(f"<p>{html.escape(clean_line)}</p>")
+            i += 1
+
+    inner_body = "\n".join(html_parts)
+
+    if not standalone:
+        return inner_body
+
+    # Minimal, clean standard styles matching pdf_extractor's export format
+    return (
+        f"<!DOCTYPE html>\n"
+        f'<html lang="en">\n'
+        f"<head>\n"
+        f'    <meta charset="UTF-8">\n'
+        f'    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
+        f"    <title>{html.escape(display_clean)} - Safety Information</title>\n"
+        f"    <style>\n"
+        f"    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 40px; background-color: #f9f9f9; color: #1e293b; line-height: 1.6; }}\n"
+        f"    h2, h3 {{ color: #0f172a; margin-top: 24px; }}\n"
+        f"    p {{ margin: 12px 0; color: #333; line-height: 1.6; }}\n"
+        f"    ul, ol {{ margin: 10px 0 10px 24px; color: #333; }}\n"
+        f"    li {{ margin-bottom: 4px; }}\n"
+        f"    </style>\n"
+        f"</head>\n"
+        f"<body>\n"
+        f"{inner_body}\n"
+        f"</body>\n"
+        f"</html>"
+    )
+
+
 def export_drug_json(drug: Any, changes: List[Any]) -> str:
-    """Generate structured JSON of all safety labeling changes for a drug."""
+    """Generate structured JSON of safety labeling changes for a drug (filtered to latest date only)."""
     d_id = _get_val(drug, "id", None)
     d_name = _get_val(drug, "display_name", "")
     norm_name = _get_val(drug, "normalized_name", "")
@@ -99,23 +288,44 @@ def export_drug_json(drug: Any, changes: List[Any]) -> str:
     created = _get_val(drug, "created_at", "")
     updated = _get_val(drug, "updated_at", "")
 
+    # Filter to latest date only
+    latest_changes = filter_latest_date_changes(changes)
+
+    # Deduplicate changes by section on the latest date
+    unique_sections = {}
+    for c in latest_changes:
+        sec = _get_val(c, "section", "Safety Information") or "Safety Information"
+        txt = _get_val(c, "updated_text", "") or ""
+        if sec not in unique_sections or len(txt) > len(_get_val(unique_sections[sec], "updated_text", "")):
+            unique_sections[sec] = c
+
     items = []
-    for c in changes:
+    for sec, c in unique_sections.items():
         s_date = _get_val(c, "source_date", None)
         app_date = _get_val(c, "approval_date", None)
         eff_date = _get_val(c, "effective_date", None)
         ver_date = _get_val(c, "last_verified_at", None)
 
+        raw_up = _get_val(c, "updated_text", None)
+        clean_up = clean_clinical_text(raw_up) if raw_up else None
+        if clean_up:
+            clean_up = re.sub(r"<[^>]+>", "", clean_up).strip()
+
+        raw_orig = _get_val(c, "original_text", None)
+        clean_orig = clean_clinical_text(raw_orig) if raw_orig else None
+        if clean_orig:
+            clean_orig = re.sub(r"<[^>]+>", "", clean_orig).strip()
+
         items.append({
             "id": _get_val(c, "id", None),
-            "section": _get_val(c, "section", None),
+            "section": sec,
             "source_record_id": _get_val(c, "source_record_id", None),
             "source_date": str(s_date)[:10] if s_date else None,
             "approval_date": str(app_date)[:10] if app_date else None,
             "effective_date": str(eff_date)[:10] if eff_date else None,
             "change_type": _get_val(c, "change_type", "Labeling Revision"),
-            "updated_text": _get_val(c, "updated_text", None),
-            "original_text": _get_val(c, "original_text", None),
+            "updated_text": clean_up,
+            "original_text": clean_orig,
             "fda_comment": _get_val(c, "fda_comment", None),
             "source_url": _get_val(c, "source_url", None),
             "content_hash": _get_val(c, "content_hash", None),
@@ -137,6 +347,14 @@ def export_drug_json(drug: Any, changes: List[Any]) -> str:
         "safety_changes": items,
     }
     return json.dumps(data, indent=2)
+
+
+def export_drug_html(drug: Any, changes: List[Any], standalone: bool = True) -> str:
+    """
+    Generate clean, semantically structured HTML report matching pdf_extractor format,
+    filtered to the latest date only, without bloated CSS classes.
+    """
+    return export_drug_clean_html(drug, changes, standalone=standalone)
 
 
 def render_homepage_html(
@@ -531,12 +749,13 @@ def render_homepage_html(
 
         <form action="/" method="get" class="search-box">
             <select name="source" class="source-select" id="source-select" aria-label="Select Source">
-                <option value="ALL" {selected_all}>🌐 All Sources (US + Canada + Australia + UK)</option>
-                <option value="UK_MHRA" {selected_mhra}>🇬🇧 UK MHRA (Drug Safety Update)</option>
-                <option value="FDA_MEDWATCH" {selected_mw}>🚨 FDA MedWatch (Safety Alerts & Adverse Events)</option>
-                <option value="AUSTRALIA_TGA" {selected_tga}>🇦🇺 Australia TGA</option>
-                <option value="HEALTH_CANADA_INFOWATCH" {selected_hc}>🍁 Health Canada InfoWatch</option>
-                <option value="FDA_SRLC" {selected_fda}>🇺🇸 US FDA SrLC</option>
+                <option value="FDA_SRLC" selected>🇺🇸 US FDA SrLC</option>
+                <!-- TEMPORARILY DISABLED: Re-enable when ready for multi-source search -->
+                <!-- <option value="ALL" {selected_all}>🌐 All Sources (US + Canada + Australia + UK)</option> -->
+                <!-- <option value="UK_MHRA" {selected_mhra}>🇬🇧 UK MHRA (Drug Safety Update)</option> -->
+                <!-- <option value="FDA_MEDWATCH" {selected_mw}>🚨 FDA MedWatch (Safety Alerts & Adverse Events)</option> -->
+                <!-- <option value="AUSTRALIA_TGA" {selected_tga}>🇦🇺 Australia TGA</option> -->
+                <!-- <option value="HEALTH_CANADA_INFOWATCH" {selected_hc}>🍁 Health Canada InfoWatch</option> -->
             </select>
             <input type="text" name="q" class="search-input" placeholder="Enter medicine or active ingredient (e.g. Ozempic, Tecfidera, Warfarin, Aspirin)..." required value="{html.escape(query)}">
             <button type="submit" class="btn btn-primary" id="search-submit">Search</button>
@@ -3985,6 +4204,9 @@ def render_drug_detail_html(drug: dict, changes: list) -> str:
             </div>
             <div class="export-actions">
                 {top_copy_btn}
+                <a href="/drugs/{d_id}/export?format=html" class="btn-export" download>
+                    📥 HTML
+                </a>
                 <a href="/drugs/{d_id}/export?format=csv" class="btn-export" download>
                     📥 CSV
                 </a>

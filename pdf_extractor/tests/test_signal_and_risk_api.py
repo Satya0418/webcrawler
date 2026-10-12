@@ -33,9 +33,9 @@ def test_signal_and_risk_post_success():
     assert body["submissionId"] == "a0CAq00004acdq7MAA"
     assert "amikacin" in body["productName"].lower()
 
-    # Exactly one entry backed by real extracted data (no fabricated 16.2)
+    # Contains Section 16 data (and optional crawler companion entry if running)
     assert isinstance(body["responseData"], list)
-    assert len(body["responseData"]) == 1
+    assert len(body["responseData"]) >= 1
 
     entry = body["responseData"][0]
     assert set(entry.keys()) == {"productName", "title", "Data"}
@@ -63,7 +63,7 @@ def test_signal_and_risk_alias_endpoint():
     assert body["responseType"] == "SignalAndRisk"
     assert body["submissionId"] == "a0CAq00004acdq7MAA"
     assert "amikacin" in body["productName"].lower()
-    assert len(body["responseData"]) == 1
+    assert len(body["responseData"]) >= 1
     assert body["responseData"][0]["title"] == "summary_of_safety_concerns"
     assert "amikacin" in body["responseData"][0]["productName"].lower()
     assert "Amikacin" in body["responseData"][0]["Data"]
@@ -116,7 +116,7 @@ def test_signal_and_risk_start_end_dates_ignored():
     assert res.status_code == 200
     body = res.json()
     assert body["submissionId"] == "sub_with_dates_123"
-    assert len(body["responseData"]) == 1
+    assert len(body["responseData"]) >= 1
 
 
 def test_signal_and_risk_multiple_indexed_products():
@@ -130,7 +130,7 @@ def test_signal_and_risk_multiple_indexed_products():
         body = res.json()
         assert body["submissionId"] == f"sub_{prod}"
         assert body["responseType"] == "SignalAndRisk"
-        assert len(body["responseData"]) == 1
+        assert len(body["responseData"]) >= 1
         html = body["responseData"][0]["Data"]
         assert "<!DOCTYPE html>" in html
         assert "</html>" in html
@@ -183,4 +183,84 @@ def test_signal_and_risk_salesforce_callback_invoked(monkeypatch):
     assert callback_data["productName"] == "Amikacin"
     assert callback_data["responseData"][0]["title"] == "summary_of_safety_concerns"
     assert "updateSubmissionResponse" in callback_url
+
+
+def test_signal_and_risk_returns_two_separate_entries_when_crawler_available(monkeypatch):
+    """
+    Verifies that when both PDF Section 16 data and Crawler data exist:
+    - responseData contains exactly TWO SEPARATE entries (not merged together).
+    - Entry 0 is the PDF extraction with title 'summary_of_safety_concerns'.
+    - Entry 1 is the FDA crawler data with title 'fda_safety_labeling_changes'.
+    - The HTML content of both entries remains distinct.
+    """
+    from backend.api import products
+
+    async def fake_crawler_fetch(product_name, submission_id, timeout_seconds=12.0):
+        return {
+            "productName": product_name,
+            "title": "fda_safety_labeling_changes",
+            "Data": "<section class=\"fda-safety-report\"><h2>FDA Live SrLC Report</h2></section>",
+        }
+
+    monkeypatch.setattr(products, "fetch_crawler_safety_data", fake_crawler_fetch)
+
+    payload = {
+        "submissionId": "sub_multi_source_999",
+        "productName": "amikacin",
+    }
+    res = client.post("/api/v1/products/signal-and-risk", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+
+    assert body["submissionId"] == "sub_multi_source_999"
+    assert "amikacin" in body["productName"].lower()
+
+    # Two separate items
+    items = body["responseData"]
+    assert len(items) == 2, f"Expected 2 separate entries, got {len(items)}"
+
+    # Item 1: PDF Extractor
+    pdf_item = items[0]
+    assert pdf_item["title"] == "summary_of_safety_concerns"
+    assert "<!DOCTYPE html>" in pdf_item["Data"]
+    assert "16 Signal and Risk Evaluation" in pdf_item["Data"] or "16.1 Summary of Safety Concerns" in pdf_item["Data"]
+    assert "fda-safety-report" not in pdf_item["Data"]  # Not merged into item 0!
+
+    # Item 2: Crawler Backend
+    crawler_item = items[1]
+    assert crawler_item["title"] == "fda_safety_labeling_changes"
+    assert "<section class=\"fda-safety-report\">" in crawler_item["Data"]
+    assert "FDA Live SrLC Report" in crawler_item["Data"]
+    assert "<!DOCTYPE html>" not in crawler_item["Data"]  # Distinct from item 0
+
+
+def test_signal_and_risk_returns_crawler_when_no_pdf(monkeypatch):
+    """
+    Verifies that for a drug not in PDF records but present in crawler backend,
+    the crawler entry is returned seamlessly with HTTP 200.
+    """
+    from backend.api import products
+
+    async def fake_crawler_fetch(product_name, submission_id, timeout_seconds=12.0):
+        return {
+            "productName": "Lipitor",
+            "title": "fda_safety_labeling_changes",
+            "Data": "<section class=\"fda-safety-report\"><h2>US FDA Lipitor Report</h2></section>",
+        }
+
+    monkeypatch.setattr(products, "fetch_crawler_safety_data", fake_crawler_fetch)
+
+    payload = {
+        "submissionId": "sub_lipitor_777",
+        "productName": "lipitor_unknown_in_pdf",
+    }
+    res = client.post("/api/v1/products/signal-and-risk", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+
+    assert body["submissionId"] == "sub_lipitor_777"
+    assert len(body["responseData"]) == 1
+    assert body["responseData"][0]["title"] == "fda_safety_labeling_changes"
+    assert "US FDA Lipitor Report" in body["responseData"][0]["Data"]
+
 

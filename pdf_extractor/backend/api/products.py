@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 import logging
 import httpx
 
-from backend.config import API_KEY, SALESFORCE_CALLBACK_URL
+from backend.config import API_KEY, SALESFORCE_CALLBACK_URL, CRAWLER_BACKEND_URL
 from backend.database.db import get_db
 from backend.database.models import ProductSectionRecord
 from backend.extraction.section_extractor import SectionExtractor
@@ -518,6 +518,52 @@ async def send_salesforce_callback(payload: dict, callback_url: Optional[str] = 
         return {"status": "error", "error": str(exc), "url": target_url}
 
 
+async def fetch_crawler_safety_data(
+    product_name: str,
+    submission_id: str,
+    timeout_seconds: float = 12.0,
+) -> Optional[Dict[str, Any]]:
+    """
+    Queries the sibling medicine crawler backend service for live or indexed FDA safety labeling data.
+    Gracefully handles connection errors or missing data without blocking or failing the request.
+    """
+    candidates = [CRAWLER_BACKEND_URL]
+    if "crawler_backend" in CRAWLER_BACKEND_URL:
+        candidates.append("http://127.0.0.1:8001")
+
+    payload = {
+        "submissionId": submission_id,
+        "productName": product_name,
+        "callbackUrl": "skip",  # prevent crawler from sending duplicate callback
+    }
+
+    for base_url in candidates:
+        endpoint = f"{base_url.rstrip('/')}/api/drugs/signal-and-risk"
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                resp = await client.post(endpoint, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    resp_items = data.get("responseData") or []
+                    if resp_items and isinstance(resp_items, list):
+                        item = resp_items[0]
+                        if item.get("Data"):
+                            return {
+                                "productName": item.get("productName") or product_name,
+                                "title": item.get("title") or "fda_safety_labeling_changes",
+                                "Data": item.get("Data"),
+                            }
+                elif resp.status_code == 404:
+                    logger.debug("Crawler backend returned 404 for '%s'", product_name)
+                    return None
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            continue
+        except Exception as exc:
+            logger.warning("Error fetching crawler data from %s for '%s': %s", endpoint, product_name, exc)
+            return None
+    return None
+
+
 @router.post(
     "/products/signal-and-risk",
     response_model=SignalAndRiskResponse,
@@ -540,9 +586,11 @@ async def post_signal_and_risk(
 ):
     """
     **Teammate Integration Endpoint**:
-    Receives submissionId and productName, looks up the indexed PDF Section 16 data,
-    dispatches an outbound callback to Salesforce (updateSubmissionResponse),
-    and returns a SignalAndRisk payload containing the extracted HTML inside JSON.
+    Receives submissionId and productName, looks up both:
+    1. Indexed PDF Section 16 data (summary_of_safety_concerns)
+    2. Live/indexed US FDA SrLC crawler data (fda_safety_labeling_changes)
+    Returns a SignalAndRisk payload with two separate entries in responseData.
+    Dispatches an outbound callback to Salesforce (updateSubmissionResponse).
     """
     # 1. Validate required fields
     raw_sub_id = req.submissionId if req.submissionId is not None else req.submission_id
@@ -563,29 +611,45 @@ async def post_signal_and_risk(
 
     # 2. Look up product record in indexed database
     record = find_product_record(db, prod_name)
-    if not record or record.status != "success" or not record.extracted_html or not record.extracted_html.strip():
+    has_pdf_data = bool(record and record.status == "success" and record.extracted_html and record.extracted_html.strip())
+
+    # 3. Query crawler backend for US FDA safety & labeling changes asynchronously
+    crawler_item = await fetch_crawler_safety_data(product_name=prod_name, submission_id=sub_id)
+
+    # 4. If neither source has data, return 404
+    if not has_pdf_data and not crawler_item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No indexed Section 16 data found for product '{prod_name}'.",
         )
 
-    # 3. Return Section 16 HTML data inside JSON structure (tables strictly omitted)
-    clean_html = strip_html_tables(record.extracted_html or "")
-    matched_product = record.product_name or prod_name
+    matched_product = (record.product_name if record else None) or (crawler_item.get("productName") if crawler_item else None) or prod_name
+
+    # 5. Build responseData with separate entries (not merging them together)
+    response_items = []
+    if has_pdf_data:
+        clean_pdf_html = strip_html_tables(record.extracted_html or "")
+        response_items.append({
+            "productName": record.product_name or matched_product,
+            "title": "summary_of_safety_concerns",
+            "Data": clean_pdf_html,
+        })
+
+    if crawler_item:
+        response_items.append({
+            "productName": crawler_item.get("productName") or matched_product,
+            "title": crawler_item.get("title") or "fda_safety_labeling_changes",
+            "Data": crawler_item.get("Data"),
+        })
+
     response_payload = {
         "responseType": "SignalAndRisk",
         "submissionId": sub_id,
         "productName": matched_product,
-        "responseData": [
-            {
-                "productName": matched_product,
-                "title": "summary_of_safety_concerns",
-                "Data": clean_html,
-            }
-        ],
+        "responseData": response_items,
     }
 
-    # 4. Outbound callback to Salesforce updateSubmissionResponse webhook
+    # 6. Outbound callback to Salesforce updateSubmissionResponse webhook
     target_callback = (req.callbackUrl or req.callback_url or SALESFORCE_CALLBACK_URL or "").strip()
     if target_callback:
         await send_salesforce_callback(response_payload, target_callback)

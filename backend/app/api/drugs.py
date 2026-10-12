@@ -8,8 +8,11 @@ import re
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Response
+from fastapi.responses import HTMLResponse
+import httpx
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models.drug import Drug, SafetyLabelingChange
 from app.schemas.drug import (
@@ -18,15 +21,20 @@ from app.schemas.drug import (
     SearchResultResponse,
     DrugSearchResultItem,
     SafetyLabelingChangeResponse,
+    SignalAndRiskItem,
+    SignalAndRiskResponse,
+    SignalAndRiskIntegrationRequest,
 )
 from app.services.database_service import DatabaseService
 from app.crawler.fda_crawler import crawler
 from app.scrapers.fda_srlc_scraper import scraper, parse_fda_date
-from app.ui import export_drug_csv, export_drug_json
-from app.sources.health_canada.infowatch.adapter import adapter as hc_adapter
-from app.sources.australia_tga.adapter import tga_adapter
-from app.sources.fda_medwatch.adapter import medwatch_adapter
-from app.sources.uk_mhra.adapter import mhra_adapter
+from app.ui import export_drug_csv, export_drug_json, export_drug_html, export_drug_clean_html
+# ── TEMPORARILY DISABLED: Other regulatory adapters (Only US FDA SrLC is active) ──
+# Uncomment when ready to re-enable other regulatory sources:
+# from app.sources.health_canada.infowatch.adapter import adapter as hc_adapter
+# from app.sources.australia_tga.adapter import tga_adapter
+# from app.sources.fda_medwatch.adapter import medwatch_adapter
+# from app.sources.uk_mhra.adapter import mhra_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -55,30 +63,32 @@ async def search_drugs(
 
     # ── Multi-Source Search (ALL) ───────────────────────────────────────
     if source_clean == "ALL":
-        try:
-            await hc_adapter.search(query=query_clean, db=db)
-        except Exception as exc:
-            logger.error("Health Canada search error for '%s': %s", query_clean, exc, exc_info=True)
-            db.rollback()
+        # ── TEMPORARILY DISABLED: Other regulatory crawlers ─────────────────
+        # try:
+        #     await hc_adapter.search(query=query_clean, db=db)
+        # except Exception as exc:
+        #     logger.error("Health Canada search error for '%s': %s", query_clean, exc, exc_info=True)
+        #     db.rollback()
 
-        try:
-            await tga_adapter.search(query=query_clean, db=db)
-        except Exception as exc:
-            logger.error("Australia TGA search error for '%s': %s", query_clean, exc, exc_info=True)
-            db.rollback()
+        # try:
+        #     await tga_adapter.search(query=query_clean, db=db)
+        # except Exception as exc:
+        #     logger.error("Australia TGA search error for '%s': %s", query_clean, exc, exc_info=True)
+        #     db.rollback()
 
-        try:
-            await medwatch_adapter.search(query=query_clean, db=db)
-        except Exception as exc:
-            logger.error("FDA MedWatch search error for '%s': %s", query_clean, exc, exc_info=True)
-            db.rollback()
+        # try:
+        #     await medwatch_adapter.search(query=query_clean, db=db)
+        # except Exception as exc:
+        #     logger.error("FDA MedWatch search error for '%s': %s", query_clean, exc, exc_info=True)
+        #     db.rollback()
 
-        try:
-            await mhra_adapter.search(query=query_clean, db=db)
-        except Exception as exc:
-            logger.error("UK MHRA search error for '%s': %s", query_clean, exc, exc_info=True)
-            db.rollback()
+        # try:
+        #     await mhra_adapter.search(query=query_clean, db=db)
+        # except Exception as exc:
+        #     logger.error("UK MHRA search error for '%s': %s", query_clean, exc, exc_info=True)
+        #     db.rollback()
 
+        # Live US FDA SrLC crawl:
         try:
             html = await crawler.search_drug(query_clean)
             if html:
@@ -130,128 +140,37 @@ async def search_drugs(
             results=results_items_all,
         )
 
-    # ── Australia TGA path ────────────────────────────────────────────
-    if source_clean in ("AUSTRALIA_TGA", "TGA"):
-        try:
-            local_drugs = await tga_adapter.search(query=query_clean, db=db)
-        except Exception as exc:
-            logger.error("Australia TGA search error for '%s': %s", query_clean, exc, exc_info=True)
-            db.rollback()
-            local_drugs = DatabaseService.search_drugs(db, query_clean, source="AUSTRALIA_TGA")
-
+    # ── TEMPORARILY DISABLED: Non-FDA individual crawler branches ───────
+    # (Uncomment when other agencies are re-enabled)
+    # if source_clean in ("AUSTRALIA_TGA", "TGA"):
+    #     try:
+    #         local_drugs = await tga_adapter.search(query=query_clean, db=db)
+    #     except Exception as exc:
+    #         logger.error("Australia TGA search error for '%s': %s", query_clean, exc, exc_info=True)
+    #         db.rollback()
+    #         local_drugs = DatabaseService.search_drugs(db, query_clean, source="AUSTRALIA_TGA")
+    # ...
+    if source_clean in ("AUSTRALIA_TGA", "TGA", "HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA", "FDA_MEDWATCH", "MEDWATCH", "UK_MHRA", "MHRA"):
+        local_drugs = DatabaseService.search_drugs(db, query_clean, source=source_clean)
         results_items: List[DrugSearchResultItem] = []
         for d in local_drugs:
             changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
-            tga_changes = [c for c in changes if "AUSTRALIA_TGA" in (c.source or "") or "TGA" in (c.source or "")]
-            last_verified = tga_changes[0].last_verified_at if tga_changes else d.updated_at or d.created_at
+            last_verified = changes[0].last_verified_at if changes else d.updated_at or d.created_at
             results_items.append(
                 DrugSearchResultItem(
                     drug_id=d.id,
                     drug_name=d.display_name,
                     active_ingredient=d.active_ingredient,
                     application_number=d.application_number,
-                    source=d.source or "AUSTRALIA_TGA",
-                    safety_change_count=len(tga_changes),
+                    source=d.source or source_clean,
+                    safety_change_count=len(changes),
                     last_verified_at=last_verified,
                 )
             )
         return SearchResultResponse(
             query=query_clean,
-            source="AUSTRALIA_TGA",
+            source=source_clean,
             results=results_items,
-        )
-
-    # ── Health Canada path ─────────────────────────────────────────────
-    if source_clean in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA"):
-        try:
-            local_drugs = await hc_adapter.search(query=query_clean, db=db)
-        except Exception as exc:
-            logger.error("Health Canada search error for '%s': %s", query_clean, exc, exc_info=True)
-            db.rollback()
-            local_drugs = DatabaseService.search_drugs(db, query_clean, source="HEALTH_CANADA")
-
-        results_items: List[DrugSearchResultItem] = []
-        for d in local_drugs:
-            changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
-            hc_changes = [c for c in changes if "HEALTH_CANADA" in (c.source or "")]
-            last_verified = hc_changes[0].last_verified_at if hc_changes else d.updated_at or d.created_at
-            results_items.append(
-                DrugSearchResultItem(
-                    drug_id=d.id,
-                    drug_name=d.display_name,
-                    active_ingredient=d.active_ingredient,
-                    application_number=d.application_number,
-                    source=d.source or "HEALTH_CANADA",
-                    safety_change_count=len(hc_changes),
-                    last_verified_at=last_verified,
-                )
-            )
-        return SearchResultResponse(
-            query=query_clean,
-            source="HEALTH_CANADA",
-            results=results_items,
-        )
-
-    # ── FDA MedWatch path ──────────────────────────────────────────────
-    if source_clean in ("FDA_MEDWATCH", "MEDWATCH"):
-        try:
-            local_drugs = await medwatch_adapter.search(query=query_clean, db=db)
-        except Exception as exc:
-            logger.error("FDA MedWatch search error for '%s': %s", query_clean, exc, exc_info=True)
-            db.rollback()
-            local_drugs = DatabaseService.search_drugs(db, query_clean, source="FDA_MEDWATCH")
-
-        results_items: List[DrugSearchResultItem] = []
-        for d in local_drugs:
-            changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
-            mw_changes = [c for c in changes if "MEDWATCH" in (c.source or "")]
-            last_verified = mw_changes[0].last_verified_at if mw_changes else d.updated_at or d.created_at
-            results_items.append(
-                DrugSearchResultItem(
-                    drug_id=d.id,
-                    drug_name=d.display_name,
-                    active_ingredient=d.active_ingredient,
-                    application_number=d.application_number,
-                    source=d.source or "FDA_MEDWATCH",
-                    safety_change_count=len(mw_changes),
-                    last_verified_at=last_verified,
-                )
-            )
-        return SearchResultResponse(
-            query=query_clean,
-            source="FDA_MEDWATCH",
-            results=results_items,
-        )
-
-    # ── UK MHRA path ──────────────────────────────────────────────────
-    if source_clean in ("UK_MHRA", "MHRA"):
-        try:
-            local_drugs = await mhra_adapter.search(query=query_clean, db=db)
-        except Exception as exc:
-            logger.error("UK MHRA search error for '%s': %s", query_clean, exc, exc_info=True)
-            db.rollback()
-            local_drugs = DatabaseService.search_drugs(db, query_clean, source="UK_MHRA")
-
-        results_items_mhra: List[DrugSearchResultItem] = []
-        for d in local_drugs:
-            changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
-            mhra_changes = [c for c in changes if "MHRA" in (c.source or "")]
-            last_verified = mhra_changes[0].last_verified_at if mhra_changes else d.updated_at or d.created_at
-            results_items_mhra.append(
-                DrugSearchResultItem(
-                    drug_id=d.id,
-                    drug_name=d.display_name,
-                    active_ingredient=d.active_ingredient,
-                    application_number=d.application_number,
-                    source=d.source or "UK_MHRA",
-                    safety_change_count=len(mhra_changes),
-                    last_verified_at=last_verified,
-                )
-            )
-        return SearchResultResponse(
-            query=query_clean,
-            source="UK_MHRA",
-            results=results_items_mhra,
         )
 
     # ── FDA SrLC path (original behaviour) ─────────────────────────────
@@ -332,143 +251,215 @@ async def search_drugs(
     )
 
 
-@router.get("/search/health-canada", response_model=SearchResultResponse)
-async def search_health_canada(
-    q: str = Query(..., min_length=1, description="Medicine name, brand, generic, or molecule"),
-    force_refresh: bool = Query(False, description="Force re-crawl even if local data is fresh"),
+# ── TEMPORARILY DISABLED: Dedicated non-FDA search endpoints ──────────────────
+# Uncomment when ready to re-enable other regulatory sources:
+# @router.get("/search/health-canada", response_model=SearchResultResponse)
+# async def search_health_canada(
+#     q: str = Query(..., min_length=1, description="Medicine name, brand, generic, or molecule"),
+#     force_refresh: bool = Query(False, description="Force re-crawl even if local data is fresh"),
+#     db: Session = Depends(get_db),
+# ):
+#     ...
+# @router.get("/search/fda-medwatch", response_model=SearchResultResponse)
+# async def search_fda_medwatch(
+#     q: str = Query(..., min_length=1, description="Medicine name or active ingredient"),
+#     force_refresh: bool = Query(False, description="Force re-crawl even if local data is fresh"),
+#     db: Session = Depends(get_db),
+# ):
+#     ...
+# @router.get("/search/uk-mhra", response_model=SearchResultResponse)
+# async def search_uk_mhra(
+#     q: str = Query(..., min_length=1, description="Medicine name or active ingredient"),
+#     force_refresh: bool = Query(False, description="Force re-crawl even if local data is fresh"),
+#     db: Session = Depends(get_db),
+# ):
+#     ...
+
+
+async def send_salesforce_callback(payload: dict, callback_url: Optional[str] = None) -> dict:
+    """
+    Dispatches the extracted drug safety Signal and Risk payload to the Salesforce
+    updateSubmissionResponse webhook.
+    """
+    target_url = (callback_url or getattr(settings, "SALESFORCE_CALLBACK_URL", None) or "").strip()
+    if not target_url:
+        logger.warning("No Salesforce callback URL configured; skipping outbound webhook.")
+        return {"status": "skipped", "detail": "No callback URL configured"}
+
+    logger.info("Dispatching Salesforce callback for submissionId '%s' to %s", payload.get("submissionId"), target_url)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                target_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            logger.info("Salesforce callback returned status %s", resp.status_code)
+            return {
+                "status": "delivered" if resp.status_code in (200, 201, 204) else "failed",
+                "status_code": resp.status_code,
+                "url": target_url,
+            }
+    except Exception as exc:
+        logger.error("Failed to send Salesforce callback to %s: %s", target_url, exc)
+        return {"status": "error", "error": str(exc), "url": target_url}
+
+
+@router.post(
+    "/signal-and-risk",
+    response_model=SignalAndRiskResponse,
+    summary="Teammate Integration: Fetch FDA Drug Safety data by submission and product",
+)
+@router.post(
+    "/products/signal-and-risk",
+    response_model=SignalAndRiskResponse,
+    include_in_schema=False,
+)
+@router.post(
+    "/product/signal-and-risk",
+    response_model=SignalAndRiskResponse,
+    include_in_schema=False,
+)
+async def post_signal_and_risk(
+    req: SignalAndRiskIntegrationRequest,
     db: Session = Depends(get_db),
 ):
     """
-    Search Health Canada Health Product InfoWatch for a medicine.
-
-    Checks local database first. If data is stale or missing, crawls the
-    Health Canada published-newsletters index, identifies relevant articles,
-    extracts safety information, and stores results.
-
-    Example: GET /api/drugs/search/health-canada?q=dimethyl+fumarate
+    **Teammate Integration Endpoint**:
+    Receives submissionId and productName, looks up or live-crawls FDA SrLC drug safety data,
+    dispatches an outbound callback to Salesforce (updateSubmissionResponse),
+    and returns a SignalAndRisk payload containing the extracted HTML inside the 'Data' field.
+    Supports format='html' (pure HTML response) or format='data' ({"Data": "<html..."}).
     """
-    query_clean = q.strip()
-    try:
-        local_drugs = await hc_adapter.search(
-            query=query_clean, db=db, force_refresh=force_refresh
+    raw_sub_id = req.submissionId if req.submissionId is not None else req.submission_id
+    if raw_sub_id is None or not str(raw_sub_id).strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Field 'submissionId' is required and cannot be empty.",
         )
-    except Exception as exc:
-        logger.error("HC search error for '%s': %s", query_clean, exc, exc_info=True)
-        db.rollback()
-        local_drugs = DatabaseService.search_drugs(db, query_clean)
+    sub_id = str(raw_sub_id).strip()
 
-    results_items: List[DrugSearchResultItem] = []
-    for d in local_drugs:
-        changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
-        hc_changes = [c for c in changes if c.source == "HEALTH_CANADA_INFOWATCH"]
-        last_verified = (
-            hc_changes[0].last_verified_at if hc_changes else d.updated_at or d.created_at
+    raw_prod_name = req.productName if req.productName is not None else req.product_name
+    if raw_prod_name is None or not str(raw_prod_name).strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Field 'productName' is required and cannot be empty.",
         )
-        results_items.append(
-            DrugSearchResultItem(
-                drug_id=d.id,
-                drug_name=d.display_name,
-                active_ingredient=d.active_ingredient,
-                application_number=d.application_number,
-                safety_change_count=len(hc_changes),
-                last_verified_at=last_verified,
-            )
+    prod_name = str(raw_prod_name).strip()
+
+    # Step 1: Look up in local database
+    local_drugs = DatabaseService.search_drugs(db, prod_name)
+    drug = local_drugs[0] if local_drugs else None
+    changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id) if drug else []
+
+    # Step 2: If no data locally, query FDA SrLC live
+    if not drug or not changes:
+        try:
+            html = await crawler.search_drug(prod_name)
+            if html:
+                search_results = scraper.parse_search_results(html)
+                for candidate in search_results[:3]:
+                    c_drug, is_new = DatabaseService.insert_or_update_drug(db, candidate)
+                    detail_url = candidate.get("detail_url")
+                    if detail_url:
+                        crawler.visited_urls.discard(detail_url)
+                        detail_html = await crawler.get_detail_page(detail_url)
+                        if detail_html:
+                            detail_data = scraper.parse_detail_page(detail_html, source_url=detail_url)
+                            if detail_data:
+                                if not c_drug.active_ingredient and detail_data.get("active_ingredient"):
+                                    c_drug.active_ingredient = detail_data["active_ingredient"]
+                                if not c_drug.application_number and detail_data.get("application_number"):
+                                    c_drug.application_number = detail_data["application_number"]
+                                for change in detail_data.get("safety_changes", []):
+                                    DatabaseService.save_safety_change(db, c_drug.id, change)
+                db.commit()
+                local_drugs = DatabaseService.search_drugs(db, prod_name)
+                drug = local_drugs[0] if local_drugs else None
+                changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id) if drug else []
+        except Exception as exc:
+            logger.error("Live FDA crawl error in signal-and-risk for '%s': %s", prod_name, exc)
+            db.rollback()
+
+    if not drug:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No FDA Drug Safety data found for product '{prod_name}'.",
         )
 
-    return SearchResultResponse(
-        query=query_clean,
-        source="HEALTH_CANADA_INFOWATCH",
-        results=results_items,
-    )
+    matched_product = drug.display_name or prod_name
+    html_content = export_drug_clean_html(drug, changes, standalone=False)
+    fmt = (req.format or "json").lower()
+
+    if fmt == "html":
+        full_html = export_drug_clean_html(drug, changes, standalone=True)
+        return HTMLResponse(content=full_html, media_type="text/html")
+
+    if fmt == "data":
+        return {"Data": html_content}
+
+    response_payload = {
+        "responseType": "SignalAndRisk",
+        "submissionId": sub_id,
+        "productName": matched_product,
+        "responseData": [
+            {
+                "productName": matched_product,
+                "title": "fda_safety_labeling_changes",
+                "Data": html_content,
+            }
+        ],
+    }
+
+    # Dispatch outbound callback if target specified or configured
+    target_callback = (req.callbackUrl or req.callback_url or getattr(settings, "SALESFORCE_CALLBACK_URL", None) or "").strip()
+    if target_callback and target_callback.lower() not in ("none", "skip", "disabled", "false"):
+        await send_salesforce_callback(response_payload, target_callback)
+
+    return response_payload
 
 
-@router.get("/search/fda-medwatch", response_model=SearchResultResponse)
-async def search_fda_medwatch(
-    q: str = Query(..., min_length=1, description="Medicine name or active ingredient"),
-    force_refresh: bool = Query(False, description="Force re-crawl even if local data is fresh"),
+@router.get(
+    "/signal-and-risk",
+    response_model=SignalAndRiskResponse,
+    summary="Teammate Integration: Fetch FDA Drug Safety data via GET query for browser/API testing",
+)
+@router.get(
+    "/products/signal-and-risk",
+    response_model=SignalAndRiskResponse,
+    include_in_schema=False,
+)
+@router.get(
+    "/product/signal-and-risk",
+    response_model=SignalAndRiskResponse,
+    include_in_schema=False,
+)
+async def get_signal_and_risk(
+    productName: Optional[str] = Query(None, description="Medicine or product name (e.g. 'amikacin', 'Lipitor')"),
+    submissionId: Optional[str] = Query("browser_test", description="Submission identifier"),
+    callbackUrl: Optional[str] = Query(None, description="Optional custom Salesforce callback webhook URL"),
+    format: Optional[str] = Query("json", description="Output format: 'json', 'html', or 'data'"),
+    product_name: Optional[str] = Query(None, include_in_schema=False),
+    submission_id: Optional[str] = Query(None, include_in_schema=False),
+    callback_url: Optional[str] = Query(None, include_in_schema=False),
     db: Session = Depends(get_db),
 ):
     """
-    Search FDA MedWatch Safety Information and Adverse Event Reporting Program for a medicine.
+    Browser & Client Testing Helper:
+    Fetch FDA safety data directly using GET parameters, e.g.
+    /api/drugs/signal-and-risk?productName=Lipitor&submissionId=test123
     """
-    query_clean = q.strip()
-    try:
-        local_drugs = await medwatch_adapter.search(
-            query=query_clean, db=db, force_refresh=force_refresh
+    prod = (productName or product_name or "").strip()
+    sub = (submissionId or submission_id or "browser_test").strip()
+    cb = (callbackUrl or callback_url or "").strip() or None
+    if not prod:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Query parameter 'productName' is required.",
         )
-    except Exception as exc:
-        logger.error("MedWatch search error for '%s': %s", query_clean, exc, exc_info=True)
-        db.rollback()
-        local_drugs = DatabaseService.search_drugs(db, query_clean, source="FDA_MEDWATCH")
-
-    results_items: List[DrugSearchResultItem] = []
-    for d in local_drugs:
-        changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
-        mw_changes = [c for c in changes if "MEDWATCH" in (c.source or "")]
-        last_verified = (
-            mw_changes[0].last_verified_at if mw_changes else d.updated_at or d.created_at
-        )
-        results_items.append(
-            DrugSearchResultItem(
-                drug_id=d.id,
-                drug_name=d.display_name,
-                active_ingredient=d.active_ingredient,
-                application_number=d.application_number,
-                source=d.source or "FDA_MEDWATCH",
-                safety_change_count=len(mw_changes),
-                last_verified_at=last_verified,
-            )
-        )
-
-    return SearchResultResponse(
-        query=query_clean,
-        source="FDA_MEDWATCH",
-        results=results_items,
-    )
-
-
-@router.get("/search/uk-mhra", response_model=SearchResultResponse)
-async def search_uk_mhra(
-    q: str = Query(..., min_length=1, description="Medicine name or active ingredient"),
-    force_refresh: bool = Query(False, description="Force re-crawl even if local data is fresh"),
-    db: Session = Depends(get_db),
-):
-    """
-    Search UK MHRA Drug Safety Update for a medicine.
-    """
-    query_clean = q.strip()
-    try:
-        local_drugs = await mhra_adapter.search(
-            query=query_clean, db=db, force_refresh=force_refresh
-        )
-    except Exception as exc:
-        logger.error("UK MHRA search error for '%s': %s", query_clean, exc, exc_info=True)
-        db.rollback()
-        local_drugs = DatabaseService.search_drugs(db, query_clean, source="UK_MHRA")
-
-    results_items: List[DrugSearchResultItem] = []
-    for d in local_drugs:
-        changes = DatabaseService.get_safety_changes_by_drug_id(db, d.id)
-        mhra_changes = [c for c in changes if "MHRA" in (c.source or "")]
-        last_verified = (
-            mhra_changes[0].last_verified_at if mhra_changes else d.updated_at or d.created_at
-        )
-        results_items.append(
-            DrugSearchResultItem(
-                drug_id=d.id,
-                drug_name=d.display_name,
-                active_ingredient=d.active_ingredient,
-                application_number=d.application_number,
-                source=d.source or "UK_MHRA",
-                safety_change_count=len(mhra_changes),
-                last_verified_at=last_verified,
-            )
-        )
-
-    return SearchResultResponse(
-        query=query_clean,
-        source="UK_MHRA",
-        results=results_items,
+    return await post_signal_and_risk(
+        SignalAndRiskIntegrationRequest(submissionId=sub, productName=prod, callbackUrl=cb, format=format),
+        db=db,
     )
 
 
@@ -659,11 +650,11 @@ async def get_drug_adverse_reactions_report(
 @router.get("/{drug_id}/export")
 async def export_drug_safety_data(
     drug_id: int,
-    format: str = Query("json", regex="^(csv|json)$"),
+    format: str = Query("json", regex="^(csv|json|html)$"),
     db: Session = Depends(get_db),
 ):
     """
-    Export drug safety labeling changes in CSV or JSON format.
+    Export drug safety labeling changes in HTML, CSV, or JSON format.
     """
     drug = DatabaseService.get_drug_by_id(db, drug_id)
     if not drug:
@@ -675,7 +666,16 @@ async def export_drug_safety_data(
     changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id)
     clean_name = (drug.normalized_name or "drug").replace(" ", "_")
 
-    if format.lower() == "csv":
+    if format.lower() == "html":
+        html_data = export_drug_html(drug, changes, standalone=True)
+        return Response(
+            content=html_data,
+            media_type="text/html",
+            headers={
+                "Content-Disposition": f'attachment; filename="{clean_name}_safety_report.html"'
+            },
+        )
+    elif format.lower() == "csv":
         csv_data = export_drug_csv(drug, changes)
         return Response(
             content=csv_data,
@@ -693,3 +693,34 @@ async def export_drug_safety_data(
                 "Content-Disposition": f'attachment; filename="{clean_name}_safety_changes.json"'
             },
         )
+
+
+@router.get("/{drug_id}/html", response_class=HTMLResponse)
+async def get_drug_html_report(
+    drug_id: int,
+    download: bool = Query(False, description="Whether to trigger file download"),
+    db: Session = Depends(get_db),
+):
+    """
+    Get clean standalone HTML report for a drug.
+    If download=true, sends Content-Disposition attachment header.
+    """
+    drug = DatabaseService.get_drug_by_id(db, drug_id)
+    if not drug:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Drug with ID {drug_id} not found",
+        )
+    changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id)
+    html_content = export_drug_html(drug, changes, standalone=True)
+    if download:
+        clean_name = (drug.normalized_name or "drug").replace(" ", "_")
+        return Response(
+            content=html_content,
+            media_type="text/html",
+            headers={
+                "Content-Disposition": f'attachment; filename="{clean_name}_safety_report.html"'
+            },
+        )
+    return HTMLResponse(content=html_content, media_type="text/html")
+

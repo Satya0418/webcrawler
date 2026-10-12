@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
+    # Salesforce Integration Callback
+    SALESFORCE_CALLBACK_URL: str = (
+        "https://apocompliance--dev.sandbox.my.salesforce-sites.com/services/apexrest/updateSubmissionResponse"
+    )
+
     # Logging
     LOG_LEVEL: str = "INFO"
 

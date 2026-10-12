@@ -102,3 +102,6 @@ SALESFORCE_CALLBACK_URL = os.getenv(
     "https://apocompliance--dev.sandbox.my.salesforce-sites.com/services/apexrest/updateSubmissionResponse",
 )
 
+# Sibling Web Crawler Backend URL (for fetching FDA safety & labeling changes)
+CRAWLER_BACKEND_URL = os.getenv("CRAWLER_BACKEND_URL", "http://crawler_backend:8001").rstrip("/")
+

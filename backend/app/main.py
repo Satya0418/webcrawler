@@ -17,11 +17,13 @@ from app.database import init_db, get_db
 from app.api import drugs, safety_changes, admin
 from app.services.database_service import DatabaseService
 from app.sources.fda_srlc.adapter import fda_srlc_adapter
-from app.sources.health_canada.infowatch.adapter import adapter as hc_adapter
-from app.sources.australia_tga.adapter import tga_adapter
-from app.sources.fda_medwatch.adapter import medwatch_adapter
-from app.sources.uk_mhra.adapter import mhra_adapter
-from app.ui import render_homepage_html, render_drug_detail_html, export_drug_csv, export_drug_json
+# ── TEMPORARILY DISABLED (Only US FDA SrLC is active) ──────────────────────────
+# Uncomment when ready to re-enable other regulatory agency crawlers:
+# from app.sources.health_canada.infowatch.adapter import adapter as hc_adapter
+# from app.sources.australia_tga.adapter import tga_adapter
+# from app.sources.fda_medwatch.adapter import medwatch_adapter
+# from app.sources.uk_mhra.adapter import mhra_adapter
+from app.ui import render_homepage_html, render_drug_detail_html, export_drug_csv, export_drug_json, export_drug_html
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -40,7 +42,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title="Medicine Safety API",
-    description="FDA Drug Safety-related Labeling Changes (SrLC) and Health Canada InfoWatch Backend",
+    description="FDA Drug Safety-related Labeling Changes (SrLC) Backend",
     version="1.0.0",
     lifespan=lifespan,
     redoc_url=None,  # Disabled ReDoc as requested
@@ -61,6 +63,47 @@ app.include_router(safety_changes.router, prefix="/api/safety-changes", tags=["s
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 
 
+# ── Compatibility Aliases for Salesforce / pdf_extractor integration ──────────
+@app.post("/api/v1/products/signal-and-risk", include_in_schema=False)
+@app.post("/api/v1/product/signal-and-risk", include_in_schema=False)
+@app.post("/api/v1/signal-and-risk", include_in_schema=False)
+@app.post("/api/products/signal-and-risk", include_in_schema=False)
+@app.post("/api/signal-and-risk", include_in_schema=False)
+async def alias_post_signal_and_risk(
+    req: drugs.SignalAndRiskIntegrationRequest,
+    db: Session = Depends(get_db),
+):
+    return await drugs.post_signal_and_risk(req, db=db)
+
+
+@app.get("/api/v1/products/signal-and-risk", include_in_schema=False)
+@app.get("/api/v1/product/signal-and-risk", include_in_schema=False)
+@app.get("/api/v1/signal-and-risk", include_in_schema=False)
+@app.get("/api/products/signal-and-risk", include_in_schema=False)
+@app.get("/api/signal-and-risk", include_in_schema=False)
+async def alias_get_signal_and_risk(
+    productName: Optional[str] = Query(None),
+    submissionId: Optional[str] = Query("browser_test"),
+    callbackUrl: Optional[str] = Query(None),
+    format: Optional[str] = Query("json"),
+    product_name: Optional[str] = Query(None),
+    submission_id: Optional[str] = Query(None),
+    callback_url: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    return await drugs.get_signal_and_risk(
+        productName=productName,
+        submissionId=submissionId,
+        callbackUrl=callbackUrl,
+        format=format,
+        product_name=product_name,
+        submission_id=submission_id,
+        callback_url=callback_url,
+        db=db,
+    )
+
+
+
 # Web Interface Routes
 @app.get("/", response_class=HTMLResponse)
 async def homepage(
@@ -70,7 +113,7 @@ async def homepage(
 ):
     """
     Unified Medicine Safety Search and Results page.
-    Supports Health Canada InfoWatch, US FDA SrLC, Australia TGA, UK MHRA, and FDA MedWatch.
+    Currently scoped to US FDA SrLC.
     """
     source_clean = (source or "ALL").strip().upper()
     if not q or not q.strip():
@@ -78,16 +121,8 @@ async def homepage(
 
     query_clean = q.strip()
 
-    # Run Health Canada and FDA live crawls concurrently
+    # Run FDA live crawl
     tasks = []
-
-    async def _crawl_hc():
-        try:
-            logger.info("Executing Health Canada live search for '%s'", query_clean)
-            await hc_adapter.search(query=query_clean, db=db, force_refresh=True)
-        except Exception as exc:
-            logger.error("Health Canada search crawl error for '%s': %s", query_clean, exc, exc_info=True)
-            db.rollback()
 
     async def _crawl_fda():
         try:
@@ -97,50 +132,57 @@ async def homepage(
             logger.error("FDA SrLC search crawl error for '%s': %s", query_clean, exc, exc_info=True)
             db.rollback()
 
-    async def _crawl_tga():
-        try:
-            existing_tga = DatabaseService.search_drugs(db, query_clean, source="AUSTRALIA_TGA")
-            has_data = any(bool(DatabaseService.get_safety_changes_by_drug_id(db, d.id)) for d in existing_tga)
-            if has_data:
-                logger.info("Australian TGA records already exist for '%s'; using cached data", query_clean)
-                await tga_adapter.search(query=query_clean, db=db, force_refresh=False)
-            else:
-                logger.info("Executing Australia TGA live search for '%s'", query_clean)
-                await tga_adapter.search(query=query_clean, db=db, force_refresh=True)
-        except Exception as exc:
-            logger.error("Australia TGA search crawl error for '%s': %s", query_clean, exc, exc_info=True)
-            db.rollback()
+    # ── TEMPORARILY DISABLED: Other regulatory crawlers ────────────────────────
+    # async def _crawl_hc():
+    #     try:
+    #         logger.info("Executing Health Canada live search for '%s'", query_clean)
+    #         await hc_adapter.search(query=query_clean, db=db, force_refresh=True)
+    #     except Exception as exc:
+    #         logger.error("Health Canada search crawl error for '%s': %s", query_clean, exc, exc_info=True)
+    #         db.rollback()
 
-    async def _crawl_medwatch():
-        try:
-            logger.info("Executing FDA MedWatch live search for '%s'", query_clean)
-            await medwatch_adapter.search(query=query_clean, db=db, force_refresh=True)
-        except Exception as exc:
-            logger.error("FDA MedWatch search crawl error for '%s': %s", query_clean, exc, exc_info=True)
-            db.rollback()
+    # async def _crawl_tga():
+    #     try:
+    #         existing_tga = DatabaseService.search_drugs(db, query_clean, source="AUSTRALIA_TGA")
+    #         has_data = any(bool(DatabaseService.get_safety_changes_by_drug_id(db, d.id)) for d in existing_tga)
+    #         if has_data:
+    #             logger.info("Australian TGA records already exist for '%s'; using cached data", query_clean)
+    #             await tga_adapter.search(query=query_clean, db=db, force_refresh=False)
+    #         else:
+    #             logger.info("Executing Australia TGA live search for '%s'", query_clean)
+    #             await tga_adapter.search(query=query_clean, db=db, force_refresh=True)
+    #     except Exception as exc:
+    #         logger.error("Australia TGA search crawl error for '%s': %s", query_clean, exc, exc_info=True)
+    #         db.rollback()
 
-    async def _crawl_mhra():
-        try:
-            logger.info("Executing UK MHRA live search for '%s'", query_clean)
-            await mhra_adapter.search(query=query_clean, db=db, force_refresh=True)
-        except Exception as exc:
-            logger.error("UK MHRA search crawl error for '%s': %s", query_clean, exc, exc_info=True)
-            db.rollback()
+    # async def _crawl_medwatch():
+    #     try:
+    #         logger.info("Executing FDA MedWatch live search for '%s'", query_clean)
+    #         await medwatch_adapter.search(query=query_clean, db=db, force_refresh=True)
+    #     except Exception as exc:
+    #         logger.error("FDA MedWatch search crawl error for '%s': %s", query_clean, exc, exc_info=True)
+    #         db.rollback()
 
-    if source_clean in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA", "ALL"):
-        tasks.append(_crawl_hc())
+    # async def _crawl_mhra():
+    #     try:
+    #         logger.info("Executing UK MHRA live search for '%s'", query_clean)
+    #         await mhra_adapter.search(query=query_clean, db=db, force_refresh=True)
+    #     except Exception as exc:
+    #         logger.error("UK MHRA search crawl error for '%s': %s", query_clean, exc, exc_info=True)
+    #         db.rollback()
 
-    if source_clean in ("FDA_SRLC", "FDA", "ALL"):
-        tasks.append(_crawl_fda())
+    # Always execute FDA SrLC crawl:
+    tasks.append(_crawl_fda())
 
-    if source_clean in ("AUSTRALIA_TGA", "TGA", "ALL"):
-        tasks.append(_crawl_tga())
-
-    if source_clean in ("FDA_MEDWATCH", "MEDWATCH", "ALL"):
-        tasks.append(_crawl_medwatch())
-
-    if source_clean in ("UK_MHRA", "MHRA", "ALL"):
-        tasks.append(_crawl_mhra())
+    # ── TEMPORARILY DISABLED: Other sources ─────────────────────────────────────
+    # if source_clean in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA", "ALL"):
+    #     tasks.append(_crawl_hc())
+    # if source_clean in ("AUSTRALIA_TGA", "TGA", "ALL"):
+    #     tasks.append(_crawl_tga())
+    # if source_clean in ("FDA_MEDWATCH", "MEDWATCH", "ALL"):
+    #     tasks.append(_crawl_medwatch())
+    # if source_clean in ("UK_MHRA", "MHRA", "ALL"):
+    #     tasks.append(_crawl_mhra())
 
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -232,11 +274,11 @@ async def web_drug_detail(
 @app.get("/drugs/{drug_id}/export")
 async def web_drug_export(
     drug_id: int,
-    format: str = Query("csv", regex="^(csv|json)$"),
+    format: str = Query("csv", regex="^(csv|json|html)$"),
     db: Session = Depends(get_db),
 ):
     """
-    Download drug safety data in CSV or JSON format.
+    Download drug safety data in HTML, CSV, or JSON format.
     """
     drug = DatabaseService.get_drug_by_id(db, drug_id)
     if not drug:
@@ -245,7 +287,16 @@ async def web_drug_export(
     changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id)
     clean_name = (drug.normalized_name or "drug").replace(" ", "_")
 
-    if format.lower() == "csv":
+    if format.lower() == "html":
+        html_data = export_drug_html(drug, changes, standalone=True)
+        return Response(
+            content=html_data,
+            media_type="text/html",
+            headers={
+                "Content-Disposition": f'attachment; filename="{clean_name}_safety_report.html"'
+            },
+        )
+    elif format.lower() == "csv":
         csv_data = export_drug_csv(drug, changes)
         return Response(
             content=csv_data,

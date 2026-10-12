@@ -1,7 +1,6 @@
-"""Pydantic schemas for request/response validation."""
 from datetime import datetime
-from typing import Optional, List
-from pydantic import BaseModel
+from typing import Optional, List, Any
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class DrugBase(BaseModel):
@@ -128,3 +127,33 @@ class CrawlRunResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class SignalAndRiskItem(BaseModel):
+    productName: Optional[str] = Field(None, description="Matched product or medicine name")
+    title: str = Field("summary_of_safety_concerns", description="Section or subsection title identifier")
+    Data: str = Field(..., description="Actual extracted FDA Drug Safety HTML content string")
+
+
+class SignalAndRiskResponse(BaseModel):
+    responseType: str = Field("SignalAndRisk", description="Response type category")
+    submissionId: str = Field(..., description="Echo of received submissionId")
+    productName: Optional[str] = Field(None, description="Echo of requested and matched product name")
+    responseData: List[SignalAndRiskItem] = Field(..., description="List of extracted section entries")
+
+
+class SignalAndRiskIntegrationRequest(BaseModel):
+    submissionId: Optional[str] = Field(None, description="Unique submission identifier (e.g. 'a0CAq00004acdq7MAA')")
+    productName: Optional[str] = Field(None, description="Medicine or product name to search for (e.g. 'amikacin', 'Lipitor')")
+    submission_id: Optional[str] = Field(None, description="Alternative snake_case submission identifier")
+    product_name: Optional[str] = Field(None, description="Alternative snake_case product name")
+    startDate: Optional[Any] = Field(None, description="Optional start date (ignored)")
+    endDate: Optional[Any] = Field(None, description="Optional end date (ignored)")
+    start_date: Optional[Any] = Field(None, description="Optional start date (ignored)")
+    end_date: Optional[Any] = Field(None, description="Optional end date (ignored)")
+    callbackUrl: Optional[str] = Field(None, description="Optional custom Salesforce callback webhook URL")
+    callback_url: Optional[str] = Field(None, description="Optional custom Salesforce callback webhook URL")
+    format: Optional[str] = Field("json", description="Response format: 'json', 'html', or 'data'")
+
+    model_config = ConfigDict(extra="ignore")
+
