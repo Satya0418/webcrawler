@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from pathlib import Path
 from contextlib import contextmanager
 from typing import Generator
@@ -26,7 +27,16 @@ SQLITE_URL = f"sqlite:///{SQLITE_PATH}"
 
 
 def _normalize_database_url(url: str) -> str:
-    """Ensures PostgreSQL URLs use postgresql+psycopg2 for SQLAlchemy 2.0 compatibility."""
+    """Ensures PostgreSQL URLs use postgresql+psycopg2 for SQLAlchemy 2.0 compatibility and escapes password special characters."""
+    if not url:
+        return url
+    # Safely escape special characters like '@' in database passwords
+    m = re.match(r'^(postgres(?:ql)?(?:\+[a-z0-9_]+)?://)([^:]+):(.*)@([^@/]+)(/.*)?$', url)
+    if m:
+        scheme, user, password, host, rest = m.groups()
+        if "%" not in password:
+            from urllib.parse import quote_plus
+            url = f"{scheme}{user}:{quote_plus(password)}@{host}{rest or ''}"
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql+psycopg2://", 1)
     if url.startswith("postgresql://") and not url.startswith("postgresql+"):

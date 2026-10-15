@@ -3,6 +3,8 @@ Database configuration and session management.
 Supports PostgreSQL in production and SQLite for local development and testing.
 """
 import logging
+import re
+from urllib.parse import quote_plus
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
@@ -13,11 +15,24 @@ logger = logging.getLogger(__name__)
 # SQLAlchemy setup
 Base = declarative_base()
 
-connect_args = {"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+
+def _normalize_db_url(url: str) -> str:
+    if not url:
+        return url
+    m = re.match(r'^(postgres(?:ql)?(?:\+[a-z0-9_]+)?://)([^:]+):(.*)@([^@/]+)(/.*)?$', url)
+    if m:
+        scheme, user, password, host, rest = m.groups()
+        if "%" not in password:
+            url = f"{scheme}{user}:{quote_plus(password)}@{host}{rest or ''}"
+    return url
+
+
+_db_url = _normalize_db_url(settings.DATABASE_URL)
+connect_args = {"check_same_thread": False} if "sqlite" in _db_url else {}
 
 # Create engine
 engine = create_engine(
-    settings.DATABASE_URL,
+    _db_url,
     echo=settings.DATABASE_ECHO,
     connect_args=connect_args,
     pool_pre_ping=True,
