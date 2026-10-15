@@ -251,11 +251,16 @@ class DatabaseService:
     def search_drugs(session: Session, query: str, limit: int = 50, source: Optional[str] = None) -> List[Drug]:
         """Search for drugs by name, active ingredient, or DIN/application number, optionally filtered by source."""
         normalized = NormalizationService.normalize_drug_name(query)
+        norm_pattern = f"%{normalized}%"
+        raw_pattern = f"%{query}%"
         conditions = [
-            (Drug.normalized_name.like(f"%{normalized}%")) |
-            (Drug.active_ingredient.like(f"%{query}%")) |
-            (Drug.display_name.like(f"%{query}%")) |
-            (Drug.application_number.like(f"%{query}%"))
+            (Drug.normalized_name.ilike(norm_pattern)) |
+            (Drug.active_ingredient.ilike(norm_pattern)) |
+            (Drug.active_ingredient.ilike(raw_pattern)) |
+            (Drug.display_name.ilike(norm_pattern)) |
+            (Drug.display_name.ilike(raw_pattern)) |
+            (Drug.application_number.ilike(norm_pattern)) |
+            (Drug.application_number.ilike(raw_pattern))
         ]
         if source and source != "ALL":
             if source in ("HEALTH_CANADA_INFOWATCH", "HEALTH_CANADA", "HEALTH_CANADA_DPD"):
