@@ -747,7 +747,7 @@ def render_homepage_html(
             <p>Retrieve authoritative safety information, warnings, and revisions from <strong>U.S. FDA (SrLC & MedWatch)</strong>, <strong>Health Canada (MedEffect)</strong>, <strong>Australia TGA (Therapeutic Goods Administration)</strong>, and <strong>UK MHRA (Medicines and Healthcare products Regulatory Agency)</strong>.</p>
         </div>
 
-        <form action="/" method="get" class="search-box">
+        <form action="" method="get" class="search-box">
             <select name="source" class="source-select" id="source-select" aria-label="Select Source">
                 <option value="FDA_SRLC" selected>🇺🇸 US FDA SrLC</option>
                 <!-- TEMPORARILY DISABLED: Re-enable when ready for multi-source search -->

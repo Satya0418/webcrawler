@@ -230,6 +230,16 @@ async def web_search_redirect(
     return await homepage(q=q, source=source, db=db)
 
 
+@app.get("/drugs", response_class=HTMLResponse)
+async def web_drugs_homepage(
+    q: Optional[str] = Query(None),
+    source: Optional[str] = Query("ALL"),
+    db: Session = Depends(get_db),
+):
+    """Serve crawler search homepage directly on /drugs."""
+    return await homepage(q=q, source=source, db=db)
+
+
 @app.get("/drugs/{drug_id}", response_class=HTMLResponse)
 async def web_drug_detail(
     drug_id: int,
