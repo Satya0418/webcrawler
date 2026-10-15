@@ -190,7 +190,6 @@ def test_signal_and_risk_salesforce_callback_invoked(monkeypatch):
     assert "updateSubmissionResponse" in callback_url
 
 
-<<<<<<< Updated upstream
 def test_signal_and_risk_returns_two_separate_entries_when_crawler_available(monkeypatch):
     """
     Verifies that when both PDF Section 16 data and Crawler data exist:
@@ -229,7 +228,7 @@ def test_signal_and_risk_returns_two_separate_entries_when_crawler_available(mon
     pdf_item = items[0]
     assert pdf_item["title"] == "summary_of_safety_concerns"
     assert "<!DOCTYPE html>" in pdf_item["Data"]
-    assert "16 Signal and Risk Evaluation" in pdf_item["Data"] or "16.1 Summary of Safety Concerns" in pdf_item["Data"]
+    assert "Erfa-Amikacin" in pdf_item["Data"] or "amikacin" in pdf_item["Data"].lower()
     assert "fda-safety-report" not in pdf_item["Data"]  # Not merged into item 0!
 
     # Item 2: Crawler Backend
@@ -268,7 +267,8 @@ def test_signal_and_risk_returns_crawler_when_no_pdf(monkeypatch):
     assert len(body["responseData"]) == 1
     assert body["responseData"][0]["title"] == "fda_safety_labeling_changes"
     assert "US FDA Lipitor Report" in body["responseData"][0]["Data"]
-=======
+
+
 def test_product_section_16_paragraph_only():
     """Verifies that /api/v1/products/section-16 returns purely paragraph text without headers/badges."""
     res = client.get("/api/v1/products/section-16?product_name=amikacin&subsection=16.1")
@@ -303,6 +303,5 @@ def test_short_url_p_amikacin_paragraph_only():
     assert "med-sub-header" not in html
     assert "med-brand-tag" not in html
     assert "Erfa-Amikacin" in html
->>>>>>> Stashed changes
 
 

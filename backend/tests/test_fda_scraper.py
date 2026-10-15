@@ -72,7 +72,9 @@ class TestFDASrLCScraper:
 
     def test_parse_search_results_with_real_fixture(self):
         """Test parsing real FDA search results fixture."""
-        with open("tests/fixtures/fda/search_results_warfarin.html") as f:
+        from pathlib import Path
+        fixture_path = Path(__file__).parent / "fixtures" / "fda" / "search_results_warfarin.html"
+        with open(fixture_path) as f:
             html = f.read()
         results = scraper.parse_search_results(html)
         assert len(results) >= 1
@@ -84,7 +86,9 @@ class TestFDASrLCScraper:
 
     def test_parse_detail_page_with_real_fixture(self):
         """Test parsing real FDA detail page fixture."""
-        with open("tests/fixtures/fda/detail_warfarin.html") as f:
+        from pathlib import Path
+        fixture_path = Path(__file__).parent / "fixtures" / "fda" / "detail_warfarin.html"
+        with open(fixture_path) as f:
             html = f.read()
         detail = scraper.parse_detail_page(html)
         assert detail is not None

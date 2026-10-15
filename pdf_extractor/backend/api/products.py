@@ -734,13 +734,12 @@ async def post_signal_and_risk(
             detail=f"No indexed Section 16 data found for product '{prod_name}'.",
         )
 
-<<<<<<< Updated upstream
     matched_product = (record.product_name if record else None) or (crawler_item.get("productName") if crawler_item else None) or prod_name
 
     # 5. Build responseData with separate entries (not merging them together)
     response_items = []
     if has_pdf_data:
-        clean_pdf_html = strip_html_tables(record.extracted_html or "")
+        clean_pdf_html = strip_html_headers(strip_html_tables(record.extracted_html or ""))
         response_items.append({
             "productName": record.product_name or matched_product,
             "title": "summary_of_safety_concerns",
@@ -753,12 +752,6 @@ async def post_signal_and_risk(
             "title": crawler_item.get("title") or "fda_safety_labeling_changes",
             "Data": crawler_item.get("Data"),
         })
-
-=======
-    # 3. Return Section 16 HTML data inside JSON structure (tables and headings strictly omitted)
-    clean_html = strip_html_headers(strip_html_tables(record.extracted_html or ""))
-    matched_product = record.product_name or prod_name
->>>>>>> Stashed changes
     response_payload = {
         "responseType": "SignalAndRisk",
         "submissionId": sub_id,
