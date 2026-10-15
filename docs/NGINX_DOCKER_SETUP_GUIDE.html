@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Engineering Guide: Nginx Reverse Proxy & Docker Compose</title>
+    <style>
+        :root {
+            --primary: #0f2240;
+            --accent: #0969da;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #24292f;
+            --text-muted: #57606a;
+            --border: #d0d7de;
+            --code-bg: #f6f8fa;
+            --callout-bg: #f0f6ff;
+            --callout-border: #0969da;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            padding: 48px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border);
+        }
+
+        h1 {
+            color: var(--primary);
+            font-size: 2.2rem;
+            margin-top: 0;
+            margin-bottom: 8px;
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 12px;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 1.15rem;
+            margin-top: 0;
+            margin-bottom: 28px;
+        }
+
+        .meta-box {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            background: #f6f8fa;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 32px;
+            gap: 12px;
+            font-size: 0.95rem;
+        }
+
+        .meta-box div strong {
+            color: var(--primary);
+        }
+
+        h2 {
+            color: var(--primary);
+            font-size: 1.45rem;
+            margin-top: 36px;
+            margin-bottom: 14px;
+            border-bottom: 1px solid #eaeef2;
+            padding-bottom: 8px;
+        }
+
+        h3 {
+            color: var(--accent);
+            font-size: 1.15rem;
+            margin-top: 24px;
+            margin-bottom: 10px;
+        }
+
+        p, li {
+            font-size: 1rem;
+            color: var(--text);
+        }
+
+        .callout {
+            background-color: var(--callout-bg);
+            border-left: 4px solid var(--callout-border);
+            padding: 16px 20px;
+            border-radius: 0 8px 8px 0;
+            margin: 20px 0;
+        }
+
+        .callout-title {
+            font-weight: 700;
+            color: var(--callout-border);
+            margin-bottom: 4px;
+        }
+
+        .callout-danger {
+            background-color: #fff5f5;
+            border-left-color: #cf222e;
+        }
+
+        .callout-danger .callout-title {
+            color: #cf222e;
+        }
+
+        pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--accent);
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+            font-size: 0.9rem;
+            line-height: 1.45;
+        }
+
+        code {
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+            background: rgba(175, 184, 193, 0.2);
+            padding: 0.2em 0.4em;
+            border-radius: 4px;
+            font-size: 85%;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 0.95rem;
+        }
+
+        th, td {
+            padding: 12px 14px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+
+        th {
+            background-color: var(--primary);
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f8fafc;
+        }
+
+        ul {
+            padding-left: 24px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        .checklist {
+            list-style-type: none;
+            padding-left: 0;
+        }
+
+        .checklist li {
+            background: #f6f8fa;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+            font-size: 0.9rem;
+        }
+
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            .container {
+                box-shadow: none;
+                border: none;
+                padding: 0;
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Production Architecture & Engineering Guide</h1>
+        <div class="subtitle">Setting Up Nginx Reverse Proxy & Docker Compose for Multi-Service Web Applications</div>
+
+        <div class="meta-box">
+            <div><strong>Target Audience:</strong> Full-Stack Engineers, DevOps, System Architects</div>
+            <div><strong>Version & Status:</strong> Production Standard 1.0 (Enterprise & AWS Ready)</div>
+            <div><strong>Scope:</strong> Docker Compose, Nginx, SSL Termination, Port Shielding</div>
+            <div><strong>Applicability:</strong> Vite, Next.js, FastAPI, Node.js, Microservices</div>
+        </div>
+
+        <h2>1. Executive Summary & Core Concept</h2>
+        <p>In modern production environments, client web browsers and mobile apps should <strong>never connect directly</strong> to application runtime engines (Node.js, Vite, FastAPI/Uvicorn, Gunicorn, Django, etc.). Instead, <strong>Nginx</strong> serves as the unified perimeter reverse proxy.</p>
+
+        <div class="callout">
+            <div class="callout-title">CORE VALUE PROPOSITION</div>
+            Placing Nginx in front of Docker containers provides unified routing under a single domain (eliminating CORS errors), port shielding, centralized SSL/TLS termination, Gzip asset compression, and persistent WebSocket support.
+        </div>
+
+        <h3>Traffic Flow Architecture</h3>
+        <ol>
+            <li><strong>Public Ingress:</strong> Clients connect to Port 80, 443, or 8443 (via AWS Load Balancer).</li>
+            <li><strong>Inspection & Termination:</strong> Nginx terminates SSL, applies rate limits, and inspects request paths.</li>
+            <li><strong>Internal Routing:</strong> Nginx proxies requests across the isolated Docker bridge network to internal containers.</li>
+            <li><strong>Shielded Services:</strong> Application runtimes and databases remain strictly internal and unreachable from the internet.</li>
+        </ol>
+
+        <h2>2. The Port Shielding Rule (<code>expose</code> vs. <code>ports</code>)</h2>
+        <p>A critical security rule when authoring <code>docker-compose.yml</code>:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Directive</th>
+                    <th>Network Scope</th>
+                    <th>Host Visibility</th>
+                    <th>Applicable Services</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>ports:</code></td>
+                    <td>Public & Host Interface</td>
+                    <td>Exposes port to <code>0.0.0.0</code> (public internet)</td>
+                    <td><strong>Nginx Gateway Only</strong> (e.g. <code>80:80</code>, <code>8443:443</code>)</td>
+                </tr>
+                <tr>
+                    <td><code>expose:</code></td>
+                    <td>Internal Docker Bridge Only</td>
+                    <td>Hidden from host; accessible ONLY by peer containers</td>
+                    <td><strong>All App Backends, Vite Frontends, Databases</strong></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="callout callout-danger">
+            <div class="callout-title">IMPORTANT SECURITY DIRECTIVE</div>
+            Never use <code>ports:</code> on databases (PostgreSQL, MongoDB) or internal API services. Only Nginx opens host ports.
+        </div>
+
+        <h2>3. Production Docker Compose Template (<code>docker-compose.yml</code>)</h2>
+        <pre><code>services:
+  # 1. Application Service (React, Vite, or Backend API)
+  app-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${APP_CONTAINER_NAME:-app_backend}
+    env_file:
+      - .env
+    expose:
+      - "5173" # Internal port (e.g. 5173 for Vite, 8000 for FastAPI)
+    networks:
+      default:
+        aliases:
+          - app_backend
+    restart: unless-stopped
+
+  # 2. Database Service (Private to Docker Network)
+  db:
+    image: postgres:15-alpine
+    container_name: app_postgres_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-production_db}
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # 3. Nginx Reverse Proxy Gateway
+  nginx:
+    image: nginx:alpine
+    container_name: ${NGINX_CONTAINER_NAME:-app_nginx_gateway}
+    depends_on:
+      - app-backend
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      # For SSL / AWS ALB deployments:
+      # - "${HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    driver: bridge</code></pre>
+
+        <h2>4. Production Nginx Configuration (<code>nginx/nginx.conf</code>)</h2>
+        <pre><code>events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    # Performance
+    sendfile        on;
+    tcp_nopush     on;
+    tcp_nodelay    on;
+    keepalive_timeout 65;
+    client_max_body_size 50M;
+
+    # Gzip Asset Compression
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types
+        text/plain
+        text/css
+        text/xml
+        application/json
+        application/javascript
+        application/xml+rss
+        image/svg+xml;
+
+    # WebSocket Upgrade Mapping
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    # Upstream container definition (matches service name in docker-compose)
+    upstream app_backend {
+        server app-backend:5173;
+        keepalive 32;
+    }
+
+    server {
+        listen 80;
+        server_name _;
+
+        # Client header forwarding
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket & HTTP/1.1 persistence
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+
+        # Reverse Proxy Routing
+        location / {
+            proxy_pass http://app_backend;
+        }
+    }
+}</code></pre>
+
+        <h2>5. URL Routing & Path Mapping Recipes</h2>
+
+        <h3>Recipe A: Single-Page Application (SPA / React / Vite / Next.js)</h3>
+        <pre><code>location / {
+    proxy_pass http://app_backend;
+}</code></pre>
+
+        <h3>Recipe B: Frontend on Root + API on <code>/api/</code></h3>
+        <pre><code># Backend REST API
+location /api/ {
+    proxy_pass http://api_backend;
+}
+
+# Frontend User Interface
+location / {
+    proxy_pass http://frontend_backend;
+}</code></pre>
+
+        <h3>Recipe C: The Trailing Slash Rule</h3>
+        <div class="callout">
+            <div class="callout-title">PATH STRIPPING VS. PRESERVING</div>
+            <ul>
+                <li><strong>No trailing slash (<code>proxy_pass http://crawler;</code>):</strong> Preserves the full URL. Client <code>/crawler/run</code> &rarr; Backend <code>/crawler/run</code>.</li>
+                <li><strong>With trailing slash (<code>proxy_pass http://crawler/;</code>):</strong> Strips the prefix. Client <code>/crawler/run</code> &rarr; Backend <code>/run</code>.</li>
+            </ul>
+        </div>
+
+        <h2>6. Cloud Deployment & AWS Application Load Balancer (ALB)</h2>
+        <p>When running on AWS EC2 behind an ALB, binding host ports below 1024 requires root privileges. Using <strong>Port 8443 Target Group</strong> solves this cleanly without sudo/root modifications:</p>
+        <ul>
+            <li><strong>ALB Listener:</strong> Port 443 (HTTPS) with AWS ACM Certificate.</li>
+            <li><strong>ALB Target Group:</strong> Forwards to EC2 Host on Port 8443 (Health Check: <code>/api/health</code>).</li>
+            <li><strong>Nginx Port Mapping:</strong> <code>"${HTTPS_PORT:-8443}:443"</code>.</li>
+        </ul>
+
+        <h2>7. Production Troubleshooting & Diagnostic Matrix</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Symptom / Error</th>
+                    <th>Root Cause</th>
+                    <th>Actionable Solution</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>502 Bad Gateway</strong></td>
+                    <td>Upstream container is down, wrong container name, or port mismatch.</td>
+                    <td>Run <code>docker ps</code> to confirm container status and verify upstream host matches service name.</td>
+                </tr>
+                <tr>
+                    <td><strong>405 Method Not Allowed</strong></td>
+                    <td>Testing with <code>curl -I</code> sends HTTP HEAD. Python/FastAPI endpoints only accept GET by default.</td>
+                    <td>Use <code>curl -i</code> (lowercase) to send GET with headers. Browsers always send GET.</td>
+                </tr>
+                <tr>
+                    <td><strong>Database Host Lookup Failure</strong></td>
+                    <td>Special characters like <code>@</code> in password break URL parsing (e.g. <code>pwd@123@db</code>).</td>
+                    <td>URL-encode password (<code>@</code> becomes <code>%40</code>) in database connection logic.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>8. New Project Implementation Checklist</h2>
+        <ul class="checklist">
+            <li>[ ] 1. Identify internal application port (Vite: 5173, Next.js: 3000, FastAPI: 8000, Flask: 5000).</li>
+            <li>[ ] 2. In docker-compose.yml, place app under services: using 'expose: ["&lt;PORT&gt;"]'.</li>
+            <li>[ ] 3. In docker-compose.yml, configure nginx service with 'ports: ["${HTTP_PORT:-80}:80"]'.</li>
+            <li>[ ] 4. Mount nginx configuration as read-only: './nginx/nginx.conf:/etc/nginx/nginx.conf:ro'.</li>
+            <li>[ ] 5. In nginx.conf, set 'upstream app_backend { server &lt;service_name&gt;:&lt;port&gt;; keepalive 32; }'.</li>
+            <li>[ ] 6. Ensure WebSocket upgrade map block is included for modern hot-reloading and sockets.</li>
+            <li>[ ] 7. Launch stack: 'docker compose up --build -d' and verify: 'docker ps'.</li>
+            <li>[ ] 8. Verify endpoints: 'curl -i http://localhost' (HTTP 200 OK).</li>
+        </ul>
+    </div>
+</body>
+</html>
