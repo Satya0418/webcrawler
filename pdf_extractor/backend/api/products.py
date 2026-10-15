@@ -178,6 +178,7 @@ def strip_markdown_tables(text: str) -> str:
     return '\n'.join(cleaned).strip()
 
 
+
 def strip_html_tables(html_str: str) -> str:
     """Completely strips <table> and wrapper <div class="table-responsive"> elements from HTML."""
     if not html_str:
@@ -185,6 +186,104 @@ def strip_html_tables(html_str: str) -> str:
     cleaned = re.sub(r'<div class="table-responsive"[\s\S]*?</div>\s*', '', html_str, flags=re.IGNORECASE)
     cleaned = re.sub(r'<table[\s\S]*?</table>\s*', '', cleaned, flags=re.IGNORECASE)
     return cleaned
+
+
+HEADER_LINE_PATTERNS = [
+    r'\[page\s+\d+(?:\s+table)?\]',
+    r'(?:section\s+)?\d+(?:\.\d+)*\s*[:\-\.]?\s*(?:signal\s+(?:and|&)\s+risk\s+evaluation|summary\s+of\s+safety\s+concerns?|evaluation\s+of\s+(?:signals?|risks?)|signal\s+evaluation|characterization\s+of\s+risks?|effectiveness\s+of\s+risk\s+minimization|benefit-risk\s+balance|summary\s+of\s+safety\s+issues?).*',
+    r'signal\s+(?:and|&)\s+risk\s+evaluation',
+    r'summary\s+of\s+safety\s+concerns?',
+    r'evaluation\s+of\s+(?:signals?|risks?)(?:\s+and\s+new\s+information)?',
+    r'signal\s+evaluation',
+    r'characterization\s+of\s+risks?',
+    r'effectiveness\s+of\s+risk\s+minimization(?:\s+activities)?',
+    r'summary\s+of\s+safety\s+issues?',
+    r'benefit-risk\s+balance',
+    r'periodic\s+(?:benefit-risk|safety\s+update)\s+(?:evaluation\s+)?report.*',
+    r'pbrer.*',
+    r'psur.*',
+    r'apotex(?:\s+inc\.?)?.*',
+    r'.*-\s*section\s+\d+.*',
+    r'section\s+\d+(?:\.\d+)*',
+    r'(?:section\s+)?\d+(?:\.\d+)*\s+[A-Za-z].*',
+    r'(?:section\s+)?\d+(?:\.\d+)*$',
+]
+HEADER_LINE_REGEX = re.compile(r'^(?:' + '|'.join(HEADER_LINE_PATTERNS) + r')$', re.IGNORECASE)
+
+
+def strip_html_headers(html_str: str) -> str:
+    """
+    Completely removes brand tag, section main title headers, subsection badge, subsection title,
+    running headers, and paragraph titles like:
+    'Signal and Risk Evaluation', 'Summary of Safety Concerns', 'Apotex Inc. Periodic Benefit-Risk...',
+    'Amikacin - Section 16', 'Section 16.1', '16.1 Summary of Safety Concerns'.
+    Preserves purely the body paragraphs and data.
+    """
+    if not html_str:
+        return ""
+    # Strip main header and brand tag
+    cleaned = re.sub(r'<header class="med-main-header"[\s\S]*?</header>\s*', '', html_str, flags=re.IGNORECASE)
+    cleaned = re.sub(r'<div class="med-brand-tag"[\s\S]*?</div>\s*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'<h2 class="med-section-main-title"[\s\S]*?</h2>\s*', '', cleaned, flags=re.IGNORECASE)
+    
+    # Strip subsection header, badge, and subsection title
+    cleaned = re.sub(r'<header class="med-sub-header"[\s\S]*?</header>\s*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'<span class="med-badge"[\s\S]*?</span>\s*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'<h3 class="med-subsection-title"[\s\S]*?</h3>\s*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'<h4 class="med-subheading"[\s\S]*?</h4>\s*', '', cleaned, flags=re.IGNORECASE)
+    
+    # Strip any general h1-h4 tags
+    cleaned = re.sub(r'<h[1-4][^>]*>[\s\S]*?</h[1-4]>\s*', '', cleaned, flags=re.IGNORECASE)
+    # Strip header CSS rules from <style> blocks if present
+    cleaned = re.sub(r'\.med-(?:main-header|brand-tag|section-main-title|sub-header|badge|subsection-title|subheading)\s*\{[^}]*\}\s*', '', cleaned, flags=re.IGNORECASE)
+    # Normalize <title> so section headers are not in the browser title bar
+    cleaned = re.sub(r'<title>[^<]*?(?:Section|\d+\.\d+)[^<]*?</title>', '<title>Extracted Document</title>', cleaned, flags=re.IGNORECASE)
+
+    # Clean inner lines of <p> tags: strip header lines, Apotex running headers, or title banners
+    def clean_p_content(match):
+        p_tag_open = match.group(1)
+        p_inner = match.group(2)
+        lines = re.split(r'<br\s*/?>|\n', p_inner)
+        surviving = []
+        for l in lines:
+            l_strip = re.sub(r'<[^>]+>', '', l).strip()
+            if not l_strip:
+                continue
+            if HEADER_LINE_REGEX.match(l_strip):
+                continue
+            surviving.append(l.strip())
+        if not surviving:
+            return ""
+        return f'{p_tag_open}\n        ' + '<br>\n        '.join(surviving) + '\n    </p>'
+
+    cleaned = re.sub(r'(<p(?:\s+class="[^"]*")?>)([\s\S]*?)</p>', clean_p_content, cleaned, flags=re.IGNORECASE)
+
+    # Clean empty articles, empty root divs, or empty wrappers
+    cleaned = re.sub(r'<div class="med-root-content">\s*</div>\s*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'<article[^>]*>\s*<div class="med-sub-body">\s*</div>\s*</article>\s*', '', cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
+def strip_text_headings(text: str) -> str:
+    """
+    Strips document headings, section titles, running headers, and page indicators from plain text,
+    returning purely the body paragraphs.
+    """
+    if not text:
+        return ""
+    lines = text.split("\n")
+    cleaned = []
+    for line in lines:
+        s = line.strip()
+        if not s:
+            cleaned.append("")
+            continue
+        s_unpaged = re.sub(r'^\[page\s+\d+(?:\s+table)?\]\s*', '', s, flags=re.IGNORECASE).strip()
+        if not s_unpaged or HEADER_LINE_REGEX.match(s) or HEADER_LINE_REGEX.match(s_unpaged):
+            continue
+        cleaned.append(line)
+    result = "\n".join(cleaned).strip()
+    return re.sub(r'\n{3,}', '\n\n', result)
 
 
 def format_product_response(
@@ -198,6 +297,7 @@ def format_product_response(
     Formats a database ProductSectionRecord into a structured client-facing payload.
     If target_subsection is provided (e.g. '16.1'), filters strictly to that subsection.
     When include_tables is False, completely omits tables, table rows, and renders text-only paragraphs.
+    Completely omits section headers, banners, and badges, returning only the extracted paragraph content.
     """
     tables = []
     if include_tables and record.tables_json:
@@ -217,6 +317,8 @@ def format_product_response(
                         item_copy["tables"] = []
                         item_copy["text"] = strip_markdown_tables(item_copy.get("text", ""))
                         item_copy["html_snippet"] = strip_html_tables(item_copy.get("html_snippet", ""))
+                    item_copy["text"] = strip_text_headings(item_copy.get("text", ""))
+                    item_copy["html_snippet"] = strip_html_headers(item_copy.get("html_snippet", ""))
                     subsections.append(item_copy)
         except Exception:
             subsections = []
@@ -243,14 +345,18 @@ def format_product_response(
                     target_subsection=clean_sub,
                     standalone=True,
                     include_tables=include_tables,
+                    include_headers=False,
                 )
+                full_html = strip_html_headers(full_html)
                 snippet = ExportService.generate_structured_html(
                     res,
                     product_name=record.product_name,
                     target_subsection=clean_sub,
                     standalone=False,
                     include_tables=include_tables,
+                    include_headers=False,
                 )
+                snippet = strip_html_headers(snippet)
                 sub_tables = []
                 if include_tables:
                     for blk in res.blocks:
@@ -270,6 +376,7 @@ def format_product_response(
                         break
 
                 clean_text = strip_markdown_tables(res.content) if not include_tables else res.content
+                clean_text = strip_text_headings(clean_text)
 
                 return {
                     "status": "success",
@@ -307,10 +414,12 @@ def format_product_response(
             sub_snippet = matched_sub.get("html_snippet", "")
             if not include_tables:
                 sub_snippet = strip_html_tables(sub_snippet)
+            sub_snippet = strip_html_headers(sub_snippet)
             sub_full_html = f"<!DOCTYPE html><html><body>{sub_snippet}</body></html>"
             sub_text = matched_sub.get("text", "")
             if not include_tables:
                 sub_text = strip_markdown_tables(sub_text)
+            sub_text = strip_text_headings(sub_text)
 
             return {
                 "status": "success",
@@ -341,11 +450,13 @@ def format_product_response(
     full_html = record.extracted_html or ""
     if not include_tables:
         full_html = strip_html_tables(full_html)
+    full_html = strip_html_headers(full_html)
     html_snippet = extract_html_snippet(full_html)
 
     clean_full_text = record.extracted_text or ""
     if not include_tables:
         clean_full_text = strip_markdown_tables(clean_full_text)
+    clean_full_text = strip_text_headings(clean_full_text)
 
     return {
         "status": "success",
@@ -623,6 +734,7 @@ async def post_signal_and_risk(
             detail=f"No indexed Section 16 data found for product '{prod_name}'.",
         )
 
+<<<<<<< Updated upstream
     matched_product = (record.product_name if record else None) or (crawler_item.get("productName") if crawler_item else None) or prod_name
 
     # 5. Build responseData with separate entries (not merging them together)
@@ -642,6 +754,11 @@ async def post_signal_and_risk(
             "Data": crawler_item.get("Data"),
         })
 
+=======
+    # 3. Return Section 16 HTML data inside JSON structure (tables and headings strictly omitted)
+    clean_html = strip_html_headers(strip_html_tables(record.extracted_html or ""))
+    matched_product = record.product_name or prod_name
+>>>>>>> Stashed changes
     response_payload = {
         "responseType": "SignalAndRisk",
         "submissionId": sub_id,

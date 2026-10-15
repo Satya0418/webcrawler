@@ -152,11 +152,11 @@ def test_docs_and_catalog_routes():
 def test_product_short_urls():
     """Verifies short URLs /p/<product> and /p/<product>/<subsection>."""
     # Test on known sample product or fallback
-    res = client.get("/p/ofloxacin")
+    res = client.get("/p/amikacin")
     assert res.status_code == 200
     assert "<!DOCTYPE html>" in res.text
 
-    sub_res = client.get("/p/ofloxacin/16.1")
+    sub_res = client.get("/p/amikacin/16.1")
     assert sub_res.status_code == 200
     assert "<!DOCTYPE html>" in sub_res.text
 

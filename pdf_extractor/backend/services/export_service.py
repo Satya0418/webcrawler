@@ -11,6 +11,29 @@ from backend.models.schemas import ExtractionResult, BatchExtractionResponse
 from backend.config import OUTPUT_DIR
 
 
+HEADER_LINE_PATTERNS = [
+    r'\[page\s+\d+(?:\s+table)?\]',
+    r'(?:section\s+)?\d+(?:\.\d+)*\s*[:\-\.]?\s*(?:signal\s+(?:and|&)\s+risk\s+evaluation|summary\s+of\s+safety\s+concerns?|evaluation\s+of\s+(?:signals?|risks?)|signal\s+evaluation|characterization\s+of\s+risks?|effectiveness\s+of\s+risk\s+minimization|benefit-risk\s+balance|summary\s+of\s+safety\s+issues?).*',
+    r'signal\s+(?:and|&)\s+risk\s+evaluation',
+    r'summary\s+of\s+safety\s+concerns?',
+    r'evaluation\s+of\s+(?:signals?|risks?)(?:\s+and\s+new\s+information)?',
+    r'signal\s+evaluation',
+    r'characterization\s+of\s+risks?',
+    r'effectiveness\s+of\s+risk\s+minimization(?:\s+activities)?',
+    r'summary\s+of\s+safety\s+issues?',
+    r'benefit-risk\s+balance',
+    r'periodic\s+(?:benefit-risk|safety\s+update)\s+(?:evaluation\s+)?report.*',
+    r'pbrer.*',
+    r'psur.*',
+    r'apotex(?:\s+inc\.?)?.*',
+    r'.*-\s*section\s+\d+.*',
+    r'section\s+\d+(?:\.\d+)*',
+    r'(?:section\s+)?\d+(?:\.\d+)*\s+[A-Za-z].*',
+    r'(?:section\s+)?\d+(?:\.\d+)*$',
+]
+HEADER_LINE_REGEX = re.compile(r'^(?:' + '|'.join(HEADER_LINE_PATTERNS) + r')$', re.IGNORECASE)
+
+
 class ExportService:
     """Provides exports in HTML, JSON, TXT, CSV, and Excel formats."""
 
@@ -31,13 +54,18 @@ class ExportService:
         return cleaned.strip()
 
     @classmethod
-    def generate_html_content(cls, result: ExtractionResult, title: Optional[str] = None) -> str:
+    def generate_html_content(
+        cls,
+        result: ExtractionResult,
+        title: Optional[str] = None,
+        include_headers: bool = True,
+    ) -> str:
         """
         Generates clean, semantic, browser-renderable HTML according to strict rules:
         - Centralized CSS in <head><style>
         - Consecutive bullet items grouped into single <ul> containing multiple <li> elements
         - Consecutive numbered items grouped into single <ol> containing multiple <li> elements
-        - Headings rendered semantically (<h2>, <h3>)
+        - Headings rendered semantically (<h2>, <h3>) only if include_headers is True
         - Paragraphs rendered as <p> preserving exact text
         - Tables rendered with <table>, <thead>, <tbody> only when real tables exist in extracted content
         - Table CSS included ONLY if <table> exists in generated HTML
@@ -71,11 +99,12 @@ class ExportService:
             item = structured_items[i]
 
             if item.type == "heading":
-                raw_h = item.title or item.text or ""
-                h_text = cls._clean_section_heading(raw_h)
-                if h_text:
-                    tag = "h2" if (item.level is None or item.level <= 2) else "h3"
-                    body_elements.append(f"<{tag}>{html.escape(h_text)}</{tag}>")
+                if include_headers:
+                    raw_h = item.title or item.text or ""
+                    h_text = cls._clean_section_heading(raw_h)
+                    if h_text:
+                        tag = "h2" if (item.level is None or item.level <= 2) else "h3"
+                        body_elements.append(f"<{tag}>{html.escape(h_text)}</{tag}>")
                 i += 1
 
             elif item.type in ("bullet_list", "numbered_list"):
@@ -128,15 +157,29 @@ class ExportService:
 
             else:
                 # Paragraph or other content
-                p_text = html.escape(item.text or "").replace("\n", "<br>\n    ")
+                raw_p = item.text or ""
+                if not include_headers and raw_p:
+                    lines = raw_p.split("\n")
+                    kept = [l for l in lines if l.strip() and not HEADER_LINE_REGEX.match(l.strip())]
+                    if not kept:
+                        i += 1
+                        continue
+                    raw_p = "\n".join(kept)
+                p_text = html.escape(raw_p).replace("\n", "<br>\n    ")
                 if p_text.strip():
                     body_elements.append(f"<p>\n    {p_text}\n</p>")
                 i += 1
 
         # Fallback if no structured items found but raw content exists
         if not body_elements and result.content:
-            p_text = html.escape(result.content).replace("\n", "<br>\n    ")
-            body_elements.append(f"<p>\n    {p_text}\n</p>")
+            raw_c = result.content
+            if not include_headers and raw_c:
+                lines = raw_c.split("\n")
+                kept = [l for l in lines if l.strip() and not HEADER_LINE_REGEX.match(l.strip())]
+                raw_c = "\n".join(kept)
+            p_text = html.escape(raw_c).replace("\n", "<br>\n    ")
+            if p_text.strip():
+                body_elements.append(f"<p>\n    {p_text}\n</p>")
 
         # Construct centralized CSS - only include table rules if a table is actually present
         css_rules = [
@@ -186,6 +229,7 @@ class ExportService:
         target_subsection: Optional[str] = None,
         standalone: bool = True,
         include_tables: bool = True,
+        include_headers: bool = False,
     ) -> str:
         """
         Generates production-grade, highly structured semantic HTML5.
@@ -199,6 +243,8 @@ class ExportService:
             standalone: If True, wraps in full <!DOCTYPE html> with scoped stylesheet.
                         If False, returns embeddable <section> snippet for client websites.
             include_tables: If False, omits tables and table cells completely (text only).
+            include_headers: If False, omits brand tag, main section title, subsection badge,
+                             and subsection title, returning purely the body paragraphs.
         """
         p_name = product_name or Path(result.document).stem.replace("_", " ").title()
         
@@ -207,10 +253,10 @@ class ExportService:
         if target_subsection:
             sub_prefix = f"{target_subsection}."
             blocks = [b for b in all_blocks if b.section == target_subsection or (b.section and b.section.startswith(sub_prefix))]
-            display_title = f"{p_name} - Section {target_subsection}"
+            display_title = f"{p_name} - Section {target_subsection}" if include_headers else p_name
         else:
             blocks = all_blocks
-            display_title = f"{p_name} - Section {result.requested_section}"
+            display_title = f"{p_name} - Section {result.requested_section}" if include_headers else p_name
 
         # Group blocks by section
         grouped: Dict[str, List] = {}
@@ -233,10 +279,11 @@ class ExportService:
                 btype = getattr(blk, "block_type", "paragraph")
                 
                 if btype == "heading":
-                    if not group_title:
-                        group_title = blk.text
-                    else:
-                        elements.append(f'<h4 class="med-subheading">{html.escape(blk.text)}</h4>')
+                    if include_headers:
+                        if not group_title:
+                            group_title = blk.text
+                        else:
+                            elements.append(f'<h4 class="med-subheading">{html.escape(blk.text)}</h4>')
                     k += 1
 
                 elif btype in ("bullet_list", "numbered_list"):
@@ -283,7 +330,20 @@ class ExportService:
 
                 else:
                     # Paragraph
-                    p_txt = html.escape(blk.text or "").replace("\n", "<br>\n        ")
+                    raw_p = blk.text or ""
+                    if not include_headers and raw_p:
+                        lines = raw_p.split("\n")
+                        kept = [
+                            l for l in lines
+                            if l.strip()
+                            and not HEADER_LINE_REGEX.match(l.strip())
+                            and not HEADER_LINE_REGEX.match(re.sub(r'^\[page\s+\d+(?:\s+table)?\]\s*', '', l.strip(), flags=re.IGNORECASE).strip())
+                        ]
+                        if not kept:
+                            k += 1
+                            continue
+                        raw_p = "\n".join(kept)
+                    p_txt = html.escape(raw_p).replace("\n", "<br>\n        ")
                     if p_txt.strip():
                         elements.append(f'    <p class="med-paragraph">\n        {p_txt}\n    </p>')
                     k += 1
@@ -299,82 +359,81 @@ class ExportService:
             root_title, root_content = render_block_group(grouped[main_sec_num])
             root_display = root_title or f"Section {main_sec_num}"
             if root_content.strip():
-                html_cards.append(
-                    f'    <div class="med-root-content">\n'
-                    f'{root_content}\n'
-                    f'    </div>'
-                )
+                if include_headers:
+                    html_cards.append(
+                        f'    <div class="med-root-content">\n'
+                        f'{root_content}\n'
+                        f'    </div>'
+                    )
+                else:
+                    html_cards.append(root_content)
 
-        # Render subsections as distinct semantic <article> cards
+        # Render subsections
         for sec_num in order:
             if not target_subsection and sec_num == main_sec_num:
                 continue  # Already rendered as root
             sub_title, sub_content = render_block_group(grouped[sec_num])
+            if not sub_content.strip():
+                continue
             sub_header = sub_title or f"Section {sec_num}"
             safe_id = f"sec-{sec_num.replace('.', '-')}"
-            card_html = (
-                f'    <article class="med-subsection-card" id="{safe_id}" data-subsection="{sec_num}">\n'
-                f'        <header class="med-sub-header">\n'
-                f'            <span class="med-badge">Section {sec_num}</span>\n'
-                f'            <h3 class="med-subsection-title">{html.escape(sub_header)}</h3>\n'
-                f'        </header>\n'
-                f'        <div class="med-sub-body">\n'
-                f'{sub_content}\n'
-                f'        </div>\n'
-                f'    </article>'
-            )
+            if include_headers:
+                card_html = (
+                    f'    <article class="med-subsection-card" id="{safe_id}" data-subsection="{sec_num}">\n'
+                    f'        <header class="med-sub-header">\n'
+                    f'            <span class="med-badge">Section {sec_num}</span>\n'
+                    f'            <h3 class="med-subsection-title">{html.escape(sub_header)}</h3>\n'
+                    f'        </header>\n'
+                    f'        <div class="med-sub-body">\n'
+                    f'{sub_content}\n'
+                    f'        </div>\n'
+                    f'    </article>'
+                )
+            else:
+                card_html = f'{sub_content}'
             html_cards.append(card_html)
 
         body_inner = "\n\n".join(html_cards)
         if not body_inner.strip() and result.content:
-            body_inner = f'    <p class="med-paragraph">{html.escape(result.content)}</p>'
+            raw_c = result.content
+            if not include_headers and raw_c:
+                lines = raw_c.split("\n")
+                kept = [
+                    l for l in lines
+                    if l.strip()
+                    and not HEADER_LINE_REGEX.match(l.strip())
+                    and not HEADER_LINE_REGEX.match(re.sub(r'^\[page\s+\d+(?:\s+table)?\]\s*', '', l.strip(), flags=re.IGNORECASE).strip())
+                ]
+                raw_c = "\n".join(kept)
+            if raw_c.strip():
+                body_inner = f'    <p class="med-paragraph">{html.escape(raw_c)}</p>'
 
-        container_html = (
-            f'<section class="med-section-container" id="med-sec-{main_sec_num}">\n'
-            f'    <header class="med-main-header">\n'
-            f'        <div class="med-brand-tag">{html.escape(p_name)}</div>\n'
-            f'        <h2 class="med-section-main-title">{html.escape(display_title)}</h2>\n'
-            f'    </header>\n'
-            f'    <div class="med-section-content">\n'
-            f'{body_inner}\n'
-            f'    </div>\n'
-            f'</section>'
-        )
+        if include_headers:
+            container_html = (
+                f'<section class="med-section-container" id="med-sec-{main_sec_num}">\n'
+                f'    <header class="med-main-header">\n'
+                f'        <div class="med-brand-tag">{html.escape(p_name)}</div>\n'
+                f'        <h2 class="med-section-main-title">{html.escape(display_title)}</h2>\n'
+                f'    </header>\n'
+                f'    <div class="med-section-content">\n'
+                f'{body_inner}\n'
+                f'    </div>\n'
+                f'</section>'
+            )
+        else:
+            container_html = (
+                f'<section class="med-section-container" id="med-sec-{main_sec_num}">\n'
+                f'    <div class="med-section-content">\n'
+                f'{body_inner}\n'
+                f'    </div>\n'
+                f'</section>'
+            )
 
         if not standalone:
             return container_html
 
         # CSS Stylesheet for standalone viewing
-        css_style = """
-        :root {
-            --med-primary: #0284c7;
-            --med-primary-dark: #0369a1;
-            --med-primary-light: #e0f2fe;
-            --med-text-main: #1e293b;
-            --med-text-muted: #64748b;
-            --med-bg-page: #f8fafc;
-            --med-bg-card: #ffffff;
-            --med-border: #e2e8f0;
-            --med-radius: 8px;
-            --med-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-        }
-        body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            margin: 0;
-            padding: 32px 16px;
-            background-color: var(--med-bg-page);
-            color: var(--med-text-main);
-            line-height: 1.6;
-        }
-        .med-section-container {
-            max-width: 920px;
-            margin: 0 auto;
-            background: var(--med-bg-card);
-            border-radius: var(--med-radius);
-            box-shadow: var(--med-shadow);
-            border: 1px solid var(--med-border);
-            padding: 32px;
-        }
+        header_css = """
         .med-main-header {
             border-bottom: 2px solid var(--med-primary);
             padding-bottom: 16px;
@@ -435,50 +494,83 @@ class ExportService:
             color: #334155;
             margin: 14px 0 6px 0;
         }
-        .med-paragraph {
+        """ if include_headers else ""
+
+        css_style = f"""
+        :root {{
+            --med-primary: #0284c7;
+            --med-primary-dark: #0369a1;
+            --med-primary-light: #e0f2fe;
+            --med-text-main: #1e293b;
+            --med-text-muted: #64748b;
+            --med-bg-page: #f8fafc;
+            --med-bg-card: #ffffff;
+            --med-border: #e2e8f0;
+            --med-radius: 8px;
+            --med-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+        }}
+        body {{
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 32px 16px;
+            background-color: var(--med-bg-page);
+            color: var(--med-text-main);
+            line-height: 1.6;
+        }}
+        .med-section-container {{
+            max-width: 920px;
+            margin: 0 auto;
+            background: var(--med-bg-card);
+            border-radius: var(--med-radius);
+            box-shadow: var(--med-shadow);
+            border: 1px solid var(--med-border);
+            padding: 32px;
+        }}
+{header_css}
+        .med-paragraph {{
             margin: 10px 0;
             font-size: 14.5px;
             color: var(--med-text-main);
-        }
-        .med-list {
+        }}
+        .med-list {{
             margin: 10px 0 10px 24px;
             padding-left: 0;
-        }
-        .med-list li {
+        }}
+        .med-list li {{
             margin-bottom: 5px;
             font-size: 14.5px;
-        }
-        .table-responsive {
+        }}
+        .table-responsive {{
             overflow-x: auto;
             margin: 16px 0;
             border-radius: 6px;
             border: 1px solid var(--med-border);
-        }
-        .med-table {
+        }}
+        .med-table {{
             width: 100%;
             border-collapse: collapse;
             font-size: 13.5px;
             text-align: left;
             background: #ffffff;
-        }
-        .med-table th {
+        }}
+        .med-table th {{
             background-color: #f8fafc;
             color: #334155;
             font-weight: 600;
             padding: 10px 14px;
             border-bottom: 2px solid var(--med-border);
-        }
-        .med-table td {
+        }}
+        .med-table td {{
             padding: 9px 14px;
             border-bottom: 1px solid var(--med-border);
             color: #1e293b;
-        }
-        .med-table tr:last-child td {
+        }}
+        .med-table tr:last-child td {{
             border-bottom: none;
-        }
-        .med-table tr:hover {
+        }}
+        .med-table tr:hover {{
             background-color: #f8fafc;
-        }
+        }}
         """
 
         full_html = (

@@ -147,12 +147,13 @@ def test_scanner_service_delta_and_client_api(tmp_path: Path):
     data_16_1_tbl = res_16_1_tbl.json()
     assert "<table" in data_16_1_tbl["data"]["html_snippet"]
 
-    # Test 12: Client query specifically for Subsection 16.1 in raw HTML format (neglect table default)
+    # Test 12: Client query specifically for Subsection 16.1 in raw HTML format (neglect table default, headings omitted)
     res_16_1_html = client.get("/api/v1/products/section-16", params={"product_name": "Lipitor", "subsection": "16.1", "format": "html"})
     assert res_16_1_html.status_code == 200
     assert "text/html" in res_16_1_html.headers.get("content-type", "")
     assert "<!DOCTYPE html>" in res_16_1_html.text
-    assert "16.1" in res_16_1_html.text
+    assert "<p" in res_16_1_html.text
+    assert "16.1 Summary of Safety Concerns" not in res_16_1_html.text
     assert "<table" not in res_16_1_html.text
 
     # Test 13: Client query for embeddable HTML snippet (no <!DOCTYPE html>)
