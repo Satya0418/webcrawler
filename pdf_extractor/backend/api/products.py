@@ -8,10 +8,15 @@ from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 
+import os
 import logging
 import httpx
 
-from backend.config import API_KEY, SALESFORCE_CALLBACK_URL, CRAWLER_BACKEND_URL
+from backend.config import API_KEY, SALESFORCE_CALLBACK_URL
+try:
+    from backend.config import CRAWLER_BACKEND_URL
+except ImportError:
+    CRAWLER_BACKEND_URL = os.getenv("CRAWLER_BACKEND_URL", "http://crawler_backend:8001").rstrip("/")
 from backend.database.db import get_db
 from backend.database.models import ProductSectionRecord
 from backend.extraction.section_extractor import SectionExtractor
