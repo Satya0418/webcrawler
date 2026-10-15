@@ -389,21 +389,38 @@ async def post_signal_and_risk(
 
     matched_product = drug.display_name or prod_name
     html_content = export_drug_clean_html(drug, changes, standalone=False)
+    standalone_html = export_drug_clean_html(drug, changes, standalone=True)
     fmt = (req.format or "json").lower()
 
     if fmt == "html":
-        full_html = export_drug_clean_html(drug, changes, standalone=True)
-        return HTMLResponse(content=full_html, media_type="text/html")
+        return HTMLResponse(content=standalone_html, media_type="text/html")
 
     if fmt == "data":
         return {"Data": html_content}
 
+    # Determine website_Name based on drug source
+    src = (drug.source or "FDA_SRLC").upper()
+    if "TGA" in src:
+        site_name = "TGA_details"
+    elif "CANADA" in src or "HC" in src:
+        site_name = "Health_Canada_details"
+    elif "MHRA" in src:
+        site_name = "MHRA_details"
+    elif "MEDWATCH" in src:
+        site_name = "MedWatch_details"
+    else:
+        site_name = "FDA_details"
+
+    resp_type = req.responseType or req.response_type or "SafetyActionTaken"
+
     response_payload = {
-        "responseType": "SignalAndRisk",
         "submissionId": sub_id,
+        "responseType": resp_type,
         "productName": matched_product,
         "responseData": [
             {
+                "website_Name": site_name,
+                "website_Data": standalone_html,
                 "productName": matched_product,
                 "title": "fda_safety_labeling_changes",
                 "Data": html_content,

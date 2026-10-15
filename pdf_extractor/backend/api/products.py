@@ -53,9 +53,11 @@ class ProductQueryRequest(BaseModel):
 
 
 class SignalAndRiskItem(BaseModel):
+    website_Name: Optional[str] = Field(None, description="Website identifier e.g. 'FDA_details' or 'TGA_details'")
+    website_Data: Optional[str] = Field(None, description="Full HTML document string")
     productName: Optional[str] = Field(None, description="Matched product or medicine name")
-    title: str = Field(..., description="Section or subsection title identifier, e.g. 'summary_of_safety_concerns'")
-    Data: str = Field(..., description="Actual extracted Section 16 HTML content string")
+    title: Optional[str] = Field(None, description="Section or subsection title identifier, e.g. 'summary_of_safety_concerns'")
+    Data: Optional[str] = Field(None, description="Actual extracted Section 16 HTML content string")
 
 
 class SignalAndRiskResponse(BaseModel):
@@ -70,6 +72,8 @@ class SignalAndRiskIntegrationRequest(BaseModel):
     productName: Optional[str] = Field(None, description="Medicine or product name to search for (e.g. 'amikacin')")
     submission_id: Optional[str] = Field(None, description="Alternative snake_case submission identifier")
     product_name: Optional[str] = Field(None, description="Alternative snake_case product name")
+    responseType: Optional[str] = Field(None, description="Custom responseType e.g. 'SafetyActionTaken'")
+    response_type: Optional[str] = Field(None, description="Custom response_type e.g. 'SafetyActionTaken'")
     startDate: Optional[Any] = Field(None, description="Optional start date (ignored)")
     endDate: Optional[Any] = Field(None, description="Optional end date (ignored)")
     start_date: Optional[Any] = Field(None, description="Optional start date (ignored)")
@@ -663,11 +667,13 @@ async def fetch_crawler_safety_data(
                     resp_items = data.get("responseData") or []
                     if resp_items and isinstance(resp_items, list):
                         item = resp_items[0]
-                        if item.get("Data"):
+                        if item.get("website_Data") or item.get("Data"):
                             return {
+                                "website_Name": item.get("website_Name") or "FDA_details",
+                                "website_Data": item.get("website_Data") or item.get("Data"),
                                 "productName": item.get("productName") or product_name,
                                 "title": item.get("title") or "fda_safety_labeling_changes",
-                                "Data": item.get("Data"),
+                                "Data": item.get("Data") or item.get("website_Data"),
                             }
                 elif resp.status_code == 404:
                     logger.debug("Crawler backend returned 404 for '%s'", product_name)
@@ -683,16 +689,19 @@ async def fetch_crawler_safety_data(
 @router.post(
     "/products/signal-and-risk",
     response_model=SignalAndRiskResponse,
+    response_model_exclude_none=True,
     summary="Teammate Integration: Fetch Section 16 Signal and Risk data by submission and product",
 )
 @router.post(
     "/product/signal-and-risk",
     response_model=SignalAndRiskResponse,
+    response_model_exclude_none=True,
     include_in_schema=False,
 )
 @router.post(
     "/signal-and-risk",
     response_model=SignalAndRiskResponse,
+    response_model_exclude_none=True,
     summary="Teammate Integration: Fetch Section 16 Signal and Risk data by submission and product (short alias)",
 )
 async def post_signal_and_risk(
@@ -704,7 +713,7 @@ async def post_signal_and_risk(
     **Teammate Integration Endpoint**:
     Receives submissionId and productName, looks up both:
     1. Indexed PDF Section 16 data (summary_of_safety_concerns)
-    2. Live/indexed US FDA SrLC crawler data (fda_safety_labeling_changes)
+    2. Live/indexed US FDA SrLC crawler data (fda_safety_labeling_changes / website_Data)
     Returns a SignalAndRisk payload with two separate entries in responseData.
     Dispatches an outbound callback to Salesforce (updateSubmissionResponse).
     """
@@ -753,12 +762,17 @@ async def post_signal_and_risk(
 
     if crawler_item:
         response_items.append({
+            "website_Name": crawler_item.get("website_Name") or "FDA_details",
+            "website_Data": crawler_item.get("website_Data") or crawler_item.get("Data"),
             "productName": crawler_item.get("productName") or matched_product,
             "title": crawler_item.get("title") or "fda_safety_labeling_changes",
-            "Data": crawler_item.get("Data"),
+            "Data": crawler_item.get("Data") or crawler_item.get("website_Data"),
         })
+
+    resp_type = req.responseType or req.response_type or ("SafetyActionTaken" if not has_pdf_data else "SignalAndRisk")
+
     response_payload = {
-        "responseType": "SignalAndRisk",
+        "responseType": resp_type,
         "submissionId": sub_id,
         "productName": matched_product,
         "responseData": response_items,

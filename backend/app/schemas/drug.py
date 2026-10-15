@@ -130,14 +130,16 @@ class CrawlRunResponse(BaseModel):
 
 
 class SignalAndRiskItem(BaseModel):
+    website_Name: Optional[str] = Field(None, description="Website identifier e.g. 'FDA_details' or 'TGA_details'")
+    website_Data: Optional[str] = Field(None, description="Full HTML document string")
     productName: Optional[str] = Field(None, description="Matched product or medicine name")
-    title: str = Field("summary_of_safety_concerns", description="Section or subsection title identifier")
-    Data: str = Field(..., description="Actual extracted FDA Drug Safety HTML content string")
+    title: Optional[str] = Field(None, description="Section or subsection title identifier")
+    Data: Optional[str] = Field(None, description="Actual extracted FDA Drug Safety HTML content string")
 
 
 class SignalAndRiskResponse(BaseModel):
-    responseType: str = Field("SignalAndRisk", description="Response type category")
     submissionId: str = Field(..., description="Echo of received submissionId")
+    responseType: str = Field("SafetyActionTaken", description="Response type category")
     productName: Optional[str] = Field(None, description="Echo of requested and matched product name")
     responseData: List[SignalAndRiskItem] = Field(..., description="List of extracted section entries")
 
@@ -153,6 +155,8 @@ class SignalAndRiskIntegrationRequest(BaseModel):
     end_date: Optional[Any] = Field(None, description="Optional end date (ignored)")
     callbackUrl: Optional[str] = Field(None, description="Optional custom Salesforce callback webhook URL")
     callback_url: Optional[str] = Field(None, description="Optional custom Salesforce callback webhook URL")
+    responseType: Optional[str] = Field(None, description="Custom responseType e.g. 'SafetyActionTaken'")
+    response_type: Optional[str] = Field(None, description="Custom response_type e.g. 'SafetyActionTaken'")
     format: Optional[str] = Field("json", description="Response format: 'json', 'html', or 'data'")
 
     model_config = ConfigDict(extra="ignore")
