@@ -47,6 +47,10 @@ def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-KEY")):
 class ProductQueryRequest(BaseModel):
     product_name: Optional[str] = Field(None, description="Medicine or product name to search for (e.g. 'Lipitor', 'Ozempic')")
     productName: Optional[str] = Field(None, description="Alternative camelCase product name")
+    submissionId: Optional[str] = Field(None, description="Unique submission identifier (e.g. 'a0CAq00004acdq7MAA')")
+    submission_id: Optional[str] = Field(None, description="Alternative submission identifier")
+    callbackUrl: Optional[str] = Field(None, description="Callback webhook URL")
+    callback_url: Optional[str] = Field(None, description="Callback webhook URL")
     section: Optional[str] = Field("16", description="Section number (default '16') or subsection (e.g. '16.1')")
     subsection: Optional[str] = Field(None, description="Optional target subsection (e.g. '16.1', '16.2')")
     format: Optional[str] = Field("json", description="Response format: 'json' or 'html'")
@@ -716,6 +720,27 @@ async def post_product_section_16(
     if req.format and req.format.lower() == "data":
         return {"Data": resp_data.get("Data") or resp_data["data"]["html"]}
 
+    sub_id = (req.submissionId or req.submission_id or "").strip()
+    if sub_id:
+        raw_html = resp_data.get("Data") or (resp_data.get("data") or {}).get("html") or ""
+        clean_html = strip_html_tables(raw_html) if raw_html else ""
+        pdf_signal_payload = {
+            "responseType": "SignalAndRisk",
+            "submissionId": sub_id,
+            "productName": record.product_name or target_name,
+            "responseData": [
+                {
+                    "productName": record.product_name or target_name,
+                    "title": "summary_of_safety_concerns",
+                    "Data": clean_html,
+                }
+            ],
+        }
+        target_cb = (req.callbackUrl or req.callback_url or SALESFORCE_CALLBACK_URL or "").strip()
+        if target_cb and target_cb.lower() not in ("none", "skip", "disabled", "false"):
+            await send_salesforce_callback(pdf_signal_payload, target_cb)
+        return pdf_signal_payload
+
     return resp_data
 
 
@@ -875,17 +900,17 @@ def extract_pdf_branch(db: Session, prod_name: str) -> Dict[str, Any]:
 
 @router.post(
     "/products/signal-and-risk",
-    response_model=UnifiedClientResponse,
+    response_model=Any,
     summary="Unified Client Integration: Fetch Website Crawler Data and PDF Extractor Data in one call",
 )
 @router.post(
     "/product/signal-and-risk",
-    response_model=UnifiedClientResponse,
+    response_model=Any,
     include_in_schema=False,
 )
 @router.post(
     "/signal-and-risk",
-    response_model=UnifiedClientResponse,
+    response_model=Any,
     summary="Unified Client Integration (short alias)",
 )
 async def post_signal_and_risk(
@@ -1048,7 +1073,39 @@ async def post_signal_and_risk(
         "pdf_extractor_Data": pdf_extractor_Data,
     }
 
-    # 7. Outbound callbacks to Salesforce updateSubmissionResponse webhook
+    # 7. Construct clean independent responses
+    website_response = {
+        "submissionId": sub_id,
+        "responseType": "SafetyActionTaken",
+        "responseData": [
+            {
+                "website_Name": item.get("website_Name") or "FDA_details",
+                "website_Data": item.get("website_Data") or item.get("Data") or "",
+            }
+            for item in (website_Data.get("data") or [])
+        ],
+    }
+
+    clean_pdf_html = ""
+    if pdf_extractor_Data.get("status") == "success":
+        pdf_cb_item = pdf_extractor_Data.get("data") or {}
+        raw_html = pdf_cb_item.get("Data") or (pdf_cb_item.get("data") or {}).get("html") or ""
+        clean_pdf_html = strip_html_tables(raw_html) if raw_html else ""
+
+    pdf_response = {
+        "responseType": "SignalAndRisk",
+        "submissionId": sub_id,
+        "productName": matched_product,
+        "responseData": [
+            {
+                "productName": matched_product,
+                "title": "summary_of_safety_concerns",
+                "Data": clean_pdf_html,
+            }
+        ] if pdf_extractor_Data.get("status") == "success" else [],
+    }
+
+    # 8. Outbound callbacks to Salesforce updateSubmissionResponse webhook
     # Dispatches two separate HTTP POST calls as requested:
     #   Webhook Call #1: responseType "SafetyActionTaken" (Website Crawler data)
     #   Webhook Call #2: responseType "SignalAndRisk" (PDF Extractor data)
@@ -1056,51 +1113,32 @@ async def post_signal_and_risk(
     if target_callback and target_callback.lower() not in ("none", "skip", "disabled", "false"):
         # Webhook Call #1: Safety Action Taken (Website Crawler)
         if website_Data.get("status") == "success" or not pdf_extractor_Data.get("data"):
-            salesforce_safety_payload = {
-                "submissionId": sub_id,
-                "responseType": "SafetyActionTaken",
-                "responseData": [
-                    {
-                        "website_Name": item.get("website_Name") or "FDA_details",
-                        "website_Data": item.get("website_Data") or item.get("Data") or "",
-                    }
-                    for item in (website_Data.get("data") or [])
-                ],
-            }
-            await send_salesforce_callback(salesforce_safety_payload, target_callback)
+            await send_salesforce_callback(website_response, target_callback)
 
         # Webhook Call #2: Signal and Risk (PDF Extractor)
         if pdf_extractor_Data.get("status") == "success" or not website_Data.get("data"):
-            pdf_cb_item = pdf_extractor_Data.get("data") or {}
-            salesforce_signal_payload = {
-                "submissionId": sub_id,
-                "responseType": "SignalAndRisk",
-                "responseData": {
-                    "product_name": pdf_cb_item.get("product_name") or matched_product,
-                    "section_title": pdf_cb_item.get("section_title") or "16 Signal and Risk Evaluation",
-                    "source_document": pdf_cb_item.get("source_document") or "",
-                    "Data": pdf_cb_item.get("Data") or "",
-                    "data": pdf_cb_item.get("data") or {},
-                },
-            }
-            await send_salesforce_callback(salesforce_signal_payload, target_callback)
+            await send_salesforce_callback(pdf_response, target_callback)
 
-    return response_payload
+    req_format = (getattr(req, "format", None) or "").strip().lower()
+    if req_format in ("dict", "unified", "merged"):
+        return response_payload
+
+    return [website_response, pdf_response]
 
 
 @router.get(
     "/products/signal-and-risk",
-    response_model=UnifiedClientResponse,
+    response_model=Any,
     summary="Fetch Section 16 Signal and Risk data via GET query for browser testing",
 )
 @router.get(
     "/product/signal-and-risk",
-    response_model=UnifiedClientResponse,
+    response_model=Any,
     include_in_schema=False,
 )
 @router.get(
     "/signal-and-risk",
-    response_model=UnifiedClientResponse,
+    response_model=Any,
     include_in_schema=False,
 )
 async def get_signal_and_risk(

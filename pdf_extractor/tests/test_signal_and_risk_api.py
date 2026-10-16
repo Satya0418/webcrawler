@@ -11,11 +11,11 @@ def test_signal_and_risk_post_success():
     Validates teammate's unified integration endpoint:
     - Sends POST request with submissionId and productName ('amikacin').
     - Verifies HTTP 200 status.
-    - Verifies exact top-level keys: ['submissionId', 'productName', 'website_Data', 'pdf_extractor_Data'].
+    - Verifies that response is a clean list of two separate responses:
+      [ SafetyActionTaken_response, SignalAndRisk_response ].
+    - Verifies neither response is merged into the other.
     - Verifies submissionId is echoed unchanged.
-    - Verifies website_Data.title is 'Website Crawler Data'.
-    - Verifies pdf_extractor_Data.title is 'PDF Extractor Data'.
-    - Verifies pdf_extractor_Data contains real extracted Section 16 HTML from Amikacin PDF.
+    - Verifies Section 16 HTML from Amikacin PDF is in SignalAndRisk responseData.
     """
     payload = {
         "submissionId": "a0CAq00004acdq7MAA",
@@ -25,43 +25,32 @@ def test_signal_and_risk_post_success():
     assert res.status_code == 200, f"Expected 200, got {res.status_code}: {res.text}"
 
     body = res.json()
+    assert isinstance(body, list), f"Expected list response, got {type(body)}"
+    assert len(body) >= 1
 
-    # Response top-level keys
-    assert "submissionId" in body
-    assert "productName" in body
-    assert "website_Data" in body
-    assert "pdf_extractor_Data" in body
+    # Locate SafetyActionTaken response
+    safety_res = next((x for x in body if x.get("responseType") == "SafetyActionTaken"), None)
+    assert safety_res is not None
+    assert safety_res["submissionId"] == "a0CAq00004acdq7MAA"
+    assert isinstance(safety_res["responseData"], list)
 
-    assert body["submissionId"] == "a0CAq00004acdq7MAA"
-    assert "amikacin" in body["productName"].lower()
+    # Locate SignalAndRisk response
+    signal_res = next((x for x in body if x.get("responseType") == "SignalAndRisk"), None)
+    assert signal_res is not None
+    assert signal_res["submissionId"] == "a0CAq00004acdq7MAA"
+    assert "amikacin" in signal_res["productName"].lower()
+    assert isinstance(signal_res["responseData"], list)
+    assert len(signal_res["responseData"]) == 1
 
-    # Website crawler data section
-    web_section = body["website_Data"]
-    assert web_section["title"] in ("Safety Action Taken", "Website Crawler Data")
-    assert web_section["status"] in ("success", "not_found", "error")
-    assert isinstance(web_section["data"], list)
-
-    # PDF extractor data section
-    pdf_section = body["pdf_extractor_Data"]
-    assert pdf_section["title"] in ("Signal and Risk", "PDF Extractor Data")
-    assert pdf_section["status"] == "success"
-    assert isinstance(pdf_section["data"], dict)
-
-    pdf_data = pdf_section["data"]
-    assert pdf_data["status"] == "success"
-    assert "amikacin" in pdf_data["product_name"].lower()
-    assert pdf_data["target_section"] == "16"
-
-    # Verifies real Section 16 HTML content string (headings and badges strictly omitted, paragraphs preserved)
-    html = pdf_data["Data"]
+    item = signal_res["responseData"][0]
+    assert item["title"] == "summary_of_safety_concerns"
+    html = item["Data"]
     assert isinstance(html, str)
     assert html.startswith("<!DOCTYPE html>")
     assert "</html>" in html
     assert "Erfa-Amikacin" in html or "amikacin" in html.lower()
     assert "16.1 Summary of Safety Concerns" not in html
     assert "Section 16.1" not in html
-    assert "med-brand-tag" not in html
-    assert "med-sub-header" not in html
 
 
 def test_signal_and_risk_alias_endpoint():
@@ -74,11 +63,11 @@ def test_signal_and_risk_alias_endpoint():
         res = client.post(endpoint, json=payload)
         assert res.status_code == 200, f"Failed for {endpoint}"
         body = res.json()
-        assert body["submissionId"] == "a0CAq00004acdq7MAA"
-        assert "amikacin" in body["productName"].lower()
-        assert body["pdf_extractor_Data"]["title"] in ("Signal and Risk", "PDF Extractor Data")
-        assert body["pdf_extractor_Data"]["status"] == "success"
-        assert body["website_Data"]["title"] in ("Safety Action Taken", "Website Crawler Data")
+        assert isinstance(body, list)
+        signal_res = next((x for x in body if x.get("responseType") == "SignalAndRisk"), None)
+        assert signal_res is not None
+        assert signal_res["submissionId"] == "a0CAq00004acdq7MAA"
+        assert "amikacin" in signal_res["productName"].lower()
 
 
 def test_signal_and_risk_validation_missing_submission_id():
@@ -127,8 +116,11 @@ def test_signal_and_risk_date_range_valid_dd_mm_yyyy():
     res = client.post("/api/v1/products/signal-and-risk", json=payload)
     assert res.status_code == 200
     body = res.json()
-    assert body["submissionId"] == "sub_with_dates_123"
-    assert body["pdf_extractor_Data"]["status"] == "success"
+    assert isinstance(body, list)
+    signal_res = next((x for x in body if x.get("responseType") == "SignalAndRisk"), None)
+    assert signal_res is not None
+    assert signal_res["submissionId"] == "sub_with_dates_123"
+    assert len(signal_res["responseData"]) == 1
 
 
 def test_signal_and_risk_date_range_invalid_format():
@@ -170,8 +162,11 @@ def test_signal_and_risk_empty_strings_omitted_filters():
     res = client.post("/api/v1/products/signal-and-risk", json=payload)
     assert res.status_code == 200
     body = res.json()
-    assert body["submissionId"] == "sub_empty_filters"
-    assert body["pdf_extractor_Data"]["status"] == "success"
+    assert isinstance(body, list)
+    signal_res = next((x for x in body if x.get("responseType") == "SignalAndRisk"), None)
+    assert signal_res is not None
+    assert signal_res["submissionId"] == "sub_empty_filters"
+    assert len(signal_res["responseData"]) == 1
 
 
 def test_signal_and_risk_multiple_indexed_products():
@@ -185,9 +180,12 @@ def test_signal_and_risk_multiple_indexed_products():
             continue
         assert res.status_code == 200, f"Failed for {prod}: {res.text}"
         body = res.json()
-        assert body["submissionId"] == f"sub_{prod}"
-        pdf_data = body["pdf_extractor_Data"]["data"]
-        html = pdf_data["Data"]
+        assert isinstance(body, list)
+        signal_res = next((x for x in body if x.get("responseType") == "SignalAndRisk"), None)
+        assert signal_res is not None
+        assert signal_res["submissionId"] == f"sub_{prod}"
+        item = signal_res["responseData"][0]
+        html = item["Data"]
         assert "<!DOCTYPE html>" in html
         assert "</html>" in html
         assert "<table" not in html, f"Tables must be stripped from {prod}"
@@ -198,21 +196,33 @@ def test_signal_and_risk_browser_get_support():
     res = client.get("/api/v1/products/signal-and-risk?productName=amikacin")
     assert res.status_code == 200
     body = res.json()
-    assert "amikacin" in body["productName"].lower()
-    assert body["pdf_extractor_Data"]["title"] in ("Signal and Risk", "PDF Extractor Data")
-    assert body["website_Data"]["title"] in ("Safety Action Taken", "Website Crawler Data")
-    assert "<!DOCTYPE html>" in body["pdf_extractor_Data"]["data"]["Data"]
+    assert isinstance(body, list)
+    signal_res = next((x for x in body if x.get("responseType") == "SignalAndRisk"), None)
+    safety_res = next((x for x in body if x.get("responseType") == "SafetyActionTaken"), None)
+    assert signal_res is not None
+    assert safety_res is not None
+    assert "amikacin" in signal_res["productName"].lower()
+    assert "<!DOCTYPE html>" in signal_res["responseData"][0]["Data"]
 
 
 def test_signal_and_risk_singular_alias():
     """Verifies that typing /product/ (singular) works for both GET and POST."""
     res_post = client.post("/api/v1/product/signal-and-risk", json={"submissionId": "sub_1", "productName": "amikacin"})
     assert res_post.status_code == 200
-    assert "amikacin" in res_post.json()["productName"].lower()
+    body_post = res_post.json()
+    assert isinstance(body_post, list)
+    signal_post = next((x for x in body_post if x.get("responseType") == "SignalAndRisk"), None)
+    assert signal_post is not None
+    assert "amikacin" in signal_post["productName"].lower()
 
     res_get = client.get("/api/v1/product/signal-and-risk?productName=amikacin")
     assert res_get.status_code == 200
-    assert "amikacin" in res_get.json()["productName"].lower()
+    body_get = res_get.json()
+    assert isinstance(body_get, list)
+    signal_get = next((x for x in body_get if x.get("responseType") == "SignalAndRisk"), None)
+    assert signal_get is not None
+    assert "amikacin" in signal_get["productName"].lower()
+
 
 
 def test_signal_and_risk_salesforce_callback_invoked(monkeypatch):
@@ -291,37 +301,37 @@ def test_signal_and_risk_both_success_independent_objects(monkeypatch):
     res = client.post("/api/v1/products/signal-and-risk", json=payload)
     assert res.status_code == 200
     body = res.json()
-
-    assert body["submissionId"] == "sub_multi_source_999"
-    assert "amikacin" in body["productName"].lower()
+    assert isinstance(body, list)
+    assert len(body) == 2
 
     # Subsystem 1: website_Data
-    web_res = body["website_Data"]
-    assert web_res["title"] in ("Safety Action Taken", "Website Crawler Data")
-    assert web_res["status"] == "success"
-    assert len(web_res["data"]) == 1
-    web_item = web_res["data"][0]
+    web_res = next((x for x in body if x.get("responseType") == "SafetyActionTaken"), None)
+    assert web_res is not None
+    assert web_res["submissionId"] == "sub_multi_source_999"
+    assert len(web_res["responseData"]) == 1
+    web_item = web_res["responseData"][0]
     assert web_item["website_Name"] == "FDA_details"
-    assert web_item["title"] == "Website Safety Data"
-    assert "FDA Live SrLC Report" in web_item["Data"]
-    assert "Erfa-Amikacin" not in web_item["Data"]  # Distinct from PDF!
+    assert "FDA Live SrLC Report" in web_item["website_Data"]
+    assert "Erfa-Amikacin" not in web_item["website_Data"]  # Distinct from PDF!
 
     # Subsystem 2: pdf_extractor_Data
-    pdf_res = body["pdf_extractor_Data"]
-    assert pdf_res["title"] in ("Signal and Risk", "PDF Extractor Data")
-    assert pdf_res["status"] == "success"
-    pdf_data = pdf_res["data"]
-    assert "<!DOCTYPE html>" in pdf_data["Data"]
-    assert "Erfa-Amikacin" in pdf_data["Data"] or "amikacin" in pdf_data["Data"].lower()
-    assert "fda-safety-report" not in pdf_data["Data"]  # Distinct from website!
+    pdf_res = next((x for x in body if x.get("responseType") == "SignalAndRisk"), None)
+    assert pdf_res is not None
+    assert pdf_res["submissionId"] == "sub_multi_source_999"
+    assert "amikacin" in pdf_res["productName"].lower()
+    assert len(pdf_res["responseData"]) == 1
+    pdf_item = pdf_res["responseData"][0]
+    assert "<!DOCTYPE html>" in pdf_item["Data"]
+    assert "Erfa-Amikacin" in pdf_item["Data"] or "amikacin" in pdf_item["Data"].lower()
+    assert "fda-safety-report" not in pdf_item["Data"]  # Distinct from website!
 
 
 def test_signal_and_risk_returns_crawler_when_no_pdf(monkeypatch):
     """
     Verifies that for a drug not in PDF records but present in crawler backend:
     - HTTP 200 is returned.
-    - website_Data.status == 'success' with website records.
-    - pdf_extractor_Data.status == 'not_found' with data == None.
+    - website_response has records in responseData.
+    - pdf_response has responseData == [].
     - Successful website results are NOT suppressed.
     """
     from backend.api import products
@@ -351,23 +361,26 @@ def test_signal_and_risk_returns_crawler_when_no_pdf(monkeypatch):
     res = client.post("/api/v1/products/signal-and-risk", json=payload)
     assert res.status_code == 200
     body = res.json()
+    assert isinstance(body, list)
 
-    assert body["submissionId"] == "sub_lipitor_777"
-    assert body["website_Data"]["status"] == "success"
-    assert len(body["website_Data"]["data"]) == 1
-    assert "US FDA Lipitor Report" in body["website_Data"]["data"][0]["Data"]
+    web_res = next((x for x in body if x.get("responseType") == "SafetyActionTaken"), None)
+    assert web_res is not None
+    assert web_res["submissionId"] == "sub_lipitor_777"
+    assert len(web_res["responseData"]) == 1
+    assert "US FDA Lipitor Report" in web_res["responseData"][0]["website_Data"]
 
-    # PDF status is not_found, but does not break the response
-    assert body["pdf_extractor_Data"]["status"] == "not_found"
-    assert body["pdf_extractor_Data"]["data"] is None
+    pdf_res = next((x for x in body if x.get("responseType") == "SignalAndRisk"), None)
+    assert pdf_res is not None
+    assert pdf_res["submissionId"] == "sub_lipitor_777"
+    assert pdf_res["responseData"] == []
 
 
 def test_signal_and_risk_returns_pdf_when_crawler_fails(monkeypatch):
     """
     Verifies that when crawler backend fails (e.g. error or timeout):
     - HTTP 200 is returned.
-    - pdf_extractor_Data.status == 'success' with Section 16 data.
-    - website_Data.status == 'error' with data == [].
+    - pdf_response has Section 16 data in responseData.
+    - website_response has responseData == [].
     - PDF result is preserved intact.
     """
     from backend.api import products
@@ -387,14 +400,19 @@ def test_signal_and_risk_returns_pdf_when_crawler_fails(monkeypatch):
     res = client.post("/api/v1/products/signal-and-risk", json=payload)
     assert res.status_code == 200
     body = res.json()
+    assert isinstance(body, list)
 
-    assert body["submissionId"] == "sub_pdf_only_555"
-    assert body["pdf_extractor_Data"]["status"] == "success"
-    assert "<!DOCTYPE html>" in body["pdf_extractor_Data"]["data"]["Data"]
+    pdf_res = next((x for x in body if x.get("responseType") == "SignalAndRisk"), None)
+    assert pdf_res is not None
+    assert pdf_res["submissionId"] == "sub_pdf_only_555"
+    assert len(pdf_res["responseData"]) == 1
+    assert "<!DOCTYPE html>" in pdf_res["responseData"][0]["Data"]
 
-    assert body["website_Data"]["status"] == "error"
-    assert body["website_Data"]["data"] == []
-    assert "timed out" in body["website_Data"]["message"]
+    web_res = next((x for x in body if x.get("responseType") == "SafetyActionTaken"), None)
+    assert web_res is not None
+    assert web_res["submissionId"] == "sub_pdf_only_555"
+    assert web_res["responseData"] == []
+
 
 
 def test_signal_and_risk_auth_failure(monkeypatch):
@@ -474,4 +492,7 @@ def test_signal_and_risk_iso_date_format_support():
     res = client.post("/api/v1/products/signal-and-risk", json=payload)
     assert res.status_code == 200
     body = res.json()
-    assert body["submissionId"] == "iso_date_sub_001"
+    assert isinstance(body, list)
+    signal_res = next((x for x in body if x.get("responseType") == "SignalAndRisk"), None)
+    assert signal_res is not None
+    assert signal_res["submissionId"] == "iso_date_sub_001"
