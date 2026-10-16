@@ -45,13 +45,16 @@ def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-KEY")):
 
 
 class ProductQueryRequest(BaseModel):
-    product_name: str = Field(..., description="Medicine or product name to search for (e.g. 'Lipitor', 'Ozempic')")
+    product_name: Optional[str] = Field(None, description="Medicine or product name to search for (e.g. 'Lipitor', 'Ozempic')")
+    productName: Optional[str] = Field(None, description="Alternative camelCase product name")
     section: Optional[str] = Field("16", description="Section number (default '16') or subsection (e.g. '16.1')")
     subsection: Optional[str] = Field(None, description="Optional target subsection (e.g. '16.1', '16.2')")
     format: Optional[str] = Field("json", description="Response format: 'json' or 'html'")
     embed_only: bool = Field(False, description="If format=html and embed_only=True, returns embeddable snippet without <html><body>")
     include_tables: bool = Field(True, description="Whether to include structured tables in the response")
     include_html: bool = Field(True, description="Whether to include rendered HTML in the response")
+
+    model_config = ConfigDict(extra="ignore")
 
 
 DATE_REGEX_DMY = re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{4})$")
@@ -676,13 +679,19 @@ async def post_product_section_16(
     _auth: bool = Depends(verify_api_key),
 ):
     """POST alternative for clients querying with a JSON payload."""
-    record = find_product_record(db, req.product_name)
+    target_name = (req.product_name or req.productName or "").strip()
+    if not target_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="'product_name' or 'productName' is required in request body.",
+        )
+    record = find_product_record(db, target_name)
     if not record:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={
                 "status": "not_found",
-                "message": f"No extracted data found for product '{req.product_name}'.",
+                "message": f"No extracted data found for product '{target_name}'.",
             },
         )
 
