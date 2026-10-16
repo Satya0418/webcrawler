@@ -113,7 +113,7 @@ Whenever a new PDF is added:
 
 ## 🤝 Teammate Integration API (`SignalAndRisk`)
 
-For automated partner integrations that query by `submissionId` and `productName` and require Section 16 HTML output:
+For automated partner integrations that query by `submissionId`, `productName`, and optional date/ingredient filters:
 
 - **Primary URL**: `POST http://127.0.0.1:8000/api/v1/products/signal-and-risk`
 - **Short Alias URL**: `POST http://127.0.0.1:8000/api/v1/signal-and-risk`
@@ -123,23 +123,52 @@ For automated partner integrations that query by `submissionId` and `productName
 ```json
 {
   "submissionId": "a0CAq00004acdq7MAA",
-  "productName": "amikacin"
+  "productName": "ARIKAYCE KIT",
+  "startDate": "01-01-2025",
+  "endDate": "01-01-2026",
+  "genericName": "",
+  "activeIngredients": ""
 }
 ```
 
 ### Response (`200 OK application/json`)
+Returns two independent response objects (`website_Data` and `pdf_extractor_Data`):
 ```json
 {
-  "responseType": "SignalAndRisk",
   "submissionId": "a0CAq00004acdq7MAA",
-  "productName": "amikacin",
-  "responseData": [
-    {
-      "productName": "amikacin",
-      "title": "summary_of_safety_concerns",
-      "Data": "<!DOCTYPE html>...the actual extracted Section 16 HTML...</html>"
+  "productName": "ARIKAYCE KIT",
+  "website_Data": {
+    "title": "Website Crawler Data",
+    "status": "success",
+    "data": [
+      {
+        "website_Name": "FDA_details",
+        "title": "Website Safety Data",
+        "productName": "ARIKAYCE KIT",
+        "genericName": "amikacin sulfate",
+        "activeIngredients": "AMIKACIN SULFATE",
+        "startDate": "01-01-2025",
+        "endDate": "01-01-2026",
+        "Data": "<!DOCTYPE html><html>...FDA SrLC safety changes...</html>",
+        "submissionId": "a0CAq00004acdq7MAA"
+      }
+    ]
+  },
+  "pdf_extractor_Data": {
+    "title": "PDF Extractor Data",
+    "status": "success",
+    "data": {
+      "status": "success",
+      "product_name": "Amikacin",
+      "target_section": "16",
+      "Data": "<!DOCTYPE html><html><body><p>Summary of Safety Concerns...</p></body></html>",
+      "data": {
+        "text": "Summary of Safety Concerns...",
+        "tables": [],
+        "subsections": ["16.1"]
+      }
     }
-  ]
+  }
 }
 ```
 
@@ -149,20 +178,11 @@ curl -X POST "http://127.0.0.1:8000/api/v1/products/signal-and-risk" \
   -H "Content-Type: application/json" \
   -d '{
     "submissionId": "a0CAq00004acdq7MAA",
-    "productName": "amikacin"
+    "productName": "ARIKAYCE KIT",
+    "startDate": "01-01-2025",
+    "endDate": "01-01-2026",
+    "genericName": "",
+    "activeIngredients": ""
   }'
 ```
-
-### Postman Setup
-- **Method**: `POST`
-- **URL**: `http://127.0.0.1:8000/api/v1/products/signal-and-risk`
-- **Headers**:
-  - `Content-Type`: `application/json`
-- **Body**: (Select **raw** -> **JSON**)
-  ```json
-  {
-    "submissionId": "a0CAq00004acdq7MAA",
-    "productName": "amikacin"
-  }
-  ```
 

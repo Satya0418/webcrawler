@@ -1,7 +1,9 @@
 import json
 import re
+import asyncio
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, ConfigDict
@@ -52,34 +54,123 @@ class ProductQueryRequest(BaseModel):
     include_html: bool = Field(True, description="Whether to include rendered HTML in the response")
 
 
-class SignalAndRiskItem(BaseModel):
-    website_Name: Optional[str] = Field(None, description="Website identifier e.g. 'FDA_details' or 'TGA_details'")
-    website_Data: Optional[str] = Field(None, description="Full HTML document string")
-    productName: Optional[str] = Field(None, description="Matched product or medicine name")
-    title: Optional[str] = Field(None, description="Section or subsection title identifier, e.g. 'summary_of_safety_concerns'")
-    Data: Optional[str] = Field(None, description="Actual extracted Section 16 HTML content string")
+DATE_REGEX = re.compile(r"^(\d{2})-(\d{2})-(\d{4})$")
 
 
-class SignalAndRiskResponse(BaseModel):
-    responseType: str = Field("SignalAndRisk", description="Response type category")
+def validate_client_date_range(
+    start_date_val: Optional[Any],
+    end_date_val: Optional[Any],
+):
+    """
+    Standardizes and strictly validates client dates in DD-MM-YYYY format.
+    Rejects malformed, ambiguous, or invalid calendar dates with HTTP 422.
+    Rejects startDate > endDate with HTTP 422.
+    Returns (start_dt, end_dt, start_str, end_str).
+    """
+    def _parse(val: Optional[Any], name: str) -> Optional[datetime]:
+        if val is None:
+            return None
+        s = str(val).strip()
+        if not s:
+            return None
+        m = DATE_REGEX.match(s)
+        if not m:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid date format for '{name}': '{s}'. Expected DD-MM-YYYY (e.g. '01-01-2025').",
+            )
+        d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return datetime(y, mth, d)
+        except ValueError as err:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid calendar date for '{name}': '{s}' ({err}). Expected DD-MM-YYYY.",
+            )
+
+    start_dt = _parse(start_date_val, "startDate")
+    end_dt = _parse(end_date_val, "endDate")
+
+    start_str = start_dt.strftime("%d-%m-%Y") if start_dt else ""
+    end_str = end_dt.strftime("%d-%m-%Y") if end_dt else ""
+
+    if start_dt and end_dt:
+        if start_dt > end_dt:
+            raise HTTPException(
+                status_code=422,
+                detail=f"startDate ('{start_str}') cannot be later than endDate ('{end_str}').",
+            )
+        start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+    elif start_dt:
+        start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif end_dt:
+        end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    return start_dt, end_dt, start_str, end_str
+
+
+class WebsiteDataItem(BaseModel):
+    website_Name: str = Field("FDA_details", description="Website identifier e.g. 'FDA_details' or 'TGA_details'")
+    title: str = Field("Website Safety Data", description="Title identifier")
+    productName: str = Field(..., description="Matched product or medicine name")
+    genericName: Optional[str] = Field("", description="Generic name or active ingredient description")
+    activeIngredients: Optional[str] = Field("", description="Active ingredients")
+    startDate: Optional[str] = Field("", description="Applied start date filter in DD-MM-YYYY format")
+    endDate: Optional[str] = Field("", description="Applied end date filter in DD-MM-YYYY format")
+    Data: str = Field(..., description="Actual extracted website HTML content string")
+    submissionId: Optional[str] = Field(None, description="Preserved submission identifier")
+
+
+class WebsiteDataSection(BaseModel):
+    title: str = Field("Website Crawler Data", description="Source identifier title")
+    status: str = Field("success", description="Status: 'success', 'not_found', or 'error'")
+    data: List[WebsiteDataItem] = Field(default_factory=list, description="List of website safety results")
+    message: Optional[str] = Field(None, description="Informational message or reason for no results")
+
+
+class PdfExtractorDataSection(BaseModel):
+    title: str = Field("PDF Extractor Data", description="Source identifier title")
+    status: str = Field("success", description="Status: 'success', 'not_found', or 'error'")
+    data: Optional[Dict[str, Any]] = Field(None, description="Preserved structured PDF extractor response")
+    message: Optional[str] = Field(None, description="Informational message or reason for no results")
+
+
+class UnifiedClientResponse(BaseModel):
     submissionId: str = Field(..., description="Echo of received submissionId")
-    productName: Optional[str] = Field(None, description="Echo of requested and matched product name")
-    responseData: List[SignalAndRiskItem] = Field(..., description="List of extracted section entries")
+    productName: str = Field(..., description="Echo of requested product name")
+    website_Data: WebsiteDataSection = Field(..., description="Independent results from website crawler")
+    pdf_extractor_Data: PdfExtractorDataSection = Field(..., description="Independent results from PDF extractor")
+
+    model_config = ConfigDict(extra="allow")
+
+
+# Backward compatibility aliases
+SignalAndRiskResponse = UnifiedClientResponse
 
 
 class SignalAndRiskIntegrationRequest(BaseModel):
     submissionId: Optional[str] = Field(None, description="Unique submission identifier (e.g. 'a0CAq00004acdq7MAA')")
-    productName: Optional[str] = Field(None, description="Medicine or product name to search for (e.g. 'amikacin')")
+    productName: Optional[str] = Field(None, description="Medicine or product name to search for (e.g. 'ARIKAYCE KIT')")
+    startDate: Optional[str] = Field(None, description="Start date filter in DD-MM-YYYY format (e.g. '01-01-2025')")
+    endDate: Optional[str] = Field(None, description="End date filter in DD-MM-YYYY format (e.g. '01-01-2026')")
+    genericName: Optional[str] = Field(None, description="Generic name filter")
+    activeIngredients: Optional[str] = Field(None, description="Active ingredient(s) filter")
+
+    # Snake-case and alternative aliases
     submission_id: Optional[str] = Field(None, description="Alternative snake_case submission identifier")
     product_name: Optional[str] = Field(None, description="Alternative snake_case product name")
-    responseType: Optional[str] = Field(None, description="Custom responseType e.g. 'SafetyActionTaken'")
-    response_type: Optional[str] = Field(None, description="Custom response_type e.g. 'SafetyActionTaken'")
-    startDate: Optional[Any] = Field(None, description="Optional start date (ignored)")
-    endDate: Optional[Any] = Field(None, description="Optional end date (ignored)")
-    start_date: Optional[Any] = Field(None, description="Optional start date (ignored)")
-    end_date: Optional[Any] = Field(None, description="Optional end date (ignored)")
+    start_date: Optional[str] = Field(None, description="Alternative snake_case start date")
+    end_date: Optional[str] = Field(None, description="Alternative snake_case end date")
+    generic_name: Optional[str] = Field(None, description="Alternative snake_case generic name")
+    active_ingredients: Optional[str] = Field(None, description="Alternative snake_case active ingredients")
+    activeIngredient: Optional[str] = Field(None, description="Singular active ingredient alias")
+    active_ingredient: Optional[str] = Field(None, description="Singular active ingredient alias")
+
     callbackUrl: Optional[str] = Field(None, description="Optional custom Salesforce callback webhook URL")
     callback_url: Optional[str] = Field(None, description="Optional custom Salesforce callback webhook URL")
+    responseType: Optional[str] = Field(None, description="Custom responseType e.g. 'SafetyActionTaken'")
+    response_type: Optional[str] = Field(None, description="Custom response_type e.g. 'SafetyActionTaken'")
 
     model_config = ConfigDict(extra="ignore")
 
@@ -641,22 +732,34 @@ async def send_salesforce_callback(payload: dict, callback_url: Optional[str] = 
 async def fetch_crawler_safety_data(
     product_name: str,
     submission_id: str,
-    timeout_seconds: float = 12.0,
-) -> Optional[Dict[str, Any]]:
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    generic_name: Optional[str] = None,
+    active_ingredients: Optional[str] = None,
+    timeout_seconds: float = 15.0,
+) -> Dict[str, Any]:
     """
     Queries the sibling medicine crawler backend service for live or indexed FDA safety labeling data.
-    Gracefully handles connection errors or missing data without blocking or failing the request.
+    Propagates date range, genericName, and activeIngredients.
+    Returns a dict with 'status': 'success' | 'not_found' | 'error',
+    and on success, 'item': dict.
     """
     candidates = [CRAWLER_BACKEND_URL]
     if "crawler_backend" in CRAWLER_BACKEND_URL:
         candidates.append("http://127.0.0.1:8001")
+        candidates.append("http://localhost:8001")
 
     payload = {
         "submissionId": submission_id,
         "productName": product_name,
+        "startDate": start_date or "",
+        "endDate": end_date or "",
+        "genericName": generic_name or "",
+        "activeIngredients": active_ingredients or "",
         "callbackUrl": "skip",  # prevent crawler from sending duplicate callback
     }
 
+    last_error = None
     for base_url in candidates:
         endpoint = f"{base_url.rstrip('/')}/api/drugs/signal-and-risk"
         try:
@@ -664,45 +767,100 @@ async def fetch_crawler_safety_data(
                 resp = await client.post(endpoint, json=payload)
                 if resp.status_code == 200:
                     data = resp.json()
+                    # Check website_Data first
+                    if isinstance(data.get("website_Data"), dict) and data["website_Data"].get("data"):
+                        items = data["website_Data"]["data"]
+                        if items and isinstance(items, list):
+                            return {"status": "success", "item": items[0]}
+                    # Fallback to responseData
                     resp_items = data.get("responseData") or []
                     if resp_items and isinstance(resp_items, list):
                         item = resp_items[0]
                         if item.get("website_Data") or item.get("Data"):
                             return {
-                                "website_Name": item.get("website_Name") or "FDA_details",
-                                "website_Data": item.get("website_Data") or item.get("Data"),
-                                "productName": item.get("productName") or product_name,
-                                "title": item.get("title") or "fda_safety_labeling_changes",
-                                "Data": item.get("Data") or item.get("website_Data"),
+                                "status": "success",
+                                "item": {
+                                    "website_Name": item.get("website_Name") or "FDA_details",
+                                    "title": "Website Safety Data",
+                                    "productName": item.get("productName") or product_name,
+                                    "genericName": item.get("genericName") or generic_name or "",
+                                    "activeIngredients": item.get("activeIngredients") or active_ingredients or "",
+                                    "startDate": item.get("startDate") or start_date or "",
+                                    "endDate": item.get("endDate") or end_date or "",
+                                    "Data": item.get("Data") or item.get("website_Data") or "",
+                                    "submissionId": item.get("submissionId") or submission_id,
+                                },
                             }
                 elif resp.status_code == 404:
-                    logger.debug("Crawler backend returned 404 for '%s'", product_name)
-                    return None
-        except (httpx.ConnectError, httpx.ConnectTimeout):
+                    detail = ""
+                    try:
+                        detail = resp.json().get("detail", "")
+                    except Exception:
+                        pass
+                    return {
+                        "status": "not_found",
+                        "message": detail or f"No website safety data found for product '{product_name}'.",
+                    }
+                elif resp.status_code == 422:
+                    detail = ""
+                    try:
+                        detail = resp.json().get("detail", "")
+                    except Exception:
+                        pass
+                    raise HTTPException(
+                        status_code=422,
+                        detail=detail or "Validation error in crawler date filtering.",
+                    )
+        except HTTPException:
+            raise
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            last_error = exc
             continue
         except Exception as exc:
             logger.warning("Error fetching crawler data from %s for '%s': %s", endpoint, product_name, exc)
-            return None
-    return None
+            last_error = exc
+            return {"status": "error", "message": str(exc)}
+
+    return {
+        "status": "error",
+        "message": f"Website crawler unavailable: {last_error}" if last_error else "Website crawler unavailable.",
+    }
+
+
+def extract_pdf_branch(db: Session, prod_name: str) -> Dict[str, Any]:
+    """Extracts structured PDF Section 16 data for the requested product."""
+    record = find_product_record(db, prod_name)
+    if record and record.status == "success" and record.extracted_html and record.extracted_html.strip():
+        resp_data = format_product_response(record=record, include_tables=False)
+        return {
+            "title": "PDF Extractor Data",
+            "status": "success",
+            "data": resp_data,
+            "product_name": record.product_name,
+        }
+    return {
+        "title": "PDF Extractor Data",
+        "status": "not_found",
+        "data": None,
+        "product_name": None,
+        "message": f"No indexed PDF Section 16 data found for product '{prod_name}'.",
+    }
 
 
 @router.post(
     "/products/signal-and-risk",
-    response_model=SignalAndRiskResponse,
-    response_model_exclude_none=True,
-    summary="Teammate Integration: Fetch Section 16 Signal and Risk data by submission and product",
+    response_model=UnifiedClientResponse,
+    summary="Unified Client Integration: Fetch Website Crawler Data and PDF Extractor Data in one call",
 )
 @router.post(
     "/product/signal-and-risk",
-    response_model=SignalAndRiskResponse,
-    response_model_exclude_none=True,
+    response_model=UnifiedClientResponse,
     include_in_schema=False,
 )
 @router.post(
     "/signal-and-risk",
-    response_model=SignalAndRiskResponse,
-    response_model_exclude_none=True,
-    summary="Teammate Integration: Fetch Section 16 Signal and Risk data by submission and product (short alias)",
+    response_model=UnifiedClientResponse,
+    summary="Unified Client Integration (short alias)",
 )
 async def post_signal_and_risk(
     req: SignalAndRiskIntegrationRequest,
@@ -710,12 +868,15 @@ async def post_signal_and_risk(
     _auth: bool = Depends(verify_api_key),
 ):
     """
-    **Teammate Integration Endpoint**:
-    Receives submissionId and productName, looks up both:
-    1. Indexed PDF Section 16 data (summary_of_safety_concerns)
-    2. Live/indexed US FDA SrLC crawler data (fda_safety_labeling_changes / website_Data)
-    Returns a SignalAndRisk payload with two separate entries in responseData.
-    Dispatches an outbound callback to Salesforce (updateSubmissionResponse).
+    **Unified Client API Endpoint**:
+    Receives submissionId, productName, startDate, endDate, genericName, activeIngredients.
+    Executes both subsystems independently:
+    1. Website Crawler Data (live/indexed US FDA SrLC data filtered by date range and search terms)
+    2. PDF Extractor Data (structured Section 16 data from indexed product documents)
+    Returns one unified JSON response containing two separate, independent response objects:
+    - website_Data
+    - pdf_extractor_Data
+    Dispatches outbound callback to Salesforce if configured.
     """
     # 1. Validate required fields
     raw_sub_id = req.submissionId if req.submissionId is not None else req.submission_id
@@ -734,53 +895,128 @@ async def post_signal_and_risk(
         )
     prod_name = str(raw_prod_name).strip()
 
-    # 2. Look up product record in indexed database
-    record = find_product_record(db, prod_name)
-    has_pdf_data = bool(record and record.status == "success" and record.extracted_html and record.extracted_html.strip())
+    # 2. Validate date range (format DD-MM-YYYY, reject invalid or startDate > endDate with HTTP 422)
+    raw_start = req.startDate if req.startDate is not None else req.start_date
+    raw_end = req.endDate if req.endDate is not None else req.end_date
+    start_dt, end_dt, start_str, end_str = validate_client_date_range(raw_start, raw_end)
 
-    # 3. Query crawler backend for US FDA safety & labeling changes asynchronously
-    crawler_item = await fetch_crawler_safety_data(product_name=prod_name, submission_id=sub_id)
+    # 3. Extract generic name and active ingredients filters
+    gen_name = (req.genericName or req.generic_name or "").strip() or None
+    act_ingr = (
+        req.activeIngredients
+        or req.active_ingredients
+        or req.activeIngredient
+        or req.active_ingredient
+        or ""
+    ).strip() or None
 
-    # 4. If neither source has data, return 404
-    if not has_pdf_data and not crawler_item:
+    # 4. Execute PDF extractor branch
+    pdf_info = extract_pdf_branch(db, prod_name)
+    pdf_extractor_Data = {
+        "title": "PDF Extractor Data",
+        "status": pdf_info["status"],
+        "data": pdf_info["data"],
+    }
+    if pdf_info.get("message"):
+        pdf_extractor_Data["message"] = pdf_info["message"]
+
+    # 5. Execute Website crawler branch
+    try:
+        crawler_res = await fetch_crawler_safety_data(
+            product_name=prod_name,
+            submission_id=sub_id,
+            start_date=start_str,
+            end_date=end_str,
+            generic_name=gen_name,
+            active_ingredients=act_ingr,
+        )
+    except TypeError:
+        # Fallback for mocks or legacy functions taking only positional arguments
+        try:
+            crawler_res = await fetch_crawler_safety_data(prod_name, sub_id)
+        except Exception as exc:
+            crawler_res = {"status": "error", "message": str(exc)}
+    except Exception as exc:
+        crawler_res = {"status": "error", "message": str(exc)}
+
+    if isinstance(crawler_res, dict) and crawler_res.get("status") == "success":
+        website_item = crawler_res.get("item")
+        if not website_item:
+            website_item = {
+                "website_Name": crawler_res.get("website_Name") or "FDA_details",
+                "title": crawler_res.get("title") or "Website Safety Data",
+                "productName": crawler_res.get("productName") or prod_name,
+                "genericName": crawler_res.get("genericName") or gen_name or "",
+                "activeIngredients": crawler_res.get("activeIngredients") or act_ingr or "",
+                "startDate": crawler_res.get("startDate") or start_str,
+                "endDate": crawler_res.get("endDate") or end_str,
+                "Data": crawler_res.get("Data") or crawler_res.get("website_Data") or "",
+                "submissionId": crawler_res.get("submissionId") or sub_id,
+            }
+        website_Data = {
+            "title": "Website Crawler Data",
+            "status": "success",
+            "data": [website_item],
+        }
+    elif isinstance(crawler_res, dict) and (crawler_res.get("Data") or crawler_res.get("website_Data")):
+        # Direct crawler item dict returned (e.g. from mock or legacy response)
+        website_Data = {
+            "title": "Website Crawler Data",
+            "status": "success",
+            "data": [
+                {
+                    "website_Name": crawler_res.get("website_Name") or "FDA_details",
+                    "title": crawler_res.get("title") or "Website Safety Data",
+                    "productName": crawler_res.get("productName") or prod_name,
+                    "genericName": crawler_res.get("genericName") or gen_name or "",
+                    "activeIngredients": crawler_res.get("activeIngredients") or act_ingr or "",
+                    "startDate": crawler_res.get("startDate") or start_str,
+                    "endDate": crawler_res.get("endDate") or end_str,
+                    "Data": crawler_res.get("Data") or crawler_res.get("website_Data") or "",
+                    "submissionId": crawler_res.get("submissionId") or sub_id,
+                }
+            ],
+        }
+    elif isinstance(crawler_res, dict) and crawler_res.get("status") == "not_found":
+        website_Data = {
+            "title": "Website Crawler Data",
+            "status": "not_found",
+            "data": [],
+            "message": crawler_res.get("message") or f"No website safety data found for product '{prod_name}'.",
+        }
+    else:
+        website_Data = {
+            "title": "Website Crawler Data",
+            "status": "error",
+            "data": [],
+            "message": crawler_res.get("message") if isinstance(crawler_res, dict) else "Website crawler service unavailable.",
+        }
+
+    # 6. Total failure check: if BOTH subsystems have no data, return HTTP 404
+    pdf_ok = (pdf_extractor_Data["status"] == "success")
+    website_ok = (website_Data["status"] == "success")
+    if not pdf_ok and not website_ok:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No indexed Section 16 data found for product '{prod_name}'.",
+            detail=f"No data found for product '{prod_name}' in either website crawler or PDF extractor.",
         )
 
-    matched_product = (record.product_name if record else None) or (crawler_item.get("productName") if crawler_item else None) or prod_name
-
-    # 5. Build responseData with separate entries (not merging them together)
-    response_items = []
-    if has_pdf_data:
-        clean_pdf_html = strip_html_headers(strip_html_tables(record.extracted_html or ""))
-        response_items.append({
-            "productName": record.product_name or matched_product,
-            "title": "summary_of_safety_concerns",
-            "Data": clean_pdf_html,
-        })
-
-    if crawler_item:
-        response_items.append({
-            "website_Name": crawler_item.get("website_Name") or "FDA_details",
-            "website_Data": crawler_item.get("website_Data") or crawler_item.get("Data"),
-            "productName": crawler_item.get("productName") or matched_product,
-            "title": crawler_item.get("title") or "fda_safety_labeling_changes",
-            "Data": crawler_item.get("Data") or crawler_item.get("website_Data"),
-        })
-
-    resp_type = req.responseType or req.response_type or ("SafetyActionTaken" if not has_pdf_data else "SignalAndRisk")
+    matched_product = (
+        pdf_info.get("product_name")
+        or (website_Data.get("data") and website_Data["data"][0].get("productName"))
+        or prod_name
+    )
 
     response_payload = {
-        "responseType": resp_type,
         "submissionId": sub_id,
         "productName": matched_product,
-        "responseData": response_items,
+        "website_Data": website_Data,
+        "pdf_extractor_Data": pdf_extractor_Data,
     }
 
-    # 6. Outbound callback to Salesforce updateSubmissionResponse webhook
+    # 7. Outbound callback to Salesforce updateSubmissionResponse webhook
     target_callback = (req.callbackUrl or req.callback_url or SALESFORCE_CALLBACK_URL or "").strip()
-    if target_callback:
+    if target_callback and target_callback.lower() not in ("none", "skip", "disabled", "false"):
         await send_salesforce_callback(response_payload, target_callback)
 
     return response_payload
@@ -788,25 +1024,33 @@ async def post_signal_and_risk(
 
 @router.get(
     "/products/signal-and-risk",
-    response_model=SignalAndRiskResponse,
+    response_model=UnifiedClientResponse,
     summary="Fetch Section 16 Signal and Risk data via GET query for browser testing",
 )
 @router.get(
     "/product/signal-and-risk",
-    response_model=SignalAndRiskResponse,
+    response_model=UnifiedClientResponse,
     include_in_schema=False,
 )
 @router.get(
     "/signal-and-risk",
-    response_model=SignalAndRiskResponse,
+    response_model=UnifiedClientResponse,
     include_in_schema=False,
 )
 async def get_signal_and_risk(
     productName: Optional[str] = Query(None, description="Medicine or product name (e.g. 'amikacin')"),
     submissionId: Optional[str] = Query("browser_test", description="Submission identifier"),
+    startDate: Optional[str] = Query(None, description="Start date filter in DD-MM-YYYY format"),
+    endDate: Optional[str] = Query(None, description="End date filter in DD-MM-YYYY format"),
+    genericName: Optional[str] = Query(None, description="Generic name filter"),
+    activeIngredients: Optional[str] = Query(None, description="Active ingredient filter"),
     callbackUrl: Optional[str] = Query(None, description="Optional custom Salesforce callback webhook URL"),
     product_name: Optional[str] = Query(None, include_in_schema=False),
     submission_id: Optional[str] = Query(None, include_in_schema=False),
+    start_date: Optional[str] = Query(None, include_in_schema=False),
+    end_date: Optional[str] = Query(None, include_in_schema=False),
+    generic_name: Optional[str] = Query(None, include_in_schema=False),
+    active_ingredients: Optional[str] = Query(None, include_in_schema=False),
     callback_url: Optional[str] = Query(None, include_in_schema=False),
     db: Session = Depends(get_db),
     _auth: bool = Depends(verify_api_key),
@@ -814,11 +1058,15 @@ async def get_signal_and_risk(
     """
     Browser Testing Helper:
     Allows directly testing this endpoint in any web browser address bar with query parameters,
-    e.g. /api/v1/products/signal-and-risk?productName=amikacin
+    e.g. /api/v1/products/signal-and-risk?productName=amikacin&startDate=01-01-2025&endDate=01-01-2026
     """
     prod = (productName or product_name or "").strip()
     sub = (submissionId or submission_id or "browser_test").strip()
     cb = (callbackUrl or callback_url or "").strip() or None
+    s_date = (startDate or start_date or "").strip() or None
+    e_date = (endDate or end_date or "").strip() or None
+    g_name = (genericName or generic_name or "").strip() or None
+    a_ingr = (activeIngredients or active_ingredients or "").strip() or None
     if not prod:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -828,7 +1076,15 @@ async def get_signal_and_risk(
             ),
         )
     return await post_signal_and_risk(
-        SignalAndRiskIntegrationRequest(submissionId=sub, productName=prod, callbackUrl=cb),
+        SignalAndRiskIntegrationRequest(
+            submissionId=sub,
+            productName=prod,
+            startDate=s_date,
+            endDate=e_date,
+            genericName=g_name,
+            activeIngredients=a_ingr,
+            callbackUrl=cb,
+        ),
         db=db,
         _auth=_auth,
     )

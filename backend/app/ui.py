@@ -149,105 +149,148 @@ def clean_clinical_text(raw_text: str) -> str:
     return "\n".join(cleaned_lines)
 
 
-def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = True) -> str:
+def _render_text_to_html_parts(cleaned_text: str, html_parts: List[str], bullet_pat: re.Pattern) -> None:
+    lines = [l.strip() for l in cleaned_text.split("\n") if l.strip()]
+    i = 0
+    n = len(lines)
+
+    while i < n:
+        line = lines[i]
+
+        # Check if this line starts a bullet list
+        if line.startswith(("•", "-", "*")):
+            bullet_items = []
+            while i < n and lines[i].startswith(("•", "-", "*")):
+                b_txt = bullet_pat.sub("", lines[i])
+                b_clean = re.sub(r"<\/?(?:u|i|em|strong|b)>", "", b_txt).strip()
+                # Check for bold prefix in bullet e.g. 'Skin and Appendages: ...'
+                kv_bullet = re.match(r"^([A-Za-z\s\-]+:)\s*(.*)", b_clean)
+                if kv_bullet:
+                    bullet_items.append(f"<li><strong>{html.escape(kv_bullet.group(1))}</strong> {html.escape(kv_bullet.group(2))}</li>")
+                else:
+                    bullet_items.append(f"<li>{html.escape(b_clean)}</li>")
+                i += 1
+            inner = "".join(bullet_items)
+            html_parts.append(f"<ul>{inner}</ul>")
+            continue
+
+        # Check if line is a subheading (e.g. 'Postmarketing Experience')
+        clean_no_tags = re.sub(r"<\/?(?:strong|b|i|u|em)>", "", line).strip()
+        subhead_match = re.match(r"^([A-Z][A-Za-z\s\(\)\-]{3,60})$", clean_no_tags)
+        if subhead_match and not line.endswith(".") and not line.endswith(":"):
+            html_parts.append(f"<h3>{html.escape(subhead_match.group(1))}</h3>")
+            i += 1
+            continue
+
+        # Check for key-value bold prefix e.g. "Gastrointestinal: text..." or "<b>Skin and Appendages:</b> text"
+        clean_text_line = re.sub(r"<\/?(?:u|i|em)>", "", line).strip()
+        kv_match = re.match(r"^(?:<strong>|<b>)?([A-Za-z\s\-]+:)(?:</strong>|</b>)?\s*(.*)", clean_text_line)
+        if kv_match:
+            prefix = re.sub(r"<\/?(?:strong|b|i|u)>", "", kv_match.group(1)).strip()
+            content = re.sub(r"<\/?(?:strong|b|i|u)>", "", kv_match.group(2)).strip()
+            html_parts.append(f"<p><strong>{html.escape(prefix)}</strong> {html.escape(content)}</p>")
+            i += 1
+            continue
+
+        # Regular paragraph line
+        clean_line = re.sub(r"<\/?(?:strong|b|i|u|em)>", "", line).strip()
+        if clean_line:
+            html_parts.append(f"<p>{html.escape(clean_line)}</p>")
+        i += 1
+
+
+def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = True, filter_latest: bool = True) -> str:
     """
     Generate clean, semantic HTML without CSS classes or styles,
     matching pdf_extractor output format for Salesforce (Nilima) and clean downloads.
-    Strictly filters to the latest date only.
+    When filter_latest is True, strictly filters to the latest date only.
+    When filter_latest is False, renders all changes in the provided list across the requested date range.
     """
     d_name = _get_val(drug, "display_name", "Drug")
     display_clean = d_name.title() if d_name.isupper() else d_name
     active_ingr = _get_val(drug, "active_ingredient", "") or "Not specified"
     app_num = _get_val(drug, "application_number", "") or "N/A"
 
-    # Filter to latest date only
-    latest_changes = filter_latest_date_changes(changes)
+    if filter_latest:
+        target_changes = filter_latest_date_changes(changes)
+    else:
+        target_changes = changes or []
 
-    # Extract latest date string
-    latest_date_str = ""
-    if latest_changes:
-        s_date = _get_val(latest_changes[0], "source_date")
+    # Extract date strings
+    date_strs = []
+    for c in target_changes:
+        s_date = _get_val(c, "source_date")
         if s_date:
-            latest_date_str = str(s_date)[:10]
+            d_s = str(s_date)[:10]
+            if d_s not in date_strs:
+                date_strs.append(d_s)
 
-    # Deduplicate changes by section on the latest date
-    unique_sections = {}
-    for c in latest_changes:
-        sec = _get_val(c, "section", "Safety Information") or "Safety Information"
-        txt = _get_val(c, "updated_text", "") or ""
-        if sec not in unique_sections or len(txt) > len(_get_val(unique_sections[sec], "updated_text", "")):
-            unique_sections[sec] = c
-
-    html_parts = []
-    html_parts.append(f"<h2>{html.escape(display_clean)} - Safety Information</h2>")
-    meta = []
-    if latest_date_str:
-        meta.append(f"<strong>Approval Date:</strong> {html.escape(latest_date_str)}")
-    if active_ingr:
-        meta.append(f"<strong>Active Ingredient:</strong> {html.escape(active_ingr)}")
-    if app_num and app_num != "N/A":
-        meta.append(f"<strong>Application:</strong> {html.escape(app_num)}")
-    if meta:
-        meta_str = " | ".join(meta)
-        html_parts.append(f"<p>{meta_str}</p>")
-
+    date_display = ", ".join(date_strs) if date_strs else ""
     bullet_pat = re.compile(r"^[•\-*]\s*")
+    html_parts = []
 
-    for sec, rec in unique_sections.items():
-        raw_text = _get_val(rec, "updated_text", "") or ""
-        cleaned_text = clean_clinical_text(raw_text)
-        if not cleaned_text:
-            continue
+    if filter_latest or len(date_strs) <= 1:
+        # Deduplicate changes by section on the latest date (or single date)
+        unique_sections = {}
+        for c in target_changes:
+            sec = _get_val(c, "section", "Safety Information") or "Safety Information"
+            txt = _get_val(c, "updated_text", "") or ""
+            if sec not in unique_sections or len(txt) > len(_get_val(unique_sections[sec], "updated_text", "")):
+                unique_sections[sec] = c
 
-        html_parts.append(f"<h2>{html.escape(sec)}</h2>")
+        html_parts.append(f"<h2>{html.escape(display_clean)} - Safety Information</h2>")
+        meta = []
+        if date_display:
+            meta.append(f"<strong>Approval Date:</strong> {html.escape(date_display)}")
+        if active_ingr and active_ingr != "Not specified":
+            meta.append(f"<strong>Active Ingredient:</strong> {html.escape(active_ingr)}")
+        if app_num and app_num != "N/A":
+            meta.append(f"<strong>Application:</strong> {html.escape(app_num)}")
+        if meta:
+            meta_str = " | ".join(meta)
+            html_parts.append(f"<p>{meta_str}</p>")
 
-        lines = [l.strip() for l in cleaned_text.split("\n") if l.strip()]
-        i = 0
-        n = len(lines)
-
-        while i < n:
-            line = lines[i]
-
-            # Check if this line starts a bullet list
-            if line.startswith(("•", "-", "*")):
-                bullet_items = []
-                while i < n and lines[i].startswith(("•", "-", "*")):
-                    b_txt = bullet_pat.sub("", lines[i])
-                    b_clean = re.sub(r"<\/?(?:u|i|em|strong|b)>", "", b_txt).strip()
-                    # Check for bold prefix in bullet e.g. 'Skin and Appendages: ...'
-                    kv_bullet = re.match(r"^([A-Za-z\s\-]+:)\s*(.*)", b_clean)
-                    if kv_bullet:
-                        bullet_items.append(f"<li><strong>{html.escape(kv_bullet.group(1))}</strong> {html.escape(kv_bullet.group(2))}</li>")
-                    else:
-                        bullet_items.append(f"<li>{html.escape(b_clean)}</li>")
-                    i += 1
-                inner = "".join(bullet_items)
-                html_parts.append(f"<ul>{inner}</ul>")
+        for sec, rec in unique_sections.items():
+            raw_text = _get_val(rec, "updated_text", "") or ""
+            cleaned_text = clean_clinical_text(raw_text)
+            if not cleaned_text:
                 continue
+            html_parts.append(f"<h2>{html.escape(sec)}</h2>")
+            _render_text_to_html_parts(cleaned_text, html_parts, bullet_pat)
+    else:
+        # Multiple dates across requested historical period: group chronologically by date
+        by_date = defaultdict(list)
+        for c in target_changes:
+            s_date = _get_val(c, "source_date")
+            d_s = str(s_date)[:10] if s_date else "Unknown Date"
+            by_date[d_s].append(c)
 
-            # Check if line is a subheading (e.g. 'Postmarketing Experience')
-            clean_no_tags = re.sub(r"<\/?(?:strong|b|i|u|em)>", "", line).strip()
-            subhead_match = re.match(r"^([A-Z][A-Za-z\s\(\)\-]{3,60})$", clean_no_tags)
-            if subhead_match and not line.endswith(".") and not line.endswith(":"):
-                html_parts.append(f"<h3>{html.escape(subhead_match.group(1))}</h3>")
-                i += 1
-                continue
+        html_parts.append(f"<h2>{html.escape(display_clean)} - Historical Safety Information</h2>")
+        meta = []
+        if active_ingr and active_ingr != "Not specified":
+            meta.append(f"<strong>Active Ingredient:</strong> {html.escape(active_ingr)}")
+        if app_num and app_num != "N/A":
+            meta.append(f"<strong>Application:</strong> {html.escape(app_num)}")
+        if meta:
+            meta_str = " | ".join(meta)
+            html_parts.append(f"<p>{meta_str}</p>")
 
-            # Check for key-value bold prefix e.g. "Gastrointestinal: text..." or "<b>Skin and Appendages:</b> text"
-            clean_text_line = re.sub(r"<\/?(?:u|i|em)>", "", line).strip()
-            kv_match = re.match(r"^(?:<strong>|<b>)?([A-Za-z\s\-]+:)(?:</strong>|</b>)?\s*(.*)", clean_text_line)
-            if kv_match:
-                prefix = re.sub(r"<\/?(?:strong|b|i|u)>", "", kv_match.group(1)).strip()
-                content = re.sub(r"<\/?(?:strong|b|i|u)>", "", kv_match.group(2)).strip()
-                html_parts.append(f"<p><strong>{html.escape(prefix)}</strong> {html.escape(content)}</p>")
-                i += 1
-                continue
-
-            # Regular paragraph line
-            clean_line = re.sub(r"<\/?(?:strong|b|i|u|em)>", "", line).strip()
-            if clean_line:
-                html_parts.append(f"<p>{html.escape(clean_line)}</p>")
-            i += 1
+        for d_s in sorted(by_date.keys(), reverse=True):
+            date_changes = by_date[d_s]
+            html_parts.append(f"<h3>Supplement Date: {html.escape(d_s)}</h3>")
+            unique_sections = {}
+            for c in date_changes:
+                sec = _get_val(c, "section", "Safety Information") or "Safety Information"
+                txt = _get_val(c, "updated_text", "") or ""
+                if sec not in unique_sections or len(txt) > len(_get_val(unique_sections[sec], "updated_text", "")):
+                    unique_sections[sec] = c
+            for sec, rec in unique_sections.items():
+                raw_text = _get_val(rec, "updated_text", "") or ""
+                cleaned_text = clean_clinical_text(raw_text)
+                if not cleaned_text:
+                    continue
+                html_parts.append(f"<h4>{html.escape(sec)}</h4>")
+                _render_text_to_html_parts(cleaned_text, html_parts, bullet_pat)
 
     inner_body = "\n".join(html_parts)
 

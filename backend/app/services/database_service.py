@@ -3,10 +3,11 @@ Database Service for managing drug records and version history.
 Handles insert, update, and version creation with change detection.
 """
 import logging
+import re
 from datetime import datetime
 from typing import Optional, Tuple, List, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, case
 
 from app.models.drug import Drug, SafetyLabelingChange, SafetyChangeVersion, CrawlRun
 from app.services.normalization import NormalizationService
@@ -281,13 +282,88 @@ class DatabaseService:
         return list(result.scalars().all())
 
     @staticmethod
-    def get_safety_changes_by_drug_id(session: Session, drug_id: int) -> List[SafetyLabelingChange]:
-        """Get safety changes for a given drug, chronologically descending."""
-        result = session.execute(
-            select(SafetyLabelingChange)
-            .where(SafetyLabelingChange.drug_id == drug_id)
-            .order_by(desc(SafetyLabelingChange.source_date), desc(SafetyLabelingChange.id))
+    def search_drugs_filtered(
+        session: Session,
+        product_name: str,
+        generic_name: Optional[str] = None,
+        active_ingredients: Optional[str] = None,
+        source: Optional[str] = "FDA_SRLC",
+        limit: int = 50,
+    ) -> List[Drug]:
+        """
+        Multi-filter search for drugs applying product_name, generic_name, and active_ingredients.
+        Filters are combined as query constraints (AND).
+        """
+        clean_prod = re.sub(r"\s+", " ", (product_name or "").strip())
+        normalized_prod = NormalizationService.normalize_drug_name(clean_prod)
+        prod_pattern = f"%{clean_prod}%"
+        norm_pattern = f"%{normalized_prod}%"
+
+        # Product name condition
+        prod_cond = (
+            (Drug.display_name.ilike(prod_pattern))
+            | (Drug.normalized_name.ilike(norm_pattern))
+            | (Drug.display_name.ilike(norm_pattern))
+            | (Drug.active_ingredient.ilike(norm_pattern))
+            | (Drug.active_ingredient.ilike(prod_pattern))
         )
+        conditions = [prod_cond]
+
+        # Generic name condition (if provided)
+        if generic_name and generic_name.strip():
+            g_clean = generic_name.strip()
+            g_norm = NormalizationService.normalize_drug_name(g_clean)
+            conditions.append(
+                (Drug.active_ingredient.ilike(f"%{g_clean}%"))
+                | (Drug.active_ingredient.ilike(f"%{g_norm}%"))
+                | (Drug.display_name.ilike(f"%{g_clean}%"))
+                | (Drug.normalized_name.ilike(f"%{g_norm}%"))
+            )
+
+        # Active ingredients condition (if provided)
+        if active_ingredients and active_ingredients.strip():
+            parts = [p.strip() for p in re.split(r"[,;/]+", active_ingredients.strip()) if p.strip()]
+            for part in parts:
+                p_norm = NormalizationService.normalize_drug_name(part)
+                conditions.append(
+                    (Drug.active_ingredient.ilike(f"%{part}%"))
+                    | (Drug.active_ingredient.ilike(f"%{p_norm}%"))
+                )
+
+        if source and source != "ALL":
+            conditions.append(Drug.source == source)
+
+        stmt = (
+            select(Drug)
+            .where(*conditions)
+            .order_by(
+                case((func.lower(Drug.display_name) == clean_prod.lower(), 0), else_=1),
+                case((Drug.normalized_name == normalized_prod, 0), else_=1),
+                Drug.display_name.asc(),
+            )
+            .limit(limit)
+        )
+        result = session.execute(stmt)
+        return list(result.scalars().all())
+
+    @staticmethod
+    def get_safety_changes_by_drug_id(
+        session: Session,
+        drug_id: int,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> List[SafetyLabelingChange]:
+        """Get safety changes for a given drug, optionally filtered by date range, chronologically descending."""
+        query = select(SafetyLabelingChange).where(SafetyLabelingChange.drug_id == drug_id)
+        if start_date is not None:
+            query = query.where(SafetyLabelingChange.source_date >= start_date)
+        if end_date is not None:
+            query = query.where(SafetyLabelingChange.source_date <= end_date)
+        if start_date is not None or end_date is not None:
+            query = query.where(SafetyLabelingChange.source_date.isnot(None))
+
+        query = query.order_by(desc(SafetyLabelingChange.source_date), desc(SafetyLabelingChange.id))
+        result = session.execute(query)
         return list(result.scalars().all())
 
     @staticmethod

@@ -5,7 +5,7 @@ Supports multiple data sources: FDA_SRLC and HEALTH_CANADA_INFOWATCH.
 """
 import logging
 import re
-from typing import List, Optional
+from typing import List, Optional, Any, Tuple, Dict
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Response
 from fastapi.responses import HTMLResponse
@@ -305,6 +305,62 @@ async def send_salesforce_callback(payload: dict, callback_url: Optional[str] = 
         return {"status": "error", "error": str(exc), "url": target_url}
 
 
+DATE_REGEX = re.compile(r"^(\d{2})-(\d{2})-(\d{4})$")
+
+
+def validate_client_date_range(
+    start_date_val: Optional[Any],
+    end_date_val: Optional[Any],
+):
+    """
+    Standardizes and strictly validates client dates in DD-MM-YYYY format.
+    Rejects malformed, ambiguous, or invalid calendar dates with HTTP 422.
+    Rejects startDate > endDate with HTTP 422.
+    Returns (start_dt, end_dt, start_str, end_str).
+    """
+    def _parse(val: Optional[Any], name: str) -> Optional[datetime]:
+        if val is None:
+            return None
+        s = str(val).strip()
+        if not s:
+            return None
+        m = DATE_REGEX.match(s)
+        if not m:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid date format for '{name}': '{s}'. Expected DD-MM-YYYY (e.g. '01-01-2025').",
+            )
+        d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return datetime(y, mth, d)
+        except ValueError as err:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid calendar date for '{name}': '{s}' ({err}). Expected DD-MM-YYYY.",
+            )
+
+    start_dt = _parse(start_date_val, "startDate")
+    end_dt = _parse(end_date_val, "endDate")
+
+    start_str = start_dt.strftime("%d-%m-%Y") if start_dt else ""
+    end_str = end_dt.strftime("%d-%m-%Y") if end_dt else ""
+
+    if start_dt and end_dt:
+        if start_dt > end_dt:
+            raise HTTPException(
+                status_code=422,
+                detail=f"startDate ('{start_str}') cannot be later than endDate ('{end_str}').",
+            )
+        start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+    elif start_dt:
+        start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif end_dt:
+        end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    return start_dt, end_dt, start_str, end_str
+
+
 @router.post(
     "/signal-and-risk",
     response_model=SignalAndRiskResponse,
@@ -326,7 +382,8 @@ async def post_signal_and_risk(
 ):
     """
     **Teammate Integration Endpoint**:
-    Receives submissionId and productName, looks up or live-crawls FDA SrLC drug safety data,
+    Receives submissionId, productName, startDate, endDate, genericName, activeIngredients,
+    looks up or live-crawls FDA SrLC drug safety data,
     dispatches an outbound callback to Salesforce (updateSubmissionResponse),
     and returns a SignalAndRisk payload containing the extracted HTML inside the 'Data' field.
     Supports format='html' (pure HTML response) or format='data' ({"Data": "<html..."}).
@@ -347,15 +404,39 @@ async def post_signal_and_risk(
         )
     prod_name = str(raw_prod_name).strip()
 
-    # Step 1: Look up in local database
-    local_drugs = DatabaseService.search_drugs(db, prod_name)
-    drug = local_drugs[0] if local_drugs else None
-    changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id) if drug else []
+    # Date range validation (DD-MM-YYYY)
+    raw_start = req.startDate if req.startDate is not None else req.start_date
+    raw_end = req.endDate if req.endDate is not None else req.end_date
+    start_dt, end_dt, start_str, end_str = validate_client_date_range(raw_start, raw_end)
 
-    # Step 2: If no data locally, query FDA SrLC live
+    # Multi-filter extraction
+    gen_name = (req.genericName or req.generic_name or "").strip() or None
+    act_ingr = (
+        req.activeIngredients
+        or req.active_ingredients
+        or req.activeIngredient
+        or req.active_ingredient
+        or ""
+    ).strip() or None
+
+    # Step 1: Look up in local database using multi-filter query
+    local_drugs = DatabaseService.search_drugs_filtered(
+        db,
+        product_name=prod_name,
+        generic_name=gen_name,
+        active_ingredients=act_ingr,
+    )
+    drug = local_drugs[0] if local_drugs else None
+    changes = (
+        DatabaseService.get_safety_changes_by_drug_id(db, drug.id, start_date=start_dt, end_date=end_dt)
+        if drug else []
+    )
+
+    # Step 2: If no data locally or no changes found, query FDA SrLC live
     if not drug or not changes:
         try:
-            html = await crawler.search_drug(prod_name)
+            search_query = prod_name
+            html = await crawler.search_drug(search_query)
             if html:
                 search_results = scraper.parse_search_results(html)
                 for candidate in search_results[:3]:
@@ -374,9 +455,17 @@ async def post_signal_and_risk(
                                 for change in detail_data.get("safety_changes", []):
                                     DatabaseService.save_safety_change(db, c_drug.id, change)
                 db.commit()
-                local_drugs = DatabaseService.search_drugs(db, prod_name)
+                local_drugs = DatabaseService.search_drugs_filtered(
+                    db,
+                    product_name=prod_name,
+                    generic_name=gen_name,
+                    active_ingredients=act_ingr,
+                )
                 drug = local_drugs[0] if local_drugs else None
-                changes = DatabaseService.get_safety_changes_by_drug_id(db, drug.id) if drug else []
+                changes = (
+                    DatabaseService.get_safety_changes_by_drug_id(db, drug.id, start_date=start_dt, end_date=end_dt)
+                    if drug else []
+                )
         except Exception as exc:
             logger.error("Live FDA crawl error in signal-and-risk for '%s': %s", prod_name, exc)
             db.rollback()
@@ -387,9 +476,18 @@ async def post_signal_and_risk(
             detail=f"No FDA Drug Safety data found for product '{prod_name}'.",
         )
 
+    is_date_filtered = (start_dt is not None or end_dt is not None)
+    filter_latest = not is_date_filtered
+
+    if is_date_filtered and not changes:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No safety labeling changes found for '{prod_name}' within requested date range ({start_str} to {end_str}).",
+        )
+
     matched_product = drug.display_name or prod_name
-    html_content = export_drug_clean_html(drug, changes, standalone=False)
-    standalone_html = export_drug_clean_html(drug, changes, standalone=True)
+    html_content = export_drug_clean_html(drug, changes, standalone=False, filter_latest=filter_latest)
+    standalone_html = export_drug_clean_html(drug, changes, standalone=True, filter_latest=filter_latest)
     fmt = (req.format or "json").lower()
 
     if fmt == "html":
@@ -413,19 +511,31 @@ async def post_signal_and_risk(
 
     resp_type = req.responseType or req.response_type or "SafetyActionTaken"
 
+    website_item = {
+        "website_Name": site_name,
+        "title": "Website Safety Data",
+        "productName": matched_product,
+        "genericName": gen_name or (drug.active_ingredient or ""),
+        "activeIngredients": drug.active_ingredient or act_ingr or "",
+        "startDate": start_str,
+        "endDate": end_str,
+        "Data": standalone_html,
+        "website_Data": standalone_html,
+        "submissionId": sub_id,
+    }
+
+    website_Data_wrapper = {
+        "title": "Website Crawler Data",
+        "status": "success",
+        "data": [website_item],
+    }
+
     response_payload = {
         "submissionId": sub_id,
         "responseType": resp_type,
         "productName": matched_product,
-        "responseData": [
-            {
-                "website_Name": site_name,
-                "website_Data": standalone_html,
-                "productName": matched_product,
-                "title": "fda_safety_labeling_changes",
-                "Data": html_content,
-            }
-        ],
+        "website_Data": website_Data_wrapper,
+        "responseData": [website_item],
     }
 
     # Dispatch outbound callback if target specified or configured
@@ -454,10 +564,18 @@ async def post_signal_and_risk(
 async def get_signal_and_risk(
     productName: Optional[str] = Query(None, description="Medicine or product name (e.g. 'amikacin', 'Lipitor')"),
     submissionId: Optional[str] = Query("browser_test", description="Submission identifier"),
+    startDate: Optional[str] = Query(None, description="Start date filter (DD-MM-YYYY)"),
+    endDate: Optional[str] = Query(None, description="End date filter (DD-MM-YYYY)"),
+    genericName: Optional[str] = Query(None, description="Generic name filter"),
+    activeIngredients: Optional[str] = Query(None, description="Active ingredient filter"),
     callbackUrl: Optional[str] = Query(None, description="Optional custom Salesforce callback webhook URL"),
     format: Optional[str] = Query("json", description="Output format: 'json', 'html', or 'data'"),
     product_name: Optional[str] = Query(None, include_in_schema=False),
     submission_id: Optional[str] = Query(None, include_in_schema=False),
+    start_date: Optional[str] = Query(None, include_in_schema=False),
+    end_date: Optional[str] = Query(None, include_in_schema=False),
+    generic_name: Optional[str] = Query(None, include_in_schema=False),
+    active_ingredients: Optional[str] = Query(None, include_in_schema=False),
     callback_url: Optional[str] = Query(None, include_in_schema=False),
     db: Session = Depends(get_db),
 ):
@@ -469,13 +587,26 @@ async def get_signal_and_risk(
     prod = (productName or product_name or "").strip()
     sub = (submissionId or submission_id or "browser_test").strip()
     cb = (callbackUrl or callback_url or "").strip() or None
+    s_date = (startDate or start_date or "").strip() or None
+    e_date = (endDate or end_date or "").strip() or None
+    g_name = (genericName or generic_name or "").strip() or None
+    a_ingr = (activeIngredients or active_ingredients or "").strip() or None
     if not prod:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Query parameter 'productName' is required.",
         )
     return await post_signal_and_risk(
-        SignalAndRiskIntegrationRequest(submissionId=sub, productName=prod, callbackUrl=cb, format=format),
+        SignalAndRiskIntegrationRequest(
+            submissionId=sub,
+            productName=prod,
+            startDate=s_date,
+            endDate=e_date,
+            genericName=g_name,
+            activeIngredients=a_ingr,
+            callbackUrl=cb,
+            format=format,
+        ),
         db=db,
     )
 
