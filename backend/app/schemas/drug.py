@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -129,6 +129,13 @@ class CrawlRunResponse(BaseModel):
         from_attributes = True
 
 
+class WebsiteResponseItem(BaseModel):
+    website_Name: str = Field("FDA_details", description="Website identifier e.g. 'FDA_details' or 'TGA_details'")
+    website_Data: str = Field(..., description="Full HTML document string")
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class SignalAndRiskItem(BaseModel):
     website_Name: Optional[str] = Field("FDA_details", description="Website identifier e.g. 'FDA_details' or 'TGA_details'")
     title: Optional[str] = Field("Website Safety Data", description="Title identifier")
@@ -147,7 +154,7 @@ class WebsiteDataSection(BaseModel):
     status: str = Field("success", description="Status: 'success', 'not_found', or 'error'")
     coverage: Optional[str] = Field(None, description="Coverage assessment: 'complete' or 'partial'")
     source_limitation: Optional[str] = Field(None, description="Explanation if date range exceeds source coverage")
-    data: List[SignalAndRiskItem] = Field(default_factory=list, description="List of website safety results")
+    data: List[Dict[str, Any]] = Field(default_factory=list, description="List of website safety results")
     message: Optional[str] = Field(None, description="Informational message or reason for no results")
 
 
@@ -156,7 +163,7 @@ class SignalAndRiskResponse(BaseModel):
     responseType: str = Field("SafetyActionTaken", description="Response type category")
     productName: Optional[str] = Field(None, description="Echo of requested and matched product name")
     website_Data: Optional[WebsiteDataSection] = Field(None, description="Website crawler data section")
-    responseData: List[SignalAndRiskItem] = Field(..., description="List of extracted section entries")
+    responseData: List[WebsiteResponseItem] = Field(..., description="List of extracted section entries")
 
 
 class SignalAndRiskIntegrationRequest(BaseModel):

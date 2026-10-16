@@ -69,8 +69,16 @@ def test_validate_client_date_range_empty_or_none():
 
 def test_validate_client_date_range_invalid_format():
     with pytest.raises(Exception) as excinfo:
-        validate_client_date_range("2025-01-01", "01-01-2026")
+        validate_client_date_range("2025/01/01", "01-01-2026")
     assert "Expected DD-MM-YYYY" in str(excinfo.value.detail)
+
+
+def test_validate_client_date_range_iso_format():
+    start_dt, end_dt, start_str, end_str = validate_client_date_range("2024-10-31T00:00:00.000Z", "2025-12-31")
+    assert start_dt.year == 2024 and start_dt.month == 10 and start_dt.day == 31
+    assert end_dt.year == 2025 and end_dt.month == 12 and end_dt.day == 31
+    assert start_str == "31-10-2024"
+    assert end_str == "31-12-2025"
 
 
 def test_validate_client_date_range_invalid_calendar_date():
@@ -311,7 +319,7 @@ def test_api_signal_and_risk_malformed_date_returns_422():
     payload = {
         "submissionId": "sub_test_bad_date",
         "productName": "ARIKAYCE",
-        "startDate": "2025-01-01",  # Not DD-MM-YYYY
+        "startDate": "2025/01/01",  # Malformed date slashes
         "endDate": "01-01-2026",
     }
     res = client.post("/api/drugs/signal-and-risk", json=payload)
@@ -520,4 +528,63 @@ def test_api_signal_and_risk_pre_2016_coverage_flag():
     web_data = body["website_Data"]
     assert web_data["coverage"] == "partial"
     assert "2016" in web_data["source_limitation"]
+
+
+def test_api_signal_and_risk_salesforce_callback_format(monkeypatch):
+    """
+    Verifies that the outbound Salesforce callback payload and the responseData
+    strictly match the {"website_Name": ..., "website_Data": ...} schema.
+    """
+    from app.api import drugs
+
+    captured_callbacks = []
+
+    async def fake_send_callback(payload, callback_url=None):
+        captured_callbacks.append((payload, callback_url))
+        return {"status": "delivered", "status_code": 200}
+
+    monkeypatch.setattr(drugs, "send_salesforce_callback", fake_send_callback)
+
+    session = TestingSessionLocal()
+    drug = Drug(display_name="WARFARIN", normalized_name="warfarin", source="FDA_SRLC")
+    session.add(drug)
+    session.commit()
+    chg = SafetyLabelingChange(
+        drug_id=drug.id,
+        section="Boxed Warning",
+        source_date=datetime(2024, 3, 1),
+        original_text="Bleeding risk",
+    )
+    session.add(chg)
+    session.commit()
+    session.close()
+
+    payload = {
+        "submissionId": "a0CAq00004acdq7MAA",
+        "productName": "WARFARIN",
+        "startDate": "01-01-2024",
+        "endDate": "01-01-2025",
+        "callbackUrl": "https://salesforce.example.com/services/apexrest/updateSubmissionResponse",
+    }
+    res = client.post("/api/drugs/signal-and-risk", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+
+    assert body["submissionId"] == "a0CAq00004acdq7MAA"
+    assert body["responseType"] == "SafetyActionTaken"
+    assert len(body["responseData"]) == 1
+    assert "website_Name" in body["responseData"][0]
+    assert "website_Data" in body["responseData"][0]
+    assert body["responseData"][0]["website_Name"] == "FDA_details"
+    assert "<!DOCTYPE html>" in body["responseData"][0]["website_Data"]
+
+    assert len(captured_callbacks) == 1
+    cb_payload, cb_url = captured_callbacks[0]
+    assert cb_url == "https://salesforce.example.com/services/apexrest/updateSubmissionResponse"
+    assert cb_payload["submissionId"] == "a0CAq00004acdq7MAA"
+    assert cb_payload["responseType"] == "SafetyActionTaken"
+    assert len(cb_payload["responseData"]) == 1
+    assert cb_payload["responseData"][0]["website_Name"] == "FDA_details"
+    assert "<!DOCTYPE html>" in cb_payload["responseData"][0]["website_Data"]
+
 

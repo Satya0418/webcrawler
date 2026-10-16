@@ -305,7 +305,8 @@ async def send_salesforce_callback(payload: dict, callback_url: Optional[str] = 
         return {"status": "error", "error": str(exc), "url": target_url}
 
 
-DATE_REGEX = re.compile(r"^(\d{2})-(\d{2})-(\d{4})$")
+DATE_REGEX_DMY = re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{4})$")
+DATE_REGEX_YMD = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})")
 
 
 def validate_client_date_range(
@@ -313,7 +314,7 @@ def validate_client_date_range(
     end_date_val: Optional[Any],
 ):
     """
-    Standardizes and strictly validates client dates in DD-MM-YYYY format.
+    Standardizes and validates client dates in DD-MM-YYYY or ISO/YYYY-MM-DD format.
     Rejects malformed, ambiguous, or invalid calendar dates with HTTP 422.
     Rejects startDate > endDate with HTTP 422.
     Returns (start_dt, end_dt, start_str, end_str).
@@ -324,19 +325,24 @@ def validate_client_date_range(
         s = str(val).strip()
         if not s:
             return None
-        m = DATE_REGEX.match(s)
-        if not m:
+        s_clean = s.split("T")[0].strip() if "T" in s else s
+        m_dmy = DATE_REGEX_DMY.match(s_clean)
+        m_ymd = DATE_REGEX_YMD.match(s_clean)
+        if m_dmy:
+            d, mth, y = int(m_dmy.group(1)), int(m_dmy.group(2)), int(m_dmy.group(3))
+        elif m_ymd:
+            y, mth, d = int(m_ymd.group(1)), int(m_ymd.group(2)), int(m_ymd.group(3))
+        else:
             raise HTTPException(
                 status_code=422,
-                detail=f"Invalid date format for '{name}': '{s}'. Expected DD-MM-YYYY (e.g. '01-01-2025').",
+                detail=f"Invalid date format for '{name}': '{s}'. Expected DD-MM-YYYY (e.g. '01-01-2025') or YYYY-MM-DD.",
             )
-        d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
         try:
             return datetime(y, mth, d)
         except ValueError as err:
             raise HTTPException(
                 status_code=422,
-                detail=f"Invalid calendar date for '{name}': '{s}' ({err}). Expected DD-MM-YYYY.",
+                detail=f"Invalid calendar date for '{name}': '{s}' ({err}). Expected DD-MM-YYYY or YYYY-MM-DD.",
             )
 
     start_dt = _parse(start_date_val, "startDate")
@@ -597,18 +603,28 @@ async def post_signal_and_risk(
     elif is_date_filtered:
         website_Data_wrapper["coverage"] = "complete"
 
+    clean_website_item = {
+        "website_Name": site_name,
+        "website_Data": standalone_html,
+    }
+
     response_payload = {
         "submissionId": sub_id,
         "responseType": resp_type,
         "productName": matched_product,
         "website_Data": website_Data_wrapper,
-        "responseData": [website_item],
+        "responseData": [clean_website_item],
     }
 
     # Dispatch outbound callback if target specified or configured
     target_callback = (req.callbackUrl or req.callback_url or getattr(settings, "SALESFORCE_CALLBACK_URL", None) or "").strip()
     if target_callback and target_callback.lower() not in ("none", "skip", "disabled", "false"):
-        await send_salesforce_callback(response_payload, target_callback)
+        salesforce_payload = {
+            "submissionId": sub_id,
+            "responseType": resp_type,
+            "responseData": [clean_website_item],
+        }
+        await send_salesforce_callback(salesforce_payload, target_callback)
 
     return response_payload
 

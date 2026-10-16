@@ -132,11 +132,11 @@ def test_signal_and_risk_date_range_valid_dd_mm_yyyy():
 
 
 def test_signal_and_risk_date_range_invalid_format():
-    """Invalid date format (e.g. YYYY-MM-DD or malformed string) returns HTTP 422."""
+    """Invalid date format (e.g. malformed string) returns HTTP 422."""
     payload = {
         "submissionId": "sub_invalid_date",
         "productName": "amikacin",
-        "startDate": "2025-01-01",  # Not DD-MM-YYYY
+        "startDate": "2025/01/01",  # Malformed slashes
         "endDate": "01-01-2026",
     }
     res = client.post("/api/v1/products/signal-and-risk", json=payload)
@@ -238,14 +238,17 @@ def test_signal_and_risk_salesforce_callback_invoked(monkeypatch):
     cb_safety, cb_url_1 = called_payloads[0]
     assert cb_safety["submissionId"] == "salesforce_test_sub_101"
     assert cb_safety["responseType"] == "SafetyActionTaken"
-    assert cb_safety["title"] == "Safety Action Taken"
+    assert isinstance(cb_safety["responseData"], list)
+    assert len(cb_safety["responseData"]) >= 1
+    assert "website_Name" in cb_safety["responseData"][0]
+    assert "website_Data" in cb_safety["responseData"][0]
     assert "updateSubmissionResponse" in cb_url_1
 
     # Webhook Call #2: Signal and Risk
     cb_signal, cb_url_2 = called_payloads[1]
     assert cb_signal["submissionId"] == "salesforce_test_sub_101"
     assert cb_signal["responseType"] == "SignalAndRisk"
-    assert cb_signal["title"] == "Signal and Risk"
+    assert "responseData" in cb_signal
     assert "updateSubmissionResponse" in cb_url_2
 
 
@@ -458,3 +461,17 @@ def test_short_url_p_amikacin_paragraph_only():
     assert "med-sub-header" not in html
     assert "med-brand-tag" not in html
     assert "Erfa-Amikacin" in html
+
+
+def test_signal_and_risk_iso_date_format_support():
+    """Verifies that Salesforce ISO dates like '2024-10-31T00:00:00.000Z' or '2024-10-31' parse cleanly without 422."""
+    payload = {
+        "submissionId": "iso_date_sub_001",
+        "productName": "amikacin",
+        "startDate": "2024-10-31T00:00:00.000Z",
+        "endDate": "2025-12-31T00:00:00.000Z",
+    }
+    res = client.post("/api/v1/products/signal-and-risk", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["submissionId"] == "iso_date_sub_001"

@@ -54,7 +54,8 @@ class ProductQueryRequest(BaseModel):
     include_html: bool = Field(True, description="Whether to include rendered HTML in the response")
 
 
-DATE_REGEX = re.compile(r"^(\d{2})-(\d{2})-(\d{4})$")
+DATE_REGEX_DMY = re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{4})$")
+DATE_REGEX_YMD = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})")
 
 
 def validate_client_date_range(
@@ -62,7 +63,7 @@ def validate_client_date_range(
     end_date_val: Optional[Any],
 ):
     """
-    Standardizes and strictly validates client dates in DD-MM-YYYY format.
+    Standardizes and validates client dates in DD-MM-YYYY or ISO/YYYY-MM-DD format.
     Rejects malformed, ambiguous, or invalid calendar dates with HTTP 422.
     Rejects startDate > endDate with HTTP 422.
     Returns (start_dt, end_dt, start_str, end_str).
@@ -73,19 +74,24 @@ def validate_client_date_range(
         s = str(val).strip()
         if not s:
             return None
-        m = DATE_REGEX.match(s)
-        if not m:
+        s_clean = s.split("T")[0].strip() if "T" in s else s
+        m_dmy = DATE_REGEX_DMY.match(s_clean)
+        m_ymd = DATE_REGEX_YMD.match(s_clean)
+        if m_dmy:
+            d, mth, y = int(m_dmy.group(1)), int(m_dmy.group(2)), int(m_dmy.group(3))
+        elif m_ymd:
+            y, mth, d = int(m_ymd.group(1)), int(m_ymd.group(2)), int(m_ymd.group(3))
+        else:
             raise HTTPException(
                 status_code=422,
-                detail=f"Invalid date format for '{name}': '{s}'. Expected DD-MM-YYYY (e.g. '01-01-2025').",
+                detail=f"Invalid date format for '{name}': '{s}'. Expected DD-MM-YYYY (e.g. '01-01-2025') or YYYY-MM-DD.",
             )
-        d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
         try:
             return datetime(y, mth, d)
         except ValueError as err:
             raise HTTPException(
                 status_code=422,
-                detail=f"Invalid calendar date for '{name}': '{s}' ({err}). Expected DD-MM-YYYY.",
+                detail=f"Invalid calendar date for '{name}': '{s}' ({err}). Expected DD-MM-YYYY or YYYY-MM-DD.",
             )
 
     start_dt = _parse(start_date_val, "startDate")
@@ -1041,18 +1047,16 @@ async def post_signal_and_risk(
     if target_callback and target_callback.lower() not in ("none", "skip", "disabled", "false"):
         # Webhook Call #1: Safety Action Taken (Website Crawler)
         if website_Data.get("status") == "success" or not pdf_extractor_Data.get("data"):
-            website_cb_item = (website_Data.get("data") and website_Data["data"][0]) or {}
             salesforce_safety_payload = {
                 "submissionId": sub_id,
                 "responseType": "SafetyActionTaken",
-                "title": "Safety Action Taken",
-                "productName": website_cb_item.get("productName") or matched_product,
-                "genericName": website_cb_item.get("genericName") or gen_name or "",
-                "activeIngredients": website_cb_item.get("activeIngredients") or act_ingr or "",
-                "startDate": website_cb_item.get("startDate") or start_str,
-                "endDate": website_cb_item.get("endDate") or end_str,
-                "website_Data": website_Data,
-                "responseData": website_Data.get("data") or [],
+                "responseData": [
+                    {
+                        "website_Name": item.get("website_Name") or "FDA_details",
+                        "website_Data": item.get("website_Data") or item.get("Data") or "",
+                    }
+                    for item in (website_Data.get("data") or [])
+                ],
             }
             await send_salesforce_callback(salesforce_safety_payload, target_callback)
 
@@ -1062,10 +1066,13 @@ async def post_signal_and_risk(
             salesforce_signal_payload = {
                 "submissionId": sub_id,
                 "responseType": "SignalAndRisk",
-                "title": "Signal and Risk",
-                "productName": pdf_cb_item.get("product_name") or matched_product,
-                "pdf_extractor_Data": pdf_extractor_Data,
-                "responseData": pdf_cb_item,
+                "responseData": {
+                    "product_name": pdf_cb_item.get("product_name") or matched_product,
+                    "section_title": pdf_cb_item.get("section_title") or "16 Signal and Risk Evaluation",
+                    "source_document": pdf_cb_item.get("source_document") or "",
+                    "Data": pdf_cb_item.get("Data") or "",
+                    "data": pdf_cb_item.get("data") or {},
+                },
             }
             await send_salesforce_callback(salesforce_signal_payload, target_callback)
 
