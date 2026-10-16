@@ -349,3 +349,175 @@ def test_api_signal_and_risk_empty_strings_omitted():
     res = client.post("/api/drugs/signal-and-risk", json=payload)
     assert res.status_code == 200
     assert res.json()["submissionId"] == "sub_empty_strings"
+
+
+# ---------------------------------------------------------------------------
+# 4. End-to-End Live/Mocked Crawler & Historical Retrieval Tests
+# ---------------------------------------------------------------------------
+
+def test_api_signal_and_risk_traverses_all_candidates_and_retrieves_history(monkeypatch):
+    """
+    Verifies that:
+    - All search candidates in search results are considered (not just the first 3).
+    - Detail page with multiple historical accordion panels (2016, 2017) is crawled.
+    - Historical date range (2017) filters out 2016 supplements and includes 2017 supplements.
+    """
+    from pathlib import Path
+    from app.crawler.fda_crawler import crawler
+
+    detail_fixture_path = Path(__file__).parent / "fixtures" / "fda" / "detail_warfarin.html"
+    with open(detail_fixture_path) as f:
+        detail_html = f.read()
+
+    # Search results HTML with 4 distinct candidates
+    search_html = """
+    <table>
+        <tr>
+            <th>Drug Name</th>
+            <th>Active Ingredient</th>
+            <th>Application</th>
+            <th>Type</th>
+            <th>Date</th>
+            <th>Updated</th>
+            <th>Link</th>
+        </tr>
+        <tr>
+            <td><a href="/detail?DrugNameID=1">COUMADIN TABLETS</a></td>
+            <td>WARFARIN SODIUM</td><td>009218</td><td>NDA</td><td>08/14/2017</td><td>08/17/2017</td>
+            <td>https://www.accessdata.fda.gov/detail?DrugNameID=1</td>
+        </tr>
+        <tr>
+            <td><a href="/detail?DrugNameID=2">COUMADIN INJECTION</a></td>
+            <td>WARFARIN SODIUM</td><td>009219</td><td>NDA</td><td>08/14/2017</td><td>08/17/2017</td>
+            <td>https://www.accessdata.fda.gov/detail?DrugNameID=2</td>
+        </tr>
+        <tr>
+            <td><a href="/detail?DrugNameID=3">COUMADIN 5MG</a></td>
+            <td>WARFARIN SODIUM</td><td>009220</td><td>NDA</td><td>08/14/2017</td><td>08/17/2017</td>
+            <td>https://www.accessdata.fda.gov/detail?DrugNameID=3</td>
+        </tr>
+        <tr>
+            <td><a href="/detail?DrugNameID=4">COUMADIN 10MG (Candidate 4)</a></td>
+            <td>WARFARIN SODIUM</td><td>009221</td><td>NDA</td><td>08/14/2017</td><td>08/17/2017</td>
+            <td>https://www.accessdata.fda.gov/detail?DrugNameID=4</td>
+        </tr>
+    </table>
+    """
+
+    visited_detail_urls = []
+
+    async def fake_search_drug(drug_name):
+        return search_html
+
+    async def fake_get_detail_page(url):
+        visited_detail_urls.append(url)
+        return detail_html
+
+    monkeypatch.setattr(crawler, "search_drug", fake_search_drug)
+    monkeypatch.setattr(crawler, "get_detail_page", fake_get_detail_page)
+
+    payload = {
+        "submissionId": "sub_warfarin_history",
+        "productName": "COUMADIN",
+        "startDate": "01-01-2017",
+        "endDate": "31-12-2017",
+    }
+    res = client.post("/api/drugs/signal-and-risk", json=payload)
+    assert res.status_code == 200, f"Expected 200, got: {res.text}"
+    body = res.json()
+
+    # Confirms all 4 candidates were processed (beyond index 3!)
+    assert len(visited_detail_urls) == 4
+
+    web_data = body["website_Data"]
+    assert web_data["status"] == "success"
+    assert web_data["coverage"] == "complete"
+    assert len(web_data["data"]) == 1
+
+    html_content = web_data["data"][0]["Data"]
+    # 2017 dates must be present in HTML
+    assert "2017" in html_content
+    # 2016 supplement date must be excluded by the 2017 date boundary
+    assert "2016-09-08" not in html_content
+
+
+def test_api_signal_and_risk_search_fallback_to_generic(monkeypatch):
+    """
+    Verifies that when productName yields no search results on FDA,
+    the crawler falls back to searching by genericName and successfully retrieves data.
+    """
+    from pathlib import Path
+    from app.crawler.fda_crawler import crawler
+
+    fixture_path = Path(__file__).parent / "fixtures" / "fda" / "search_results_warfarin.html"
+    with open(fixture_path) as f:
+        search_warfarin_html = f.read()
+
+    detail_path = Path(__file__).parent / "fixtures" / "fda" / "detail_warfarin.html"
+    with open(detail_path) as f:
+        detail_html = f.read()
+
+    searched_queries = []
+
+    async def fake_search_drug(term):
+        searched_queries.append(term)
+        if term == "UnknownBrandX":
+            return ""  # Brand returns no results on FDA
+        if "warfarin" in term.lower():
+            return search_warfarin_html
+        return ""
+
+    async def fake_get_detail_page(url):
+        return detail_html
+
+    monkeypatch.setattr(crawler, "search_drug", fake_search_drug)
+    monkeypatch.setattr(crawler, "get_detail_page", fake_get_detail_page)
+
+    payload = {
+        "submissionId": "sub_fallback_test",
+        "productName": "UnknownBrandX",
+        "genericName": "warfarin",
+        "startDate": "01-01-2017",
+        "endDate": "31-12-2017",
+    }
+    res = client.post("/api/drugs/signal-and-risk", json=payload)
+    assert res.status_code == 200
+    assert "UnknownBrandX" in searched_queries
+    assert "warfarin" in searched_queries
+    body = res.json()
+    assert body["website_Data"]["status"] == "success"
+
+
+def test_api_signal_and_risk_pre_2016_coverage_flag():
+    """
+    Verifies that requesting a date range starting prior to 2016 flags partial coverage
+    and provides clear source limitation information (since FDA SrLC begins in 2016).
+    """
+    session = TestingSessionLocal()
+    drug = Drug(display_name="COUMADIN", normalized_name="coumadin", source="FDA_SRLC")
+    session.add(drug)
+    session.commit()
+    chg = SafetyLabelingChange(
+        drug_id=drug.id,
+        section="Warnings",
+        source_date=datetime(2017, 5, 22),
+        original_text="2017 change",
+    )
+    session.add(chg)
+    session.commit()
+    session.close()
+
+    payload = {
+        "submissionId": "sub_pre_2016",
+        "productName": "COUMADIN",
+        "startDate": "01-01-2010",
+        "endDate": "01-01-2020",
+    }
+    res = client.post("/api/drugs/signal-and-risk", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+
+    web_data = body["website_Data"]
+    assert web_data["coverage"] == "partial"
+    assert "2016" in web_data["source_limitation"]
+

@@ -125,6 +125,8 @@ class WebsiteDataItem(BaseModel):
 class WebsiteDataSection(BaseModel):
     title: str = Field("Website Crawler Data", description="Source identifier title")
     status: str = Field("success", description="Status: 'success', 'not_found', or 'error'")
+    coverage: Optional[str] = Field(None, description="Coverage assessment: 'complete' or 'partial'")
+    source_limitation: Optional[str] = Field(None, description="Explanation if date range exceeds source coverage")
     data: List[WebsiteDataItem] = Field(default_factory=list, description="List of website safety results")
     message: Optional[str] = Field(None, description="Informational message or reason for no results")
 
@@ -771,7 +773,12 @@ async def fetch_crawler_safety_data(
                     if isinstance(data.get("website_Data"), dict) and data["website_Data"].get("data"):
                         items = data["website_Data"]["data"]
                         if items and isinstance(items, list):
-                            return {"status": "success", "item": items[0]}
+                            return {
+                                "status": "success",
+                                "item": items[0],
+                                "coverage": data["website_Data"].get("coverage"),
+                                "source_limitation": data["website_Data"].get("source_limitation"),
+                            }
                     # Fallback to responseData
                     resp_items = data.get("responseData") or []
                     if resp_items and isinstance(resp_items, list):
@@ -958,6 +965,10 @@ async def post_signal_and_risk(
             "status": "success",
             "data": [website_item],
         }
+        if crawler_res.get("coverage"):
+            website_Data["coverage"] = crawler_res["coverage"]
+        if crawler_res.get("source_limitation"):
+            website_Data["source_limitation"] = crawler_res["source_limitation"]
     elif isinstance(crawler_res, dict) and (crawler_res.get("Data") or crawler_res.get("website_Data")):
         # Direct crawler item dict returned (e.g. from mock or legacy response)
         website_Data = {

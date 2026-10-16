@@ -426,6 +426,17 @@ async def post_signal_and_risk(
         generic_name=gen_name,
         active_ingredients=act_ingr,
     )
+    if not local_drugs and gen_name:
+        local_drugs = DatabaseService.search_drugs_filtered(
+            db,
+            product_name=gen_name,
+            active_ingredients=act_ingr,
+        )
+    if not local_drugs and act_ingr:
+        local_drugs = DatabaseService.search_drugs_filtered(
+            db,
+            product_name=act_ingr,
+        )
     drug = local_drugs[0] if local_drugs else None
     changes = (
         DatabaseService.get_safety_changes_by_drug_id(db, drug.id, start_date=start_dt, end_date=end_dt)
@@ -433,34 +444,74 @@ async def post_signal_and_risk(
     )
 
     # Step 2: If no data locally or no changes found, query FDA SrLC live
+    # Traverses all search candidates (not just the first few) and tries generic/ingredient fallbacks
     if not drug or not changes:
         try:
-            search_query = prod_name
-            html = await crawler.search_drug(search_query)
-            if html:
-                search_results = scraper.parse_search_results(html)
-                for candidate in search_results[:3]:
-                    c_drug, is_new = DatabaseService.insert_or_update_drug(db, candidate)
+            # Build prioritized search queries: productName -> genericName -> activeIngredients
+            search_queries = [prod_name]
+            if gen_name and gen_name.lower() != prod_name.lower():
+                search_queries.append(gen_name)
+            if act_ingr:
+                for part in act_ingr.split(","):
+                    clean_part = part.strip()
+                    if clean_part and clean_part.lower() not in [q.lower() for q in search_queries]:
+                        search_queries.append(clean_part)
+
+            search_results = []
+            for query_term in search_queries:
+                html = await crawler.search_drug(query_term)
+                if html:
+                    parsed = scraper.parse_search_results(html)
+                    if parsed:
+                        search_results = parsed
+                        break
+
+            if search_results:
+                seen_detail_urls = set()
+                crawled_drugs = []
+                # Consider all applicable results, traversing all candidates rather than slicing
+                for candidate in search_results:
                     detail_url = candidate.get("detail_url")
-                    if detail_url:
-                        crawler.visited_urls.discard(detail_url)
-                        detail_html = await crawler.get_detail_page(detail_url)
-                        if detail_html:
-                            detail_data = scraper.parse_detail_page(detail_html, source_url=detail_url)
-                            if detail_data:
-                                if not c_drug.active_ingredient and detail_data.get("active_ingredient"):
-                                    c_drug.active_ingredient = detail_data["active_ingredient"]
-                                if not c_drug.application_number and detail_data.get("application_number"):
-                                    c_drug.application_number = detail_data["application_number"]
-                                for change in detail_data.get("safety_changes", []):
-                                    DatabaseService.save_safety_change(db, c_drug.id, change)
+                    if not detail_url or detail_url in seen_detail_urls:
+                        continue
+                    seen_detail_urls.add(detail_url)
+
+                    c_drug, is_new = DatabaseService.insert_or_update_drug(db, candidate)
+                    crawled_drugs.append(c_drug)
+                    crawler.visited_urls.discard(detail_url)
+                    detail_html = await crawler.get_detail_page(detail_url)
+                    if detail_html:
+                        detail_data = scraper.parse_detail_page(detail_html, source_url=detail_url)
+                        if detail_data:
+                            if not c_drug.active_ingredient and detail_data.get("active_ingredient"):
+                                c_drug.active_ingredient = detail_data["active_ingredient"]
+                            if not c_drug.application_number and detail_data.get("application_number"):
+                                c_drug.application_number = detail_data["application_number"]
+                            for change in detail_data.get("safety_changes", []):
+                                DatabaseService.save_safety_change(db, c_drug.id, change)
                 db.commit()
+
+                # Re-query local database after crawl with all filters applied, falling back if brand differs
                 local_drugs = DatabaseService.search_drugs_filtered(
                     db,
                     product_name=prod_name,
                     generic_name=gen_name,
                     active_ingredients=act_ingr,
                 )
+                if not local_drugs and gen_name:
+                    local_drugs = DatabaseService.search_drugs_filtered(
+                        db,
+                        product_name=gen_name,
+                        active_ingredients=act_ingr,
+                    )
+                if not local_drugs and act_ingr:
+                    local_drugs = DatabaseService.search_drugs_filtered(
+                        db,
+                        product_name=act_ingr,
+                    )
+                if not local_drugs and crawled_drugs:
+                    local_drugs = crawled_drugs
+
                 drug = local_drugs[0] if local_drugs else None
                 changes = (
                     DatabaseService.get_safety_changes_by_drug_id(db, drug.id, start_date=start_dt, end_date=end_dt)
@@ -524,11 +575,27 @@ async def post_signal_and_risk(
         "submissionId": sub_id,
     }
 
+    # Check source coverage limitation: US FDA SrLC records begin from 01-01-2016
+    fda_srlc_min_date = datetime(2016, 1, 1, 0, 0, 0)
+    is_partial_coverage = False
+    coverage_limitation_note = None
+    if start_dt and start_dt < fda_srlc_min_date:
+        is_partial_coverage = True
+        coverage_limitation_note = (
+            "US FDA SrLC records begin from 01-01-2016. Safety labeling changes prior to 2016 "
+            "are not indexed in this database and may reside in the FDA MedWatch archive."
+        )
+
     website_Data_wrapper = {
         "title": "Website Crawler Data",
         "status": "success",
         "data": [website_item],
     }
+    if is_partial_coverage:
+        website_Data_wrapper["coverage"] = "partial"
+        website_Data_wrapper["source_limitation"] = coverage_limitation_note
+    elif is_date_filtered:
+        website_Data_wrapper["coverage"] = "complete"
 
     response_payload = {
         "submissionId": sub_id,

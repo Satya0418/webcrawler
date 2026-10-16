@@ -145,6 +145,8 @@ class SignalAndRiskItem(BaseModel):
 class WebsiteDataSection(BaseModel):
     title: str = Field("Website Crawler Data", description="Source identifier title")
     status: str = Field("success", description="Status: 'success', 'not_found', or 'error'")
+    coverage: Optional[str] = Field(None, description="Coverage assessment: 'complete' or 'partial'")
+    source_limitation: Optional[str] = Field(None, description="Explanation if date range exceeds source coverage")
     data: List[SignalAndRiskItem] = Field(default_factory=list, description="List of website safety results")
     message: Optional[str] = Field(None, description="Informational message or reason for no results")
 
