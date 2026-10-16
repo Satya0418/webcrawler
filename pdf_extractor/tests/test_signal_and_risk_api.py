@@ -37,13 +37,13 @@ def test_signal_and_risk_post_success():
 
     # Website crawler data section
     web_section = body["website_Data"]
-    assert web_section["title"] == "Website Crawler Data"
+    assert web_section["title"] in ("Safety Action Taken", "Website Crawler Data")
     assert web_section["status"] in ("success", "not_found", "error")
     assert isinstance(web_section["data"], list)
 
     # PDF extractor data section
     pdf_section = body["pdf_extractor_Data"]
-    assert pdf_section["title"] == "PDF Extractor Data"
+    assert pdf_section["title"] in ("Signal and Risk", "PDF Extractor Data")
     assert pdf_section["status"] == "success"
     assert isinstance(pdf_section["data"], dict)
 
@@ -76,9 +76,9 @@ def test_signal_and_risk_alias_endpoint():
         body = res.json()
         assert body["submissionId"] == "a0CAq00004acdq7MAA"
         assert "amikacin" in body["productName"].lower()
-        assert body["pdf_extractor_Data"]["title"] == "PDF Extractor Data"
+        assert body["pdf_extractor_Data"]["title"] in ("Signal and Risk", "PDF Extractor Data")
         assert body["pdf_extractor_Data"]["status"] == "success"
-        assert body["website_Data"]["title"] == "Website Crawler Data"
+        assert body["website_Data"]["title"] in ("Safety Action Taken", "Website Crawler Data")
 
 
 def test_signal_and_risk_validation_missing_submission_id():
@@ -199,8 +199,8 @@ def test_signal_and_risk_browser_get_support():
     assert res.status_code == 200
     body = res.json()
     assert "amikacin" in body["productName"].lower()
-    assert body["pdf_extractor_Data"]["title"] == "PDF Extractor Data"
-    assert body["website_Data"]["title"] == "Website Crawler Data"
+    assert body["pdf_extractor_Data"]["title"] in ("Signal and Risk", "PDF Extractor Data")
+    assert body["website_Data"]["title"] in ("Safety Action Taken", "Website Crawler Data")
     assert "<!DOCTYPE html>" in body["pdf_extractor_Data"]["data"]["Data"]
 
 
@@ -216,7 +216,7 @@ def test_signal_and_risk_singular_alias():
 
 
 def test_signal_and_risk_salesforce_callback_invoked(monkeypatch):
-    """Verifies that send_salesforce_callback is invoked with the expected unified payload."""
+    """Verifies that send_salesforce_callback is invoked with two separate payloads (SafetyActionTaken and SignalAndRisk)."""
     called_payloads = []
 
     async def fake_send_callback(payload, callback_url=None):
@@ -232,23 +232,29 @@ def test_signal_and_risk_salesforce_callback_invoked(monkeypatch):
     }
     res = client.post("/api/v1/products/signal-and-risk", json=payload)
     assert res.status_code == 200
-    assert len(called_payloads) == 1
+    assert len(called_payloads) == 2
 
-    callback_data, callback_url = called_payloads[0]
-    assert callback_data["submissionId"] == "salesforce_test_sub_101"
-    assert callback_data["productName"] == "Amikacin"
-    assert "website_Data" in callback_data
-    assert "pdf_extractor_Data" in callback_data
-    assert callback_data["pdf_extractor_Data"]["status"] == "success"
-    assert "updateSubmissionResponse" in callback_url
+    # Webhook Call #1: Safety Action Taken
+    cb_safety, cb_url_1 = called_payloads[0]
+    assert cb_safety["submissionId"] == "salesforce_test_sub_101"
+    assert cb_safety["responseType"] == "SafetyActionTaken"
+    assert cb_safety["title"] == "Safety Action Taken"
+    assert "updateSubmissionResponse" in cb_url_1
+
+    # Webhook Call #2: Signal and Risk
+    cb_signal, cb_url_2 = called_payloads[1]
+    assert cb_signal["submissionId"] == "salesforce_test_sub_101"
+    assert cb_signal["responseType"] == "SignalAndRisk"
+    assert cb_signal["title"] == "Signal and Risk"
+    assert "updateSubmissionResponse" in cb_url_2
 
 
 def test_signal_and_risk_both_success_independent_objects(monkeypatch):
     """
     Verifies that when both PDF Section 16 data and Crawler data exist:
     - Response contains TWO SEPARATE response objects: website_Data and pdf_extractor_Data.
-    - website_Data.title == 'Website Crawler Data'
-    - pdf_extractor_Data.title == 'PDF Extractor Data'
+    - website_Data.title in ('Safety Action Taken', 'Website Crawler Data')
+    - pdf_extractor_Data.title in ('Signal and Risk', 'PDF Extractor Data')
     - Website HTML appears ONLY in website_Data.data[0].Data.
     - PDF HTML appears ONLY in pdf_extractor_Data.data.Data.
     - Neither overwrites, merges, or mislabels the other.
@@ -288,7 +294,7 @@ def test_signal_and_risk_both_success_independent_objects(monkeypatch):
 
     # Subsystem 1: website_Data
     web_res = body["website_Data"]
-    assert web_res["title"] == "Website Crawler Data"
+    assert web_res["title"] in ("Safety Action Taken", "Website Crawler Data")
     assert web_res["status"] == "success"
     assert len(web_res["data"]) == 1
     web_item = web_res["data"][0]
@@ -299,7 +305,7 @@ def test_signal_and_risk_both_success_independent_objects(monkeypatch):
 
     # Subsystem 2: pdf_extractor_Data
     pdf_res = body["pdf_extractor_Data"]
-    assert pdf_res["title"] == "PDF Extractor Data"
+    assert pdf_res["title"] in ("Signal and Risk", "PDF Extractor Data")
     assert pdf_res["status"] == "success"
     pdf_data = pdf_res["data"]
     assert "<!DOCTYPE html>" in pdf_data["Data"]

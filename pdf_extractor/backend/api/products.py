@@ -123,7 +123,8 @@ class WebsiteDataItem(BaseModel):
 
 
 class WebsiteDataSection(BaseModel):
-    title: str = Field("Website Crawler Data", description="Source identifier title")
+    title: str = Field("Safety Action Taken", description="Source identifier title: 'Safety Action Taken'")
+    responseType: Optional[str] = Field("SafetyActionTaken", description="Response type category")
     status: str = Field("success", description="Status: 'success', 'not_found', or 'error'")
     coverage: Optional[str] = Field(None, description="Coverage assessment: 'complete' or 'partial'")
     source_limitation: Optional[str] = Field(None, description="Explanation if date range exceeds source coverage")
@@ -132,7 +133,8 @@ class WebsiteDataSection(BaseModel):
 
 
 class PdfExtractorDataSection(BaseModel):
-    title: str = Field("PDF Extractor Data", description="Source identifier title")
+    title: str = Field("Signal and Risk", description="Source identifier title: 'Signal and Risk'")
+    responseType: Optional[str] = Field("SignalAndRisk", description="Response type category")
     status: str = Field("success", description="Status: 'success', 'not_found', or 'error'")
     data: Optional[Dict[str, Any]] = Field(None, description="Preserved structured PDF extractor response")
     message: Optional[str] = Field(None, description="Informational message or reason for no results")
@@ -840,13 +842,15 @@ def extract_pdf_branch(db: Session, prod_name: str) -> Dict[str, Any]:
     if record and record.status == "success" and record.extracted_html and record.extracted_html.strip():
         resp_data = format_product_response(record=record, include_tables=False)
         return {
-            "title": "PDF Extractor Data",
+            "title": "Signal and Risk",
+            "responseType": "SignalAndRisk",
             "status": "success",
             "data": resp_data,
             "product_name": record.product_name,
         }
     return {
-        "title": "PDF Extractor Data",
+        "title": "Signal and Risk",
+        "responseType": "SignalAndRisk",
         "status": "not_found",
         "data": None,
         "product_name": None,
@@ -961,7 +965,8 @@ async def post_signal_and_risk(
                 "submissionId": crawler_res.get("submissionId") or sub_id,
             }
         website_Data = {
-            "title": "Website Crawler Data",
+            "title": "Safety Action Taken",
+            "responseType": "SafetyActionTaken",
             "status": "success",
             "data": [website_item],
         }
@@ -972,7 +977,8 @@ async def post_signal_and_risk(
     elif isinstance(crawler_res, dict) and (crawler_res.get("Data") or crawler_res.get("website_Data")):
         # Direct crawler item dict returned (e.g. from mock or legacy response)
         website_Data = {
-            "title": "Website Crawler Data",
+            "title": "Safety Action Taken",
+            "responseType": "SafetyActionTaken",
             "status": "success",
             "data": [
                 {
@@ -990,14 +996,16 @@ async def post_signal_and_risk(
         }
     elif isinstance(crawler_res, dict) and crawler_res.get("status") == "not_found":
         website_Data = {
-            "title": "Website Crawler Data",
+            "title": "Safety Action Taken",
+            "responseType": "SafetyActionTaken",
             "status": "not_found",
             "data": [],
             "message": crawler_res.get("message") or f"No website safety data found for product '{prod_name}'.",
         }
     else:
         website_Data = {
-            "title": "Website Crawler Data",
+            "title": "Safety Action Taken",
+            "responseType": "SafetyActionTaken",
             "status": "error",
             "data": [],
             "message": crawler_res.get("message") if isinstance(crawler_res, dict) else "Website crawler service unavailable.",
@@ -1025,10 +1033,41 @@ async def post_signal_and_risk(
         "pdf_extractor_Data": pdf_extractor_Data,
     }
 
-    # 7. Outbound callback to Salesforce updateSubmissionResponse webhook
+    # 7. Outbound callbacks to Salesforce updateSubmissionResponse webhook
+    # Dispatches two separate HTTP POST calls as requested:
+    #   Webhook Call #1: responseType "SafetyActionTaken" (Website Crawler data)
+    #   Webhook Call #2: responseType "SignalAndRisk" (PDF Extractor data)
     target_callback = (req.callbackUrl or req.callback_url or SALESFORCE_CALLBACK_URL or "").strip()
     if target_callback and target_callback.lower() not in ("none", "skip", "disabled", "false"):
-        await send_salesforce_callback(response_payload, target_callback)
+        # Webhook Call #1: Safety Action Taken (Website Crawler)
+        if website_Data.get("status") == "success" or not pdf_extractor_Data.get("data"):
+            website_cb_item = (website_Data.get("data") and website_Data["data"][0]) or {}
+            salesforce_safety_payload = {
+                "submissionId": sub_id,
+                "responseType": "SafetyActionTaken",
+                "title": "Safety Action Taken",
+                "productName": website_cb_item.get("productName") or matched_product,
+                "genericName": website_cb_item.get("genericName") or gen_name or "",
+                "activeIngredients": website_cb_item.get("activeIngredients") or act_ingr or "",
+                "startDate": website_cb_item.get("startDate") or start_str,
+                "endDate": website_cb_item.get("endDate") or end_str,
+                "website_Data": website_Data,
+                "responseData": website_Data.get("data") or [],
+            }
+            await send_salesforce_callback(salesforce_safety_payload, target_callback)
+
+        # Webhook Call #2: Signal and Risk (PDF Extractor)
+        if pdf_extractor_Data.get("status") == "success" or not website_Data.get("data"):
+            pdf_cb_item = pdf_extractor_Data.get("data") or {}
+            salesforce_signal_payload = {
+                "submissionId": sub_id,
+                "responseType": "SignalAndRisk",
+                "title": "Signal and Risk",
+                "productName": pdf_cb_item.get("product_name") or matched_product,
+                "pdf_extractor_Data": pdf_extractor_Data,
+                "responseData": pdf_cb_item,
+            }
+            await send_salesforce_callback(salesforce_signal_payload, target_callback)
 
     return response_payload
 
