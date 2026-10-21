@@ -132,6 +132,7 @@ class CrawlRunResponse(BaseModel):
 class WebsiteResponseItem(BaseModel):
     website_Name: str = Field("FDA_details", description="Website identifier e.g. 'FDA_details' or 'TGA_details'")
     website_Data: str = Field(..., description="Full HTML document string")
+    Data: Optional[str] = Field(None, description="HTML document string (alias for website_Data for Salesforce compatibility)")
 
     model_config = ConfigDict(extra="ignore")
 

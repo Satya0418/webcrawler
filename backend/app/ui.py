@@ -13,6 +13,8 @@ from datetime import datetime
 from typing import List, Dict, Any
 from collections import defaultdict
 
+from bs4 import BeautifulSoup
+
 from app.scrapers.fda_srlc_scraper import (
     clean_adverse_reaction_text,
     format_fda_date_to_report,
@@ -56,6 +58,26 @@ FDA_SECTION_ORDER = {
     "indications and usage": 1,
     "indications": 1,
 }
+
+FDA_CANONICAL_SECTION_PREFIX = {
+    "warnings and precautions": "5 Warnings and Precautions",
+    "adverse reactions": "6 Adverse Reactions",
+    "use in specific populations": "8 Use in Specific Populations",
+    "contraindications": "4 Contraindications",
+    "drug interactions": "7 Drug Interactions",
+}
+
+
+def format_section_display_title(sec_name: str) -> str:
+    """Formats section display title with canonical FDA numbering (e.g. '5 Warnings and Precautions')."""
+    s = (sec_name or "").strip()
+    norm = s.lower()
+    if re.match(r"^\d+\b", s):
+        return s
+    for key, canonical in FDA_CANONICAL_SECTION_PREFIX.items():
+        if key in norm:
+            return canonical
+    return s
 
 
 def get_section_sort_key(sec_name: str) -> tuple:
@@ -173,12 +195,8 @@ def clean_clinical_text(raw_text: str) -> str:
     if stop_match:
         raw_text = raw_text[:stop_match.start()]
 
-    # First strip editorial / guidance boilerplate tags
-    text = re.sub(r"<\/?(?:i|em|u|strong|b)>\s*(?:Additions\s+and(?:/or)?\s+revisions\s+underlined|Newly\s+added\s+information|New\s+subsection\s+added)\s*:?\s*<\/?(?:i|em|u|strong|b)>", "", raw_text, flags=re.IGNORECASE)
-    text = re.sub(r"(?i)^(?:Additions\s+and(?:/or)?\s+revisions\s+underlined|Newly\s+added\s+information|New\s+subsection\s+added)\s*:?", "", text)
-
     # Strip bracketed cross-references like [see Warnings and Precautions (5.1)], including tags inside
-    text = re.sub(r"\[\s*(?:<[^>]+>\s*)*see(?:\s*<[^>]+>)*\s*[^\]]+\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\[\s*(?:<[^>]+>\s*)*see(?:\s*<[^>]+>)*\s*[^\]]+\]", "", raw_text, flags=re.IGNORECASE)
     text = re.sub(r"\[\s*see\s+[^\]]+\]", "", text, flags=re.IGNORECASE)
 
     # Clean ellipses . . . replaced by newline to keep separation intact
@@ -198,13 +216,32 @@ def clean_clinical_text(raw_text: str) -> str:
         l = line.strip()
         if not l or l in ("...", "…") or re.match(r"^[\.\s…]+$", l):
             continue
-        if re.match(r"(?i)^(additions\s+and(?:/or)?\s+revisions\s+underlined|newly\s+added|new\s+subsection\s+added)", l):
-            continue
-        # Strip section numbers from start, even if inside/after tags: <strong>6.2 Postmarketing... -> <strong>Postmarketing...
-        l = re.sub(r"^((?:<[^>]+>\s*)*)[1-9]\d*(?:\.\d+)+\s*", r"\1", l)
         cleaned_lines.append(l)
 
     return "\n".join(cleaned_lines)
+
+
+def _render_safe_inline_html(text: str) -> str:
+    """
+    Renders text preserving safe inline formatting tags (<u>, <strong>, <b>, <i>, <em>)
+    while escaping raw non-HTML characters.
+    """
+    if not text:
+        return ""
+    if "<" not in text and ">" not in text:
+        return html.escape(text)
+
+    soup = BeautifulSoup(text, "html.parser")
+    allowed_tags = {"u", "strong", "b", "i", "em"}
+    for tag in soup.find_all(True):
+        if tag.name.lower() in allowed_tags:
+            tag.attrs = {}
+        else:
+            tag.unwrap()
+    for tag in soup.find_all(list(allowed_tags)):
+        if not tag.get_text(strip=True):
+            tag.unwrap()
+    return "".join(str(c) for c in soup.contents).strip()
 
 
 def _render_text_to_html_parts(cleaned_text: str, html_parts: List[str], bullet_pat: re.Pattern) -> None:
@@ -215,45 +252,53 @@ def _render_text_to_html_parts(cleaned_text: str, html_parts: List[str], bullet_
     while i < n:
         line = lines[i]
 
-        # Check if this line starts a bullet list
+        clean_no_tags = re.sub(r"<\/?(?:strong|b|i|u|em)>", "", line).strip()
+
+        # 1. Notice line: 'Additions and/or revisions underlined:'
+        if re.match(r"(?i)^additions\s+and(?:/or)?\s+revisions\s+underlined\s*:?$", clean_no_tags):
+            html_parts.append("<p><em>Additions and/or revisions underlined:</em></p>")
+            i += 1
+            continue
+
+        # 2. Check if this line starts a bullet list
         if line.startswith(("•", "-", "*")):
             bullet_items = []
             while i < n and lines[i].startswith(("•", "-", "*")):
-                b_txt = bullet_pat.sub("", lines[i])
-                b_clean = re.sub(r"<\/?(?:u|i|em|strong|b)>", "", b_txt).strip()
+                b_txt = bullet_pat.sub("", lines[i]).strip()
                 # Check for bold prefix in bullet e.g. 'Skin and Appendages: ...'
-                kv_bullet = re.match(r"^([A-Za-z\s\-]+:)\s*(.*)", b_clean)
+                kv_bullet = re.match(r"^(?:<strong>|<b>)?([A-Za-z\s\-]+:)(?:</strong>|</b>)?\s*(.*)", b_txt)
                 if kv_bullet:
-                    bullet_items.append(f"<li><strong>{html.escape(kv_bullet.group(1))}</strong> {html.escape(kv_bullet.group(2))}</li>")
+                    k_clean = re.sub(r"<\/?(?:strong|b|i|u|em)>", "", kv_bullet.group(1)).strip()
+                    v_safe = _render_safe_inline_html(kv_bullet.group(2))
+                    bullet_items.append(f"<li><strong>{html.escape(k_clean)}</strong> {v_safe}</li>")
                 else:
-                    bullet_items.append(f"<li>{html.escape(b_clean)}</li>")
+                    b_safe = _render_safe_inline_html(b_txt)
+                    bullet_items.append(f"<li>{b_safe}</li>")
                 i += 1
             inner = "".join(bullet_items)
             html_parts.append(f"<ul>{inner}</ul>")
             continue
 
-        # Check if line is a subheading (e.g. 'Postmarketing Experience')
-        clean_no_tags = re.sub(r"<\/?(?:strong|b|i|u|em)>", "", line).strip()
-        subhead_match = re.match(r"^([A-Z][A-Za-z\s\(\)\-]{3,60})$", clean_no_tags)
+        # 3. Check if line is a subheading (e.g. '5.3 Central Nervous System Depression' or 'Postmarketing Experience')
+        subhead_match = re.match(r"^((?:\d+(?:\.\d+)*\s+)?[A-Z][A-Za-z0-9\s\(\)\-\/\,\?]{2,70})$", clean_no_tags)
         if subhead_match and not line.endswith(".") and not line.endswith(":"):
-            html_parts.append(f"<h3>{html.escape(subhead_match.group(1))}</h3>")
+            html_parts.append(f"<h3>{html.escape(subhead_match.group(1).strip())}</h3>")
             i += 1
             continue
 
-        # Check for key-value bold prefix e.g. "Gastrointestinal: text..." or "<b>Skin and Appendages:</b> text"
-        clean_text_line = re.sub(r"<\/?(?:u|i|em)>", "", line).strip()
-        kv_match = re.match(r"^(?:<strong>|<b>)?([A-Za-z\s\-]+:)(?:</strong>|</b>)?\s*(.*)", clean_text_line)
+        # 4. Check for key-value bold prefix e.g. "Gastrointestinal: text..." or "<b>Skin and Appendages:</b> text"
+        kv_match = re.match(r"^(?:<strong>|<b>)?([A-Za-z\s\-]+:)(?:</strong>|</b>)?\s*(.*)", line)
         if kv_match:
-            prefix = re.sub(r"<\/?(?:strong|b|i|u)>", "", kv_match.group(1)).strip()
-            content = re.sub(r"<\/?(?:strong|b|i|u)>", "", kv_match.group(2)).strip()
-            html_parts.append(f"<p><strong>{html.escape(prefix)}</strong> {html.escape(content)}</p>")
+            k_clean = re.sub(r"<\/?(?:strong|b|i|u|em)>", "", kv_match.group(1)).strip()
+            v_safe = _render_safe_inline_html(kv_match.group(2))
+            html_parts.append(f"<p><strong>{html.escape(k_clean)}</strong> {v_safe}</p>")
             i += 1
             continue
 
-        # Regular paragraph line
-        clean_line = re.sub(r"<\/?(?:strong|b|i|u|em)>", "", line).strip()
-        if clean_line:
-            html_parts.append(f"<p>{html.escape(clean_line)}</p>")
+        # 5. Regular paragraph line preserving safe inline HTML (underlines, bold, italics)
+        p_safe = _render_safe_inline_html(line)
+        if p_safe:
+            html_parts.append(f"<p>{p_safe}</p>")
         i += 1
 
 
@@ -302,7 +347,7 @@ def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = Tru
             cleaned_text = clean_clinical_text(raw_text)
             if not cleaned_text:
                 continue
-            html_parts.append(f"<h2>{html.escape(sec)}</h2>")
+            html_parts.append(f"<h2>{html.escape(format_section_display_title(sec))}</h2>")
             _render_text_to_html_parts(cleaned_text, html_parts, bullet_pat)
     else:
         # Multiple dates across requested historical period: group chronologically by date
@@ -327,7 +372,7 @@ def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = Tru
                 cleaned_text = clean_clinical_text(raw_text)
                 if not cleaned_text:
                     continue
-                html_parts.append(f"<h4>{html.escape(sec)}</h4>")
+                html_parts.append(f"<h4>{html.escape(format_section_display_title(sec))}</h4>")
                 _render_text_to_html_parts(cleaned_text, html_parts, bullet_pat)
 
     inner_body = "\n".join(html_parts)
@@ -335,7 +380,7 @@ def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = Tru
     if not standalone:
         return inner_body
 
-    # Minimal, clean standard styles matching pdf_extractor's export format
+    # Clean styles preserving heading hierarchy and underline styling
     return (
         f"<!DOCTYPE html>\n"
         f'<html lang="en">\n'
@@ -345,10 +390,15 @@ def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = Tru
         f"    <title>{html.escape(display_clean)} - Safety Information</title>\n"
         f"    <style>\n"
         f"    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 40px; background-color: #f9f9f9; color: #1e293b; line-height: 1.6; }}\n"
-        f"    h2, h3 {{ color: #0f172a; margin-top: 24px; }}\n"
+        f"    h2 {{ font-size: 1.35rem; font-weight: 700; color: #0f172a; margin-top: 24px; margin-bottom: 12px; }}\n"
+        f"    h3 {{ font-size: 1.15rem; font-weight: 700; color: #0f172a; margin-top: 20px; margin-bottom: 8px; }}\n"
+        f"    h4 {{ font-size: 1.05rem; font-weight: 600; color: #1e293b; margin-top: 16px; margin-bottom: 6px; }}\n"
         f"    p {{ margin: 12px 0; color: #333; line-height: 1.6; }}\n"
         f"    ul, ol {{ margin: 10px 0 10px 24px; color: #333; }}\n"
         f"    li {{ margin-bottom: 4px; }}\n"
+        f"    u {{ text-decoration: underline; }}\n"
+        f"    em, i {{ font-style: italic; }}\n"
+        f"    strong, b {{ font-weight: 600; }}\n"
         f"    </style>\n"
         f"</head>\n"
         f"<body>\n"

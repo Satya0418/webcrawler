@@ -836,6 +836,7 @@ async def post_signal_and_risk(
     clean_website_item = {
         "website_Name": site_name,
         "website_Data": standalone_html,
+        "Data": standalone_html,
     }
 
     response_payload = {
