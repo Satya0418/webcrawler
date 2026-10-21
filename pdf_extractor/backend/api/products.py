@@ -1112,6 +1112,7 @@ async def post_signal_and_risk(
             {
                 "website_Name": item.get("website_Name") or "FDA_details",
                 "website_Data": item.get("website_Data") or item.get("Data") or "",
+                "Data": item.get("website_Data") or item.get("Data") or "",
             }
             for item in (website_Data.get("data") or [])
         ],

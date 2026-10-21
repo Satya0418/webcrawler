@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from typing import Optional, Tuple, List, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, desc, case
+from sqlalchemy import select, func, desc, asc, case
 
 from app.models.drug import Drug, SafetyLabelingChange, SafetyChangeVersion, CrawlRun
 from app.services.normalization import NormalizationService
@@ -391,7 +391,7 @@ class DatabaseService:
         if start_date is not None or end_date is not None:
             query = query.where(SafetyLabelingChange.source_date.isnot(None))
 
-        query = query.order_by(desc(SafetyLabelingChange.source_date), desc(SafetyLabelingChange.id))
+        query = query.order_by(desc(SafetyLabelingChange.source_date), asc(SafetyLabelingChange.id))
         result = session.execute(query)
         return list(result.scalars().all())
 

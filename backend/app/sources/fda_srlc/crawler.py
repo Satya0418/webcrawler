@@ -154,19 +154,7 @@ class FDASrLCCrawler:
             safety_changes_list = []
             if structured_res.sections:
                 sec_dict = structured_res.sections
-                # Adverse Reactions
-                if sec_dict.adverse_reactions.found and sec_dict.adverse_reactions.content:
-                    ar = sec_dict.adverse_reactions
-                    safety_changes_list.append({
-                        "section": "Adverse Reactions",
-                        "change_type": "Labeling Revision",
-                        "source_date": ar.date,
-                        "updated_text": ar.content,
-                        "source_url": ar.source_url or cand.detail_url,
-                        "fda_comment": f"Approved Label PDF: {ar.document_url}" if ar.document_url else None,
-                        "source_record_id": structured_res.supplement_number or f"{final_drug_name}-{ar.date}",
-                    })
-                # Warnings and Precautions
+                # Warnings and Precautions (Section 5)
                 if sec_dict.warnings_and_precautions.found and sec_dict.warnings_and_precautions.content:
                     wp = sec_dict.warnings_and_precautions
                     safety_changes_list.append({
@@ -178,7 +166,19 @@ class FDASrLCCrawler:
                         "fda_comment": f"Approved Label PDF: {wp.document_url}" if wp.document_url else None,
                         "source_record_id": structured_res.supplement_number or f"{final_drug_name}-{wp.date}",
                     })
-                # Pregnancy / Use in Specific Populations
+                # Adverse Reactions (Section 6)
+                if sec_dict.adverse_reactions.found and sec_dict.adverse_reactions.content:
+                    ar = sec_dict.adverse_reactions
+                    safety_changes_list.append({
+                        "section": "Adverse Reactions",
+                        "change_type": "Labeling Revision",
+                        "source_date": ar.date,
+                        "updated_text": ar.content,
+                        "source_url": ar.source_url or cand.detail_url,
+                        "fda_comment": f"Approved Label PDF: {ar.document_url}" if ar.document_url else None,
+                        "source_record_id": structured_res.supplement_number or f"{final_drug_name}-{ar.date}",
+                    })
+                # Pregnancy / Use in Specific Populations (Section 8)
                 if sec_dict.pregnancy.found and sec_dict.pregnancy.content:
                     preg = sec_dict.pregnancy
                     safety_changes_list.append({

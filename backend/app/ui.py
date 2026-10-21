@@ -32,6 +32,63 @@ def _get_val(obj: Any, attr: str, default: Any = "") -> Any:
     return default if val is None else val
 
 
+FDA_SECTION_ORDER = {
+    "boxed warning": 0,
+    "box warning": 0,
+    "black box warning": 0,
+    "contraindications": 4,
+    "warnings and precautions": 5,
+    "warnings & precautions": 5,
+    "warnings": 5,
+    "precautions": 5,
+    "adverse reactions": 6,
+    "side effects": 6,
+    "drug interactions": 7,
+    "interactions": 7,
+    "use in specific populations": 8,
+    "pregnancy": 8,
+    "lactation": 8,
+    "pediatric use": 8,
+    "geriatric use": 8,
+    "overdosage": 10,
+    "dosage and administration": 2,
+    "dosage": 2,
+    "indications and usage": 1,
+    "indications": 1,
+}
+
+
+def get_section_sort_key(sec_name: str) -> tuple:
+    """
+    Returns a sort key tuple (priority: int, name: str) to preserve canonical
+    FDA labeling and website sequence:
+    0: Boxed Warning
+    1: Indications and Usage
+    2: Dosage and Administration
+    4: Contraindications
+    5: Warnings and Precautions
+    6: Adverse Reactions
+    7: Drug Interactions
+    8: Use in Specific Populations / Pregnancy
+    99: Other / Unclassified
+    """
+    s = (sec_name or "").strip()
+    norm = s.lower()
+
+    # 1. Match leading digits if present, e.g. "5 Warnings and Precautions", "6 Adverse Reactions"
+    m = re.match(r"^(\d+)(?:\.\d+)?\b", norm)
+    if m:
+        return (int(m.group(1)), norm)
+
+    # 2. Match canonical section dictionary
+    for key, order in FDA_SECTION_ORDER.items():
+        if key in norm:
+            return (order, norm)
+
+    # 3. Default fallback for unknown sections
+    return (99, norm)
+
+
 def export_drug_csv(drug: Any, changes: List[Any]) -> str:
     """Generate RFC 4180 compliant CSV of all safety labeling changes for a drug."""
     output = io.StringIO()
@@ -59,6 +116,7 @@ def export_drug_csv(drug: Any, changes: List[Any]) -> str:
 
     # Filter to latest date only
     latest_changes = filter_latest_date_changes(changes)
+    latest_changes = sorted(latest_changes, key=lambda c: get_section_sort_key(_get_val(c, "section", "")))
 
     for c in latest_changes:
         s_date = _get_val(c, "source_date", "")
@@ -238,19 +296,8 @@ def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = Tru
             if sec not in unique_sections or len(txt) > len(_get_val(unique_sections[sec], "updated_text", "")):
                 unique_sections[sec] = c
 
-        html_parts.append(f"<h2>{html.escape(display_clean)} - Safety Information</h2>")
-        meta = []
-        if date_display:
-            meta.append(f"<strong>Approval Date:</strong> {html.escape(date_display)}")
-        if active_ingr and active_ingr != "Not specified":
-            meta.append(f"<strong>Active Ingredient:</strong> {html.escape(active_ingr)}")
-        if app_num and app_num != "N/A":
-            meta.append(f"<strong>Application:</strong> {html.escape(app_num)}")
-        if meta:
-            meta_str = " | ".join(meta)
-            html_parts.append(f"<p>{meta_str}</p>")
-
-        for sec, rec in unique_sections.items():
+        sorted_sections = sorted(unique_sections.items(), key=lambda item: get_section_sort_key(item[0]))
+        for sec, rec in sorted_sections:
             raw_text = _get_val(rec, "updated_text", "") or ""
             cleaned_text = clean_clinical_text(raw_text)
             if not cleaned_text:
@@ -265,16 +312,6 @@ def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = Tru
             d_s = str(s_date)[:10] if s_date else "Unknown Date"
             by_date[d_s].append(c)
 
-        html_parts.append(f"<h2>{html.escape(display_clean)} - Historical Safety Information</h2>")
-        meta = []
-        if active_ingr and active_ingr != "Not specified":
-            meta.append(f"<strong>Active Ingredient:</strong> {html.escape(active_ingr)}")
-        if app_num and app_num != "N/A":
-            meta.append(f"<strong>Application:</strong> {html.escape(app_num)}")
-        if meta:
-            meta_str = " | ".join(meta)
-            html_parts.append(f"<p>{meta_str}</p>")
-
         for d_s in sorted(by_date.keys(), reverse=True):
             date_changes = by_date[d_s]
             html_parts.append(f"<h3>Supplement Date: {html.escape(d_s)}</h3>")
@@ -284,7 +321,8 @@ def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = Tru
                 txt = _get_val(c, "updated_text", "") or ""
                 if sec not in unique_sections or len(txt) > len(_get_val(unique_sections[sec], "updated_text", "")):
                     unique_sections[sec] = c
-            for sec, rec in unique_sections.items():
+            sorted_sections = sorted(unique_sections.items(), key=lambda item: get_section_sort_key(item[0]))
+            for sec, rec in sorted_sections:
                 raw_text = _get_val(rec, "updated_text", "") or ""
                 cleaned_text = clean_clinical_text(raw_text)
                 if not cleaned_text:
@@ -342,8 +380,9 @@ def export_drug_json(drug: Any, changes: List[Any]) -> str:
         if sec not in unique_sections or len(txt) > len(_get_val(unique_sections[sec], "updated_text", "")):
             unique_sections[sec] = c
 
+    sorted_sections = sorted(unique_sections.items(), key=lambda item: get_section_sort_key(item[0]))
     items = []
-    for sec, c in unique_sections.items():
+    for sec, c in sorted_sections:
         s_date = _get_val(c, "source_date", None)
         app_date = _get_val(c, "approval_date", None)
         eff_date = _get_val(c, "effective_date", None)

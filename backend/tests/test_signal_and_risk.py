@@ -690,4 +690,52 @@ def test_api_signal_and_risk_active_ingredient_ezetimibe_date_matching(monkeypat
     assert "Anaphylaxis" in entry["Data"]
 
 
+def test_export_drug_clean_html_section_sequence():
+    """
+    Verifies that sections in export_drug_clean_html always follow the canonical
+    FDA labeling and website sequence (Warnings and Precautions -> Adverse Reactions ->
+    Use in Specific Populations), even if changes are stored in reverse order.
+    """
+    from app.ui import export_drug_clean_html
+
+    fake_drug = {
+        "display_name": "ADDYI",
+        "active_ingredient": "FLIBANSERIN",
+        "application_number": "NDA-022526",
+    }
+    # Provide changes in reverse order: Use in Specific Populations, then Warnings, then Adverse Reactions
+    fake_changes = [
+        {
+            "section": "Use in Specific Populations",
+            "source_date": "2025-12-13",
+            "updated_text": "Pregnancy Risk Summary: There are no studies of ADDYI in pregnant women.\n\nGeriatric Use: ADDYI is not indicated for geriatric patients.",
+        },
+        {
+            "section": "Warnings and Precautions",
+            "source_date": "2025-12-13",
+            "updated_text": "Central Nervous System Depression: ADDYI can cause CNS depression.\n\nHypotension and Syncope with ADDYI Alone: Can cause hypotension and syncope.",
+        },
+        {
+            "section": "Adverse Reactions",
+            "source_date": "2025-12-13",
+            "updated_text": "Clinical Trials Experience: Extensive changes.\n\nPostmarketing Experience: Hypersensitivity reactions.",
+        },
+    ]
+
+    html_out = export_drug_clean_html(fake_drug, fake_changes, standalone=True)
+
+    pos_wp = html_out.find("<h2>Warnings and Precautions</h2>")
+    pos_ar = html_out.find("<h2>Adverse Reactions</h2>")
+    pos_usp = html_out.find("<h2>Use in Specific Populations</h2>")
+
+    assert pos_wp != -1, "Warnings and Precautions must be present"
+    assert pos_ar != -1, "Adverse Reactions must be present"
+    assert pos_usp != -1, "Use in Specific Populations must be present"
+
+    # Canonical order: Warnings and Precautions < Adverse Reactions < Use in Specific Populations
+    assert pos_wp < pos_ar, "Warnings and Precautions must precede Adverse Reactions"
+    assert pos_ar < pos_usp, "Adverse Reactions must precede Use in Specific Populations"
+
+
+
 
