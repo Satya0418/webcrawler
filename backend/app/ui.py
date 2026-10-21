@@ -302,6 +302,44 @@ def _render_text_to_html_parts(cleaned_text: str, html_parts: List[str], bullet_
         i += 1
 
 
+def _format_approval_intro_p(date_val: Any, display_name: str, active_ingredient: str) -> str:
+    """
+    Constructs the regulatory approval introductory paragraph matching official reporting format:
+    'On [Date], the United States Food and Drug Administration Center for Drug Evaluation
+    and Research approved the following safety labeling changes for [Product] ([ingredient]; Additions underlined):'
+    """
+    formatted_date = format_fda_date_to_report(date_val) if date_val else ""
+    raw_ingr = (active_ingredient or "").strip()
+    if raw_ingr.lower() in ("not specified", "n/a", "none"):
+        raw_ingr = ""
+
+    ingr_clean = re.sub(
+        r"\b(sulfate|hydrochloride|sodium|potassium|acetate|maleate|fumarate|tartrate|mesylate|besylate|succinate)\b",
+        "",
+        raw_ingr.lower(),
+        flags=re.I,
+    ).strip()
+    if not ingr_clean:
+        ingr_clean = raw_ingr.lower()
+
+    if ingr_clean:
+        parenthetical = f" ({html.escape(ingr_clean)}; <em>Additions underlined</em>)"
+    else:
+        parenthetical = " (<em>Additions underlined</em>)"
+
+    if formatted_date:
+        return (
+            f"<p>On {html.escape(formatted_date)}, the United States Food and Drug Administration "
+            f"Center for Drug Evaluation and Research approved the following safety labeling "
+            f"changes for {html.escape(display_name)}{parenthetical}:</p>"
+        )
+    return (
+        f"<p>The United States Food and Drug Administration "
+        f"Center for Drug Evaluation and Research approved the following safety labeling "
+        f"changes for {html.escape(display_name)}{parenthetical}:</p>"
+    )
+
+
 def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = True, filter_latest: bool = True) -> str:
     """
     Generate clean, semantic HTML without CSS classes or styles,
@@ -333,6 +371,11 @@ def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = Tru
     html_parts = []
 
     if filter_latest or len(date_strs) <= 1:
+        # Starting approval paragraph with the extracted approval date, product name, and ingredient
+        latest_date_val = date_strs[0] if date_strs else None
+        intro_p = _format_approval_intro_p(latest_date_val, display_clean, active_ingr)
+        html_parts.append(intro_p)
+
         # Deduplicate changes by section on the latest date (or single date)
         unique_sections = {}
         for c in target_changes:
@@ -359,7 +402,8 @@ def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = Tru
 
         for d_s in sorted(by_date.keys(), reverse=True):
             date_changes = by_date[d_s]
-            html_parts.append(f"<h3>Supplement Date: {html.escape(d_s)}</h3>")
+            intro_p = _format_approval_intro_p(d_s, display_clean, active_ingr)
+            html_parts.append(intro_p)
             unique_sections = {}
             for c in date_changes:
                 sec = _get_val(c, "section", "Safety Information") or "Safety Information"

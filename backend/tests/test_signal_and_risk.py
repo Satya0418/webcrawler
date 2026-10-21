@@ -724,15 +724,21 @@ def test_export_drug_clean_html_section_sequence():
 
     html_out = export_drug_clean_html(fake_drug, fake_changes, standalone=True)
 
+    pos_intro = html_out.find(
+        "<p>On 13-Dec-2025, the United States Food and Drug Administration Center for Drug Evaluation and Research "
+        "approved the following safety labeling changes for Addyi (flibanserin; <em>Additions underlined</em>):</p>"
+    )
     pos_wp = html_out.find("<h2>5 Warnings and Precautions</h2>")
     pos_ar = html_out.find("<h2>6 Adverse Reactions</h2>")
     pos_usp = html_out.find("<h2>8 Use in Specific Populations</h2>")
 
+    assert pos_intro != -1, "Approval introductory paragraph must be present"
     assert pos_wp != -1, "5 Warnings and Precautions must be present"
     assert pos_ar != -1, "6 Adverse Reactions must be present"
     assert pos_usp != -1, "8 Use in Specific Populations must be present"
 
-    # Canonical order: Warnings and Precautions < Adverse Reactions < Use in Specific Populations
+    # Canonical order: intro paragraph < Warnings and Precautions < Adverse Reactions < Use in Specific Populations
+    assert pos_intro < pos_wp, "Approval intro paragraph must precede section headings"
     assert pos_wp < pos_ar, "Warnings and Precautions must precede Adverse Reactions"
     assert pos_ar < pos_usp, "Adverse Reactions must precede Use in Specific Populations"
 
