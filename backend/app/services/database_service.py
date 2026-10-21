@@ -277,7 +277,17 @@ class DatabaseService:
             else:
                 conditions.append(Drug.source == source)
 
-        stmt = select(Drug).where(*conditions).limit(limit)
+        norm_clean = normalized.lower()
+        query_clean = query.strip().lower()
+        order_clauses = [
+            case((func.lower(Drug.display_name) == query_clean, 0), else_=1),
+            case((Drug.normalized_name == normalized, 0), else_=1),
+            case((func.lower(func.trim(Drug.active_ingredient)) == query_clean, 0), else_=1),
+            case((func.lower(func.trim(Drug.active_ingredient)) == norm_clean, 0), else_=1),
+            case((Drug.active_ingredient.notilike('%;%'), 0), else_=1),
+            Drug.display_name.asc(),
+        ]
+        stmt = select(Drug).where(*conditions).order_by(*order_clauses).limit(limit)
         result = session.execute(stmt)
         return list(result.scalars().all())
 
@@ -333,14 +343,33 @@ class DatabaseService:
         if source and source != "ALL":
             conditions.append(Drug.source == source)
 
+        # Determine target active ingredient for prioritization
+        target_ingrs = []
+        if active_ingredients and active_ingredients.strip():
+            target_ingrs.extend([p.strip().lower() for p in re.split(r"[,;/]+", active_ingredients.strip()) if p.strip()])
+        if generic_name and generic_name.strip():
+            target_ingrs.append(generic_name.strip().lower())
+        if clean_prod:
+            target_ingrs.append(clean_prod.lower())
+
+        order_clauses = [
+            case((func.lower(Drug.display_name) == clean_prod.lower(), 0), else_=1),
+            case((Drug.normalized_name == normalized_prod, 0), else_=1),
+        ]
+
+        if target_ingrs:
+            first_ingr = target_ingrs[0]
+            # Exact active ingredient match (e.g. 'EZETIMIBE' == 'EZETIMIBE')
+            order_clauses.append(case((func.lower(func.trim(Drug.active_ingredient)) == first_ingr, 0), else_=1))
+            # Prefer single-ingredient drugs over combo drugs (no semicolon)
+            order_clauses.append(case((Drug.active_ingredient.notilike('%;%'), 0), else_=1))
+
+        order_clauses.append(Drug.display_name.asc())
+
         stmt = (
             select(Drug)
             .where(*conditions)
-            .order_by(
-                case((func.lower(Drug.display_name) == clean_prod.lower(), 0), else_=1),
-                case((Drug.normalized_name == normalized_prod, 0), else_=1),
-                Drug.display_name.asc(),
-            )
+            .order_by(*order_clauses)
             .limit(limit)
         )
         result = session.execute(stmt)

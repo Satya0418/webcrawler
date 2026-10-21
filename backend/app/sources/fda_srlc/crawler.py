@@ -96,6 +96,19 @@ class FDASrLCCrawler:
         if not candidates:
             return []
 
+        # Prioritize candidates: exact ingredient match and single-ingredient over combination drugs
+        q_lower = q.lower().strip()
+
+        def _candidate_rank(c: FDASearchCandidate) -> tuple:
+            ingr = (c.active_ingredient or "").strip().lower()
+            name = (c.drug_name or "").strip().lower()
+            exact_match = 0 if (name == q_lower or ingr == q_lower) else 1
+            exact_ingr = 0 if ingr == q_lower else 1
+            single_ingr = 0 if ";" not in ingr else 1
+            return (exact_match, exact_ingr, single_ingr)
+
+        candidates.sort(key=_candidate_rank)
+
         results: List[Dict[str, Any]] = []
 
         # Process top candidates (e.g. up to 3 distinct matching applications)

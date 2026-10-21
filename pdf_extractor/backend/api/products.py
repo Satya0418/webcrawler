@@ -62,6 +62,7 @@ class ProductQueryRequest(BaseModel):
 
 
 DATE_REGEX_DMY = re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{4})$")
+DATE_REGEX_SLASH = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 DATE_REGEX_YMD = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})")
 
 
@@ -70,11 +71,23 @@ def validate_client_date_range(
     end_date_val: Optional[Any],
 ):
     """
-    Standardizes and validates client dates in DD-MM-YYYY or ISO/YYYY-MM-DD format.
+    Standardizes and validates client dates in DD-MM-YYYY, MM/DD/YYYY, or ISO/YYYY-MM-DD format.
     Rejects malformed, ambiguous, or invalid calendar dates with HTTP 422.
     Rejects startDate > endDate with HTTP 422.
     Returns (start_dt, end_dt, start_str, end_str).
     """
+    s_clean_pre = str(start_date_val).split("T")[0].strip() if start_date_val else ""
+    e_clean_pre = str(end_date_val).split("T")[0].strip() if end_date_val else ""
+    s_m_dmy = DATE_REGEX_DMY.match(s_clean_pre)
+    e_m_dmy = DATE_REGEX_DMY.match(e_clean_pre)
+    force_mm_dd = False
+    if s_m_dmy and e_m_dmy:
+        s_p1, s_p2 = int(s_m_dmy.group(1)), int(s_m_dmy.group(2))
+        e_p1, e_p2 = int(e_m_dmy.group(1)), int(e_m_dmy.group(2))
+        if s_p1 <= 12 and s_p2 <= 12 and e_p1 <= 12 and e_p2 <= 12:
+            if s_p1 == e_p1 and s_p2 <= e_p2:
+                force_mm_dd = True
+
     def _parse(val: Optional[Any], name: str) -> Optional[datetime]:
         if val is None:
             return None
@@ -83,15 +96,33 @@ def validate_client_date_range(
             return None
         s_clean = s.split("T")[0].strip() if "T" in s else s
         m_dmy = DATE_REGEX_DMY.match(s_clean)
+        m_slash = DATE_REGEX_SLASH.match(s_clean)
         m_ymd = DATE_REGEX_YMD.match(s_clean)
+
         if m_dmy:
-            d, mth, y = int(m_dmy.group(1)), int(m_dmy.group(2)), int(m_dmy.group(3))
+            p1, p2, y = int(m_dmy.group(1)), int(m_dmy.group(2)), int(m_dmy.group(3))
+            if p1 > 12 and p2 <= 12:
+                d, mth = p1, p2
+            elif p2 > 12 and p1 <= 12:
+                mth, d = p1, p2
+            elif force_mm_dd:
+                mth, d = p1, p2
+            else:
+                d, mth = p1, p2
+        elif m_slash:
+            p1, p2, y = int(m_slash.group(1)), int(m_slash.group(2)), int(m_slash.group(3))
+            if p2 > 12 and p1 <= 12:
+                mth, d = p1, p2  # e.g. 02/21/2024 -> month=2, day=21
+            elif p1 > 12 and p2 <= 12:
+                d, mth = p1, p2  # e.g. 21/02/2024 -> day=21, month=2
+            else:
+                mth, d = p1, p2  # Default to MM/DD/YYYY for slashes (FDA SrLC table format)
         elif m_ymd:
             y, mth, d = int(m_ymd.group(1)), int(m_ymd.group(2)), int(m_ymd.group(3))
         else:
             raise HTTPException(
                 status_code=422,
-                detail=f"Invalid date format for '{name}': '{s}'. Expected DD-MM-YYYY (e.g. '01-01-2025') or YYYY-MM-DD.",
+                detail=f"Invalid date format for '{name}': '{s}'. Expected DD-MM-YYYY (e.g. '01-01-2025'), MM/DD/YYYY, or YYYY-MM-DD.",
             )
         try:
             return datetime(y, mth, d)

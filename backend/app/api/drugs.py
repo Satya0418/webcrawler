@@ -93,7 +93,13 @@ async def search_drugs(
             html = await crawler.search_drug(query_clean)
             if html:
                 search_results = scraper.parse_search_results(html)
-                for candidate in search_results[:3]:
+                ranked_candidates = filter_and_rank_search_candidates(
+                    search_results,
+                    product_name=query_clean,
+                    active_ingredients=query_clean,
+                )
+                candidates_to_crawl = ranked_candidates[:5] if ranked_candidates else search_results[:5]
+                for candidate in candidates_to_crawl:
                     drug, is_new_drug = DatabaseService.insert_or_update_drug(db, candidate)
                     detail_url = candidate.get("detail_url")
                     needs_crawl = is_new_drug
@@ -183,8 +189,14 @@ async def search_drugs(
         if html:
             search_results = scraper.parse_search_results(html)
             logger.info(f"FDA returned {len(search_results)} search candidates for '{query_clean}'")
+            ranked_candidates = filter_and_rank_search_candidates(
+                search_results,
+                product_name=query_clean,
+                active_ingredients=query_clean,
+            )
+            candidates_to_crawl = ranked_candidates[:5] if ranked_candidates else search_results[:5]
 
-            for candidate in search_results[:3]:
+            for candidate in candidates_to_crawl:
                 drug, is_new_drug = DatabaseService.insert_or_update_drug(db, candidate)
                 detail_url = candidate.get("detail_url")
 
@@ -306,6 +318,7 @@ async def send_salesforce_callback(payload: dict, callback_url: Optional[str] = 
 
 
 DATE_REGEX_DMY = re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{4})$")
+DATE_REGEX_SLASH = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 DATE_REGEX_YMD = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})")
 
 
@@ -314,11 +327,23 @@ def validate_client_date_range(
     end_date_val: Optional[Any],
 ):
     """
-    Standardizes and validates client dates in DD-MM-YYYY or ISO/YYYY-MM-DD format.
+    Standardizes and validates client dates in DD-MM-YYYY, MM/DD/YYYY, or ISO/YYYY-MM-DD format.
     Rejects malformed, ambiguous, or invalid calendar dates with HTTP 422.
     Rejects startDate > endDate with HTTP 422.
     Returns (start_dt, end_dt, start_str, end_str).
     """
+    s_clean_pre = str(start_date_val).split("T")[0].strip() if start_date_val else ""
+    e_clean_pre = str(end_date_val).split("T")[0].strip() if end_date_val else ""
+    s_m_dmy = DATE_REGEX_DMY.match(s_clean_pre)
+    e_m_dmy = DATE_REGEX_DMY.match(e_clean_pre)
+    force_mm_dd = False
+    if s_m_dmy and e_m_dmy:
+        s_p1, s_p2 = int(s_m_dmy.group(1)), int(s_m_dmy.group(2))
+        e_p1, e_p2 = int(e_m_dmy.group(1)), int(e_m_dmy.group(2))
+        if s_p1 <= 12 and s_p2 <= 12 and e_p1 <= 12 and e_p2 <= 12:
+            if s_p1 == e_p1 and s_p2 <= e_p2:
+                force_mm_dd = True
+
     def _parse(val: Optional[Any], name: str) -> Optional[datetime]:
         if val is None:
             return None
@@ -327,15 +352,33 @@ def validate_client_date_range(
             return None
         s_clean = s.split("T")[0].strip() if "T" in s else s
         m_dmy = DATE_REGEX_DMY.match(s_clean)
+        m_slash = DATE_REGEX_SLASH.match(s_clean)
         m_ymd = DATE_REGEX_YMD.match(s_clean)
+
         if m_dmy:
-            d, mth, y = int(m_dmy.group(1)), int(m_dmy.group(2)), int(m_dmy.group(3))
+            p1, p2, y = int(m_dmy.group(1)), int(m_dmy.group(2)), int(m_dmy.group(3))
+            if p1 > 12 and p2 <= 12:
+                d, mth = p1, p2
+            elif p2 > 12 and p1 <= 12:
+                mth, d = p1, p2
+            elif force_mm_dd:
+                mth, d = p1, p2
+            else:
+                d, mth = p1, p2
+        elif m_slash:
+            p1, p2, y = int(m_slash.group(1)), int(m_slash.group(2)), int(m_slash.group(3))
+            if p2 > 12 and p1 <= 12:
+                mth, d = p1, p2  # e.g. 02/21/2024 -> month=2, day=21
+            elif p1 > 12 and p2 <= 12:
+                d, mth = p1, p2  # e.g. 21/02/2024 -> day=21, month=2
+            else:
+                mth, d = p1, p2  # Default to MM/DD/YYYY for slashes (FDA SrLC table format)
         elif m_ymd:
             y, mth, d = int(m_ymd.group(1)), int(m_ymd.group(2)), int(m_ymd.group(3))
         else:
             raise HTTPException(
                 status_code=422,
-                detail=f"Invalid date format for '{name}': '{s}'. Expected DD-MM-YYYY (e.g. '01-01-2025') or YYYY-MM-DD.",
+                detail=f"Invalid date format for '{name}': '{s}'. Expected DD-MM-YYYY (e.g. '01-01-2025'), MM/DD/YYYY, or YYYY-MM-DD.",
             )
         try:
             return datetime(y, mth, d)
@@ -365,6 +408,131 @@ def validate_client_date_range(
         end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
 
     return start_dt, end_dt, start_str, end_str
+
+
+def strip_drug_salts(name: str) -> str:
+    """Removes common pharmaceutical salt suffixes for robust active ingredient matching."""
+    if not name:
+        return ""
+    cleaned = re.sub(
+        r"\b(sulfate|hydrochloride|sodium|potassium|calcium|acetate|mesylate|fumarate|tartrate|hcl|maleate|citrate)\b",
+        "",
+        name,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r"\s+", " ", cleaned).strip().lower()
+
+
+def filter_and_rank_search_candidates(
+    candidates: List[Dict[str, Any]],
+    product_name: str,
+    generic_name: Optional[str] = None,
+    active_ingredients: Optional[str] = None,
+    start_dt: Optional[datetime] = None,
+    end_dt: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Evaluates, ranks, and filters candidate rows directly from the FDA SrLC search results table:
+    1. Active Ingredient Matching:
+       - Prefers exact single-ingredient matches (e.g. 'EZETIMIBE' -> ZETIA) over combination
+         products (e.g. 'ATORVASTATIN CALCIUM; EZETIMIBE' -> LIPTRUZET).
+    2. Date Matching on Search Page:
+       - Compares the row's Supplement Date ('source_date') and 'database_updated' against [start_dt, end_dt].
+       - Only navigates inside candidates that match the date or active ingredient.
+    """
+    if not candidates:
+        return []
+
+    target_terms = []
+    if active_ingredients and active_ingredients.strip():
+        for part in re.split(r"[,;/]+", active_ingredients.strip()):
+            c_part = strip_drug_salts(part)
+            if c_part and c_part not in target_terms:
+                target_terms.append(c_part)
+    if generic_name and generic_name.strip():
+        c_gen = strip_drug_salts(generic_name.strip())
+        if c_gen and c_gen not in target_terms:
+            target_terms.append(c_gen)
+    if product_name and product_name.strip():
+        c_prod = strip_drug_salts(product_name.strip())
+        if c_prod and c_prod not in target_terms:
+            target_terms.append(c_prod)
+
+    is_date_filtered = (start_dt is not None or end_dt is not None)
+
+    scored_candidates = []
+    for cand in candidates:
+        cand_name = (cand.get("drug_name") or cand.get("display_name") or "").strip()
+        cand_ingredient = (cand.get("active_ingredient") or "").strip()
+        cand_parts = [strip_drug_salts(p) for p in re.split(r"[,;/]+", cand_ingredient) if p.strip()]
+        is_single_ingredient = (len(cand_parts) == 1)
+
+        # 1. Active Ingredient matching score
+        ingr_score = 0
+        is_exact_single_ingr = False
+        for t in target_terms:
+            if is_single_ingredient and cand_parts and cand_parts[0] == t:
+                # Exact single-ingredient match: e.g. EZETIMIBE == EZETIMIBE (ZETIA)
+                ingr_score = max(ingr_score, 100)
+                is_exact_single_ingr = True
+            elif t in cand_parts:
+                # Combination match: e.g. ATORVASTATIN CALCIUM; EZETIMIBE (LIPTRUZET)
+                ingr_score = max(ingr_score, 35)
+            elif any(t in cp for cp in cand_parts):
+                ingr_score = max(ingr_score, 20)
+
+        # 2. Product Name matching score
+        prod_score = 0
+        if product_name and cand_name.lower() == product_name.strip().lower():
+            prod_score = 100
+        elif product_name and product_name.strip().lower() in cand_name.lower():
+            prod_score = 50
+
+        # 3. Date match on search results page (Supplement Date or Database Updated)
+        supp_dt = parse_fda_date(cand.get("source_date"))
+        upd_dt = parse_fda_date(cand.get("database_updated"))
+
+        date_matches = True
+        if is_date_filtered:
+            supp_in_range = bool(supp_dt and (not start_dt or supp_dt >= start_dt) and (not end_dt or supp_dt <= end_dt))
+            upd_in_range = bool(upd_dt and (not start_dt or upd_dt >= start_dt) and (not end_dt or upd_dt <= end_dt))
+            date_matches = (supp_in_range or upd_in_range)
+            if not date_matches:
+                # Transposed check: if day/month could be swapped (both <= 12)
+                alt_s = datetime(start_dt.year, start_dt.day, start_dt.month, start_dt.hour, start_dt.minute, start_dt.second) if (start_dt and start_dt.day <= 12) else None
+                alt_e = datetime(end_dt.year, end_dt.day, end_dt.month, end_dt.hour, end_dt.minute, end_dt.second) if (end_dt and end_dt.day <= 12) else None
+                if alt_s or alt_e:
+                    s_alt_in = bool(supp_dt and (not alt_s or supp_dt >= alt_s) and (not alt_e or supp_dt <= alt_e))
+                    u_alt_in = bool(upd_dt and (not alt_s or upd_dt >= alt_s) and (not alt_e or upd_dt <= alt_e))
+                    if s_alt_in or u_alt_in:
+                        date_matches = True
+
+        # Composite score
+        score = ingr_score + prod_score
+        if is_date_filtered:
+            if date_matches:
+                score += 200  # Major priority boost for matching the date on the search page
+            else:
+                score -= 100  # Deprioritize candidates whose search-page date is out of range
+
+        scored_candidates.append({
+            "candidate": cand,
+            "score": score,
+            "date_matches": date_matches,
+            "is_exact_single_ingr": is_exact_single_ingr,
+            "is_single_ingredient": is_single_ingredient,
+        })
+
+    # Sort candidates by score descending
+    scored_candidates.sort(key=lambda x: x["score"], reverse=True)
+
+    # If date filtering is active, only return candidates that match date (or top candidates if none match date)
+    date_matched_list = [sc["candidate"] for sc in scored_candidates if sc["date_matches"]]
+    if is_date_filtered and date_matched_list:
+        return date_matched_list
+
+    return [sc["candidate"] for sc in scored_candidates]
+
 
 
 @router.post(
@@ -443,11 +611,38 @@ async def post_signal_and_risk(
             db,
             product_name=act_ingr,
         )
-    drug = local_drugs[0] if local_drugs else None
-    changes = (
-        DatabaseService.get_safety_changes_by_drug_id(db, drug.id, start_date=start_dt, end_date=end_dt)
-        if drug else []
-    )
+    is_date_filtered = (start_dt is not None or end_dt is not None)
+    drug = None
+    changes = []
+    if local_drugs:
+        if is_date_filtered:
+            for cand in local_drugs:
+                c_changes = DatabaseService.get_safety_changes_by_drug_id(
+                    db, cand.id, start_date=start_dt, end_date=end_dt
+                )
+                if c_changes:
+                    drug = cand
+                    changes = c_changes
+                    break
+        if not drug:
+            drug = local_drugs[0]
+            changes = DatabaseService.get_safety_changes_by_drug_id(
+                db, drug.id, start_date=start_dt, end_date=end_dt
+            )
+        if is_date_filtered and not changes:
+            alt_s = datetime(start_dt.year, start_dt.day, start_dt.month, start_dt.hour, start_dt.minute, start_dt.second) if (start_dt and start_dt.day <= 12) else None
+            alt_e = datetime(end_dt.year, end_dt.day, end_dt.month, end_dt.hour, end_dt.minute, end_dt.second) if (end_dt and end_dt.day <= 12) else None
+            if alt_s or alt_e:
+                for cand in local_drugs:
+                    c_changes = DatabaseService.get_safety_changes_by_drug_id(
+                        db, cand.id, start_date=alt_s or start_dt, end_date=alt_e or end_dt
+                    )
+                    if c_changes:
+                        drug = cand
+                        changes = c_changes
+                        start_dt = alt_s or start_dt
+                        end_dt = alt_e or end_dt
+                        break
 
     # Step 2: If no data locally or no changes found, query FDA SrLC live
     # Traverses all search candidates (not just the first few) and tries generic/ingredient fallbacks
@@ -475,8 +670,17 @@ async def post_signal_and_risk(
             if search_results:
                 seen_detail_urls = set()
                 crawled_drugs = []
-                # Consider all applicable results, traversing all candidates rather than slicing
-                for candidate in search_results:
+                # Evaluate and rank candidates on search results page by active ingredient match and date match
+                ranked_candidates = filter_and_rank_search_candidates(
+                    search_results,
+                    product_name=prod_name,
+                    generic_name=gen_name,
+                    active_ingredients=act_ingr,
+                    start_dt=start_dt,
+                    end_dt=end_dt,
+                )
+                candidates_to_crawl = ranked_candidates if ranked_candidates else search_results
+                for candidate in candidates_to_crawl:
                     detail_url = candidate.get("detail_url")
                     if not detail_url or detail_url in seen_detail_urls:
                         continue
@@ -518,11 +722,37 @@ async def post_signal_and_risk(
                 if not local_drugs and crawled_drugs:
                     local_drugs = crawled_drugs
 
-                drug = local_drugs[0] if local_drugs else None
-                changes = (
-                    DatabaseService.get_safety_changes_by_drug_id(db, drug.id, start_date=start_dt, end_date=end_dt)
-                    if drug else []
-                )
+                drug = None
+                changes = []
+                if local_drugs:
+                    if is_date_filtered:
+                        for cand in local_drugs:
+                            c_changes = DatabaseService.get_safety_changes_by_drug_id(
+                                db, cand.id, start_date=start_dt, end_date=end_dt
+                            )
+                            if c_changes:
+                                drug = cand
+                                changes = c_changes
+                                break
+                    if not drug:
+                        drug = local_drugs[0]
+                        changes = DatabaseService.get_safety_changes_by_drug_id(
+                            db, drug.id, start_date=start_dt, end_date=end_dt
+                        )
+                    if is_date_filtered and not changes:
+                        alt_s = datetime(start_dt.year, start_dt.day, start_dt.month, start_dt.hour, start_dt.minute, start_dt.second) if (start_dt and start_dt.day <= 12) else None
+                        alt_e = datetime(end_dt.year, end_dt.day, end_dt.month, end_dt.hour, end_dt.minute, end_dt.second) if (end_dt and end_dt.day <= 12) else None
+                        if alt_s or alt_e:
+                            for cand in local_drugs:
+                                c_changes = DatabaseService.get_safety_changes_by_drug_id(
+                                    db, cand.id, start_date=alt_s or start_dt, end_date=alt_e or end_dt
+                                )
+                                if c_changes:
+                                    drug = cand
+                                    changes = c_changes
+                                    start_dt = alt_s or start_dt
+                                    end_dt = alt_e or end_dt
+                                    break
         except Exception as exc:
             logger.error("Live FDA crawl error in signal-and-risk for '%s': %s", prod_name, exc)
             db.rollback()

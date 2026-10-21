@@ -588,3 +588,106 @@ def test_api_signal_and_risk_salesforce_callback_format(monkeypatch):
     assert "<!DOCTYPE html>" in cb_payload["responseData"][0]["website_Data"]
 
 
+def test_api_signal_and_risk_active_ingredient_ezetimibe_date_matching(monkeypatch):
+    """
+    Verifies that when searching for active ingredient EZETIMIBE with date range
+    02/21/2024 to 02/22/2024:
+    1. The crawler ranks and matches ZETIA (pure EZETIMIBE) over combination drugs
+       like LIPTRUZET (ATORVASTATIN CALCIUM; EZETIMIBE).
+    2. The search-page date matching correctly identifies the 02/21/2024 row and navigates
+       to ZETIA first.
+    3. The extracted response contains ZETIA and its safety data matching 02/21/2024.
+    """
+    from app.crawler.fda_crawler import crawler
+
+    search_html = """
+    <table id="example" class="display">
+        <thead>
+            <tr>
+                <th>Drug Name</th><th>Active Ingredient</th><th>Application Number</th>
+                <th>Application Type</th><th>Supplement Date</th><th>Database Updated</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><a href="/detail?DrugNameID=200153">LIPTRUZET</a></td>
+                <td>ATORVASTATIN CALCIUM; EZETIMIBE</td>
+                <td>200153</td><td>NDA</td><td>10/28/2024</td><td>10/30/2024</td>
+            </tr>
+            <tr>
+                <td><a href="/detail?DrugNameID=211617">NEXLIZET</a></td>
+                <td>BEMPEDOIC ACID; EZETIMIBE</td>
+                <td>211617</td><td>NDA</td><td>01/09/2026</td><td>01/13/2026</td>
+            </tr>
+            <tr>
+                <td><a href="/detail?DrugNameID=213072">ROSZET</a></td>
+                <td>EZETIMIBE; ROSUVASTATIN CALCIUM</td>
+                <td>213072</td><td>NDA</td><td>08/26/2024</td><td>08/30/2024</td>
+            </tr>
+            <tr>
+                <td><a href="/detail?DrugNameID=021687">VYTORIN</a></td>
+                <td>EZETIMIBE; SIMVASTATIN</td>
+                <td>021687</td><td>NDA</td><td>03/28/2024</td><td>04/01/2024</td>
+            </tr>
+            <tr>
+                <td><a href="/detail?DrugNameID=021445">ZETIA</a></td>
+                <td>EZETIMIBE</td>
+                <td>021445</td><td>NDA</td><td>02/21/2024</td><td>02/22/2024</td>
+            </tr>
+        </tbody>
+    </table>
+    """
+
+    zetia_detail_html = """
+    <html>
+        <body>
+            <h2>ZETIA (NDA-021445)</h2>
+            <h4>(EZETIMIBE)</h4>
+            <div id="accordion">
+                <h3>02/21/2024 (SUPPL-45)</h3>
+                <div>
+                    <h4>6 Adverse Reactions</h4>
+                    <p>Postmarketing experience: Anaphylaxis, angioedema, rash, and urticaria.</p>
+                </div>
+            </div>
+        </body>
+    </html>
+    """
+
+    crawled_urls = []
+
+    async def fake_search_drug(drug_name):
+        return search_html
+
+    async def fake_get_detail_page(url):
+        crawled_urls.append(url)
+        return zetia_detail_html
+
+    monkeypatch.setattr(crawler, "search_drug", fake_search_drug)
+    monkeypatch.setattr(crawler, "get_detail_page", fake_get_detail_page)
+
+    # Test with MM/DD/YYYY format as shown in user's image: 02/21/2024 to 02/22/2024
+    payload = {
+        "submissionId": "sub_ezetimibe_match",
+        "productName": "EZETIMIBE",
+        "startDate": "02/21/2024",
+        "endDate": "02/22/2024",
+    }
+    res = client.post("/api/drugs/signal-and-risk", json=payload)
+    assert res.status_code == 200, f"Expected 200, got: {res.text}"
+    body = res.json()
+
+    # Verify that ZETIA detail page was crawled first
+    assert len(crawled_urls) >= 1
+    assert "021445" in crawled_urls[0]
+
+    # Verify response contains ZETIA and its active ingredient EZETIMIBE
+    web_data = body["website_Data"]
+    assert web_data["status"] == "success"
+    entry = web_data["data"][0]
+    assert entry["productName"] == "ZETIA"
+    assert entry["activeIngredients"] == "EZETIMIBE"
+    assert "Anaphylaxis" in entry["Data"]
+
+
+
