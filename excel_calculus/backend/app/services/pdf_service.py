@@ -68,10 +68,11 @@ class PDFReportService:
     def __init__(self, db_session=None):
         self.db = db_session
 
-    def generate_section_16_1_pdf(self, report_data: dict) -> bytes:
+    def generate_section_16_1_pdf(self, report_data: dict, include_subsequent_sections: bool = False) -> bytes:
         """
         Renders the official PBRER Section 16.1 table as a formal regulatory PDF.
         Strictly follows the visual layout, typography, borders, and margins of the Apotex reference document.
+        Does not append unrelated narrative sections (16.2 / 16.3) unless explicitly requested.
         """
         buffer = io.BytesIO()
 
@@ -249,42 +250,43 @@ class PDFReportService:
         story.append(reg_table)
         story.append(Spacer(1, 16))
 
-        # 3. Subsequent Official PBRER Sections
-        story.append(Paragraph("16.2 Signal Evaluation", h2_style))
-        story.append(Paragraph(
-            "Evaluation of safety signals identified, ongoing, or closed during the reporting period "
-            f"({reporting_period}) is summarized in the relevant risk evaluation subsections.",
-            body_style
-        ))
-        story.append(Spacer(1, 8))
+        # 3. Subsequent Official PBRER Sections (Only if explicitly requested)
+        if include_subsequent_sections:
+            story.append(Paragraph("16.2 Signal Evaluation", h2_style))
+            story.append(Paragraph(
+                "Evaluation of safety signals identified, ongoing, or closed during the reporting period "
+                f"({reporting_period}) is summarized in the relevant risk evaluation subsections.",
+                body_style
+            ))
+            story.append(Spacer(1, 8))
 
-        story.append(Paragraph("16.3 Evaluation of Risks and New Information", h2_style))
-        story.append(Paragraph(
-            "The cumulative and interval safety data retrieved from the marketing authorization holder's "
-            "safety database were evaluated against the predetermined safety criteria. "
-            "Individual case histories, adverse event narratives, dechallenge/rechallenge outcomes, "
-            "and relevant concomitant medications were assessed.",
-            body_style
-        ))
+            story.append(Paragraph("16.3 Evaluation of Risks and New Information", h2_style))
+            story.append(Paragraph(
+                "The cumulative and interval safety data retrieved from the marketing authorization holder's "
+                "safety database were evaluated against the predetermined safety criteria. "
+                "Individual case histories, adverse event narratives, dechallenge/rechallenge outcomes, "
+                "and relevant concomitant medications were assessed.",
+                body_style
+            ))
 
-        # Dynamic evidence summary for risks that have confirmed relevant cases
-        assessed_risks = []
-        for sec in report_data.get("table_sections", []):
-            for r in sec.get("risks", []):
-                if r.get("number_of_relevant_cases", 0) > 0:
-                    assessed_risks.append(r)
+            # Dynamic evidence summary for risks that have confirmed relevant cases
+            assessed_risks = []
+            for sec in report_data.get("table_sections", []):
+                for r in sec.get("risks", []):
+                    if r.get("number_of_relevant_cases", 0) > 0:
+                        assessed_risks.append(r)
 
-        if assessed_risks:
-            story.append(Paragraph("<b>16.3.1 Summary of Identified Safety Concerns</b>", ParagraphStyle(
-                "SubSectionBold", parent=body_style, fontName="Times-Bold", fontSize=10, spaceBefore=6
-            )))
-            for ar in assessed_risks:
-                story.append(Paragraph(
-                    f"&bull; <b>{ar.get('risk_term')}</b>: During this interval review, "
-                    f"<b>{ar.get('number_of_relevant_cases')}</b> distinct case report(s) were retrieved and evaluated "
-                    f"using predefined {ar.get('search_method')} criteria ({ar.get('search_criteria')}).",
-                    body_style
-                ))
+            if assessed_risks:
+                story.append(Paragraph("<b>16.3.1 Summary of Identified Safety Concerns</b>", ParagraphStyle(
+                    "SubSectionBold", parent=body_style, fontName="Times-Bold", fontSize=10, spaceBefore=6
+                )))
+                for ar in assessed_risks:
+                    story.append(Paragraph(
+                        f"&bull; <b>{ar.get('risk_term')}</b>: During this interval review, "
+                        f"<b>{ar.get('number_of_relevant_cases')}</b> distinct case report(s) were retrieved and evaluated "
+                        f"using predefined {ar.get('search_method')} criteria ({ar.get('search_criteria')}).",
+                        body_style
+                    ))
 
         # Custom canvas with product name injected
         def canvas_maker(*args, **kwargs):

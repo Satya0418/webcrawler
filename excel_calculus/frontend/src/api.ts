@@ -2,9 +2,47 @@ import type { SafetyConcern, SearchSummary, CaseDetail, IngestionStatus, UploadR
 
 const API_BASE = "http://localhost:8000/api";
 
-export async function fetchSection161Report(product: string = "Abiraterone"): Promise<Section161ReportData> {
-  const res = await fetch(`${API_BASE}/reports/section-16-1?product=${encodeURIComponent(product)}`);
+export async function fetchSection161Report(
+  product: string = "Abiraterone",
+  datasetId?: string,
+  autoSearch: boolean = false
+): Promise<Section161ReportData> {
+  let url = `${API_BASE}/reports/section-16-1?product=${encodeURIComponent(product)}`;
+  if (datasetId) url += `&dataset_id=${encodeURIComponent(datasetId)}`;
+  if (autoSearch) url += `&auto_search=true`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to fetch Section 16.1 report");
+  return res.json();
+}
+
+export async function generateSection161Report(options: {
+  file?: File;
+  product?: string;
+  datasetId?: string;
+  reportingPeriod?: string;
+}): Promise<{ status: string; message: string; data: Section161ReportData }> {
+  const formData = new FormData();
+  if (options.file) {
+    formData.append("file", options.file);
+  }
+  if (options.product) {
+    formData.append("product", options.product);
+  }
+  if (options.datasetId) {
+    formData.append("dataset_id", options.datasetId);
+  }
+  if (options.reportingPeriod) {
+    formData.append("reporting_period", options.reportingPeriod);
+  }
+
+  const res = await fetch(`${API_BASE}/reports/section-16-1/generate`, {
+    method: "POST",
+    body: formData
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Generation failed" }));
+    throw new Error(err.detail || "Failed to generate Section 16.1 table");
+  }
   return res.json();
 }
 
@@ -85,7 +123,21 @@ export async function updateAssessment(data: {
   return res.json();
 }
 
-export function getSection161PdfUrl(product: string = "Abiraterone", preview: boolean = false): string {
-  return `${API_BASE}/reports/section-16-1/pdf?product=${encodeURIComponent(product)}&preview=${preview}`;
+export function getSection161PdfUrl(
+  product: string = "Abiraterone",
+  preview: boolean = false,
+  datasetId?: string
+): string {
+  let url = `${API_BASE}/reports/section-16-1/pdf?product=${encodeURIComponent(product)}&preview=${preview}`;
+  if (datasetId) url += `&dataset_id=${encodeURIComponent(datasetId)}`;
+  return url;
 }
 
+export function getSection161ExcelUrl(
+  product: string = "Abiraterone",
+  datasetId?: string
+): string {
+  let url = `${API_BASE}/reports/section-16-1/excel?product=${encodeURIComponent(product)}`;
+  if (datasetId) url += `&dataset_id=${encodeURIComponent(datasetId)}`;
+  return url;
+}

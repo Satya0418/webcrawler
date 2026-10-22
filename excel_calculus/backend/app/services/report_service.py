@@ -143,7 +143,12 @@ class ReportService:
             "pending_cases": pending_cases
         }
 
-    def generate_section_16_1_table(self, product_name: str):
+    def generate_section_16_1_table(
+        self,
+        product_name: str,
+        dataset_id: str = None,
+        auto_execute_all: bool = False
+    ):
         """
         Generates the master PBRER Section 16.1 Summary of Safety Concerns table.
         Rule:
@@ -163,19 +168,34 @@ class ReportService:
 
         reporting_period = concerns[0].reporting_period if concerns else "Current Reporting Period"
 
-        # Resolve active dataset to guarantee dataset/reporting-period isolation
-        active_dataset_query = self.db.query(Dataset).filter(
-            Dataset.product_name == product_name,
-            Dataset.status == "ACTIVE"
-        )
-        if reporting_period and reporting_period != "Current Period":
-            active_dataset_query = active_dataset_query.filter(Dataset.reporting_period == reporting_period)
-        active_dataset = active_dataset_query.order_by(Dataset.created_at.desc()).first()
-        if not active_dataset:
-            active_dataset = self.db.query(Dataset).filter_by(
-                product_name=product_name, status="ACTIVE"
-            ).order_by(Dataset.created_at.desc()).first()
+        # Resolve dataset to guarantee dataset/reporting-period isolation
+        if dataset_id:
+            active_dataset = self.db.query(Dataset).filter_by(id=dataset_id).first()
+        else:
+            active_dataset_query = self.db.query(Dataset).filter(
+                Dataset.product_name == product_name,
+                Dataset.status == "ACTIVE"
+            )
+            if reporting_period and reporting_period != "Current Period":
+                active_dataset_query = active_dataset_query.filter(Dataset.reporting_period == reporting_period)
+            active_dataset = active_dataset_query.order_by(Dataset.created_at.desc()).first()
+            if not active_dataset:
+                active_dataset = self.db.query(Dataset).filter_by(
+                    product_name=product_name, status="ACTIVE"
+                ).order_by(Dataset.created_at.desc()).first()
+
         active_dataset_id = active_dataset.id if active_dataset else None
+        if active_dataset and active_dataset.reporting_period:
+            reporting_period = active_dataset.reporting_period
+
+        # If requested, proactively execute all searches for this product on the target dataset
+        if auto_execute_all and active_dataset_id:
+            from excel_calculus.backend.app.services.search_engine import SearchEngineService
+            search_service = SearchEngineService(self.db)
+            search_service.execute_all_searches_for_product(
+                product_name=product_name,
+                dataset_id=active_dataset_id
+            )
 
         categories_order = [
             "Important Identified Risks",
@@ -203,7 +223,7 @@ class ReportService:
             else:
                 continue
 
-            # Query matches from the active SearchRun belonging to the active dataset
+            # Query matches from the active SearchRun belonging to the target dataset
             run_query = self.db.query(SearchRun).filter_by(concern_id=c.id, is_active=True)
             if active_dataset_id:
                 run_query = run_query.filter(SearchRun.dataset_id == active_dataset_id)
@@ -213,7 +233,7 @@ class ReportService:
             if not latest_run:
                 from excel_calculus.backend.app.services.search_engine import SearchEngineService
                 search_service = SearchEngineService(self.db)
-                search_service.execute_concern_search(c.id)
+                search_service.execute_concern_search(c.id, dataset_id=active_dataset_id)
                 run_query = self.db.query(SearchRun).filter_by(concern_id=c.id, is_active=True)
                 if active_dataset_id:
                     run_query = run_query.filter(SearchRun.dataset_id == active_dataset_id)
@@ -280,6 +300,7 @@ class ReportService:
         return {
             "title": "Section 16.1 Summary of Safety Concerns",
             "product_name": product_name,
+            "dataset_id": active_dataset_id,
             "reporting_period": reporting_period,
             "intro_text": "The number of case reports received by the MAH pertaining to the above mentioned safety concerns are presented in the table below.",
             "total_relevant_cases": total_relevant,
@@ -287,10 +308,36 @@ class ReportService:
             "table_sections": table_sections
         }
 
-    def generate_section_16_1_pdf(self, product_name: str) -> bytes:
+    def generate_section_16_1_pdf(
+        self,
+        product_name: str,
+        dataset_id: str = None,
+        include_subsequent_sections: bool = False
+    ) -> bytes:
         """
         Generates official regulatory PBRER Section 16.1 PDF from current database data.
         """
-        table_data = self.generate_section_16_1_table(product_name=product_name)
+        table_data = self.generate_section_16_1_table(product_name=product_name, dataset_id=dataset_id)
         pdf_service = PDFReportService(self.db)
-        return pdf_service.generate_section_16_1_pdf(table_data)
+        return pdf_service.generate_section_16_1_pdf(
+            table_data,
+            include_subsequent_sections=include_subsequent_sections
+        )
+
+    def generate_section_16_1_excel(
+        self,
+        product_name: str,
+        dataset_id: str = None,
+        auto_execute_all: bool = False
+    ) -> bytes:
+        """
+        Generates official regulatory PBRER Section 16.1 Excel (.xlsx) from current database data.
+        """
+        table_data = self.generate_section_16_1_table(
+            product_name=product_name,
+            dataset_id=dataset_id,
+            auto_execute_all=auto_execute_all
+        )
+        from excel_calculus.backend.app.services.excel_service import ExcelReportService
+        excel_service = ExcelReportService(self.db)
+        return excel_service.generate_section_16_1_excel(table_data)

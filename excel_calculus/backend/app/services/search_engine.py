@@ -47,7 +47,7 @@ class SearchEngineService:
             )
         return query
 
-    def execute_concern_search(self, concern_id: str, reviewer_id: str = "reviewer"):
+    def execute_concern_search(self, concern_id: str, reviewer_id: str = "reviewer", dataset_id: str = None):
         concern = self.db.query(SafetyConcern).filter_by(id=concern_id).first()
         if not concern:
             raise ValueError(f"Safety Concern not found: {concern_id}")
@@ -55,11 +55,17 @@ class SearchEngineService:
         config = json.loads(concern.search_config) if concern.search_config else {}
         method = concern.search_method
 
-        active_dataset = self._get_active_dataset(concern)
+        if dataset_id:
+            active_dataset = self.db.query(Dataset).filter_by(id=dataset_id).first()
+        else:
+            active_dataset = self._get_active_dataset(concern)
         dataset_id = active_dataset.id if active_dataset else None
 
-        # Deactivate previous active runs for this concern so old runs remain historical & auditable
-        self.db.query(SearchRun).filter_by(concern_id=concern_id).update({"is_active": False})
+        # Deactivate previous active runs for this concern and dataset so old runs remain historical & auditable
+        deact = self.db.query(SearchRun).filter_by(concern_id=concern_id)
+        if dataset_id:
+            deact = deact.filter_by(dataset_id=dataset_id)
+        deact.update({"is_active": False})
 
         # Unique Search Run tracking
         run_id = f"run_{concern.id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:6]}"
@@ -412,18 +418,21 @@ class SearchEngineService:
         if not concern:
             raise ValueError(f"Safety Concern not found: {concern_id}")
 
+        target_run = None
         if search_run_id:
+            target_run = self.db.query(SearchRun).filter_by(id=search_run_id).first()
             matches = self.db.query(SearchMatch).filter_by(search_run_id=search_run_id).all()
         else:
-            latest_run = self.db.query(SearchRun).filter_by(concern_id=concern_id, is_active=True).order_by(SearchRun.execution_time.desc()).first()
-            if not latest_run:
-                latest_run = self.db.query(SearchRun).filter_by(concern_id=concern_id).order_by(SearchRun.execution_time.desc()).first()
-            if latest_run:
-                search_run_id = latest_run.id
-                matches = self.db.query(SearchMatch).filter_by(search_run_id=latest_run.id).all()
+            target_run = self.db.query(SearchRun).filter_by(concern_id=concern_id, is_active=True).order_by(SearchRun.execution_time.desc()).first()
+            if not target_run:
+                target_run = self.db.query(SearchRun).filter_by(concern_id=concern_id).order_by(SearchRun.execution_time.desc()).first()
+            if target_run:
+                search_run_id = target_run.id
+                matches = self.db.query(SearchMatch).filter_by(search_run_id=target_run.id).all()
             else:
                 matches = self.db.query(SearchMatch).filter_by(concern_id=concern_id).all()
 
+        dataset_id = target_run.dataset_id if target_run else None
         distinct_cases = sorted(list(set(m.case_number for m in matches)))
 
         # Status counts from human relevance assessment
@@ -437,7 +446,10 @@ class SearchEngineService:
 
         case_rows = []
         for c_num in distinct_cases:
-            case = self.db.query(CaseRecord).filter_by(case_number=c_num).first()
+            case_query = self.db.query(CaseRecord).filter_by(case_number=c_num)
+            if dataset_id:
+                case_query = case_query.filter_by(dataset_id=dataset_id)
+            case = case_query.first()
             case_matches = [m for m in matches if m.case_number == c_num]
             ass = ass_map.get(c_num)
 
@@ -493,3 +505,27 @@ class SearchEngineService:
             "candidate_pending_count": candidate_count,
             "cases": case_rows
         }
+
+    def execute_all_searches_for_product(
+        self,
+        product_name: str,
+        dataset_id: str = None,
+        reviewer_id: str = "system_auto"
+    ) -> list:
+        """
+        Executes deterministic searches for all configured safety concerns of a given product.
+        Guarantees that each concern has an active SearchRun for the target dataset.
+        """
+        concerns = self.db.query(SafetyConcern).filter_by(product_name=product_name).all()
+        if not concerns:
+            concerns = self.db.query(SafetyConcern).all()
+
+        results = []
+        for c in concerns:
+            res = self.execute_concern_search(
+                concern_id=c.id,
+                reviewer_id=reviewer_id,
+                dataset_id=dataset_id
+            )
+            results.append(res)
+        return results

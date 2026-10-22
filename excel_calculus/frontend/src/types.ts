@@ -229,4 +229,5 @@ export interface Section161ReportData {
   total_relevant_cases: number;
   total_candidate_cases: number;
   table_sections: Section161CategoryGroup[];
+  dataset_id?: string;
 }

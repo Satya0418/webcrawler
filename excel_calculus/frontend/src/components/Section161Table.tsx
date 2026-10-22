@@ -1,6 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import type { Section161ReportData } from "../types";
-import { fetchSection161Report, getSection161PdfUrl } from "../api";
+import { 
+  fetchSection161Report, 
+  generateSection161Report, 
+  getSection161PdfUrl, 
+  getSection161ExcelUrl 
+} from "../api";
 import { 
   Printer, 
   Copy, 
@@ -14,7 +19,11 @@ import {
   Table, 
   FileDown, 
   Eye, 
-  X 
+  X,
+  Upload,
+  Sparkles,
+  CheckCircle2,
+  Loader2
 } from "lucide-react";
 
 interface Props {
@@ -30,21 +39,60 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
   const [viewMode, setViewMode] = useState<"official" | "reviewer">("official");
   const [showPdfPreview, setShowPdfPreview] = useState(false);
 
+  // 1-Click Automation States
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     loadTableData();
   }, [product]);
 
-  const loadTableData = async () => {
+  const loadTableData = async (autoSearch = false) => {
     try {
       setLoading(true);
       setError(null);
-      const data = await fetchSection161Report(product);
+      const data = await fetchSection161Report(product, reportData?.dataset_id, autoSearch);
       setReportData(data);
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Failed to load Section 16.1 summary data");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
+      setActionSuccess(null);
+      setError(null);
+    }
+  };
+
+  const handleAutomatedGeneration = async () => {
+    try {
+      setIsGenerating(true);
+      setError(null);
+      setActionSuccess(null);
+
+      const result = await generateSection161Report({
+        file: selectedFile || undefined,
+        product
+      });
+
+      setReportData(result.data);
+      setActionSuccess(result.message || "Section 16.1 table successfully generated!");
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Automated table generation failed. Please check the Excel file format.");
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -97,15 +145,20 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
   };
 
   if (loading && !reportData) {
-    return <div style={{ padding: "3rem", textAlign: "center", color: "#64748b" }}>Calculating PBRER Section 16.1 table...</div>;
+    return (
+      <div style={{ padding: "3rem", textAlign: "center", color: "#64748b" }}>
+        <Loader2 className="animate-spin" size={32} style={{ margin: "0 auto 1rem auto", color: "#2563eb" }} />
+        <div>Calculating PBRER Section 16.1 table...</div>
+      </div>
+    );
   }
 
-  if (error) {
+  if (error && !reportData) {
     return (
       <div style={{ padding: "2rem", textAlign: "center", color: "#dc2626" }}>
-        <AlertCircle size={24} style={{ marginBottom: "0.5rem" }} />
-        <div>{error}</div>
-        <button className="btn-secondary" onClick={loadTableData} style={{ marginTop: "1rem" }}>
+        <AlertCircle size={28} style={{ marginBottom: "0.5rem" }} />
+        <div style={{ fontWeight: 600 }}>{error}</div>
+        <button className="btn-secondary" onClick={() => loadTableData(false)} style={{ marginTop: "1rem" }}>
           Retry
         </button>
       </div>
@@ -116,6 +169,157 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      {/* 1-Click Automated Workflow Action Banner */}
+      <div
+        style={{
+          background: "linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%)",
+          border: "1px solid #bbf7d0",
+          borderRadius: "0.75rem",
+          padding: "1rem 1.25rem",
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "1rem",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: "280px" }}>
+          <div
+            style={{
+              width: "38px",
+              height: "38px",
+              borderRadius: "50%",
+              backgroundColor: "#2563eb",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#ffffff",
+              flexShrink: 0
+            }}
+          >
+            <Sparkles size={20} />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.95rem" }}>
+              Automate Section 16.1 Table Generation
+            </div>
+            <div style={{ fontSize: "0.8rem", color: "#475569" }}>
+              Upload an Excel line listing to ingest, search, and produce the Section 16.1 safety table in 1 click.
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept=".xlsx, .xls"
+            style={{ display: "none" }}
+            id="section161-file-input"
+          />
+          <label
+            htmlFor="section161-file-input"
+            className="btn-secondary"
+            style={{
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              padding: "0.45rem 0.85rem",
+              fontSize: "0.825rem",
+              backgroundColor: selectedFile ? "#dbeafe" : "#ffffff",
+              borderColor: selectedFile ? "#3b82f6" : "#cbd5e1"
+            }}
+          >
+            <Upload size={15} />
+            {selectedFile ? selectedFile.name : "Select Excel Listing (.xlsx)"}
+          </label>
+
+          <button
+            onClick={handleAutomatedGeneration}
+            disabled={isGenerating}
+            className="btn-primary"
+            style={{
+              padding: "0.45rem 1rem",
+              fontSize: "0.85rem",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              backgroundColor: isGenerating ? "#93c5fd" : "#16a34a",
+              borderColor: isGenerating ? "#93c5fd" : "#15803d"
+            }}
+            title="Automatically ingest workbook, run predefined searches, and build Section 16.1 table"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="animate-spin" size={15} /> Processing...
+              </>
+            ) : (
+              <>
+                <Sparkles size={15} /> 1-Click Generate Table
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Action Feedback Alerts */}
+      {actionSuccess && (
+        <div
+          style={{
+            padding: "0.75rem 1rem",
+            backgroundColor: "#f0fdf4",
+            border: "1px solid #86efac",
+            borderRadius: "0.5rem",
+            color: "#166534",
+            fontSize: "0.85rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <CheckCircle2 size={16} color="#16a34a" />
+            <span>{actionSuccess}</span>
+          </div>
+          <button
+            onClick={() => setActionSuccess(null)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#166534" }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div
+          style={{
+            padding: "0.75rem 1rem",
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fca5a5",
+            borderRadius: "0.5rem",
+            color: "#991b1b",
+            fontSize: "0.85rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <AlertCircle size={16} color="#dc2626" />
+            <span>{error}</span>
+          </div>
+          <button
+            onClick={() => setError(null)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#991b1b" }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Top Header Bar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
         <div>
@@ -125,6 +329,7 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
             </span>
             <span style={{ fontSize: "0.85rem", color: "#64748b", fontWeight: 500 }}>
               {reportData.product_name} &bull; Interval {reportData.reporting_period}
+              {reportData.dataset_id && ` \u2022 Dataset: ${reportData.dataset_id.slice(0, 8)}...`}
             </span>
           </div>
           <h2 style={{ fontSize: "1.35rem", fontWeight: 800, color: "#0f172a", marginTop: "0.35rem" }}>
@@ -135,7 +340,7 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: "0.5rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
           {/* View Mode Toggle */}
           <div style={{ display: "flex", backgroundColor: "#f1f5f9", borderRadius: "0.375rem", padding: "2px", border: "1px solid #e2e8f0" }}>
             <button
@@ -180,32 +385,46 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
             </button>
           </div>
 
-          <button className="btn-secondary" onClick={loadTableData} title="Recalculate counts from indexed line listings">
-            <RefreshCw size={15} /> Recalculate
+          <button 
+            className="btn-secondary" 
+            onClick={() => loadTableData(true)} 
+            title="Recalculate all searches across current dataset"
+            style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+          >
+            <RefreshCw size={14} /> Recalculate
           </button>
           <button className="btn-secondary" onClick={copyTableToClipboard} title="Copy official 2-column table ready to paste into Word or Excel">
-            {copied ? <Check size={15} color="#16a34a" /> : <Copy size={15} />}
-            {copied ? "Copied Table!" : "Copy Table for Word"}
+            {copied ? <Check size={14} color="#16a34a" /> : <Copy size={14} />}
+            {copied ? "Copied!" : "Copy Table"}
           </button>
           <button className="btn-secondary" onClick={() => window.print()} title="Print Section 16.1 Table">
-            <Printer size={15} /> Print
+            <Printer size={14} /> Print
           </button>
+          <a
+            href={getSection161ExcelUrl(product, reportData.dataset_id)}
+            download={`${product}_Section_16.1_Table.xlsx`}
+            className="btn-secondary"
+            style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.35rem", color: "#166534", borderColor: "#86efac" }}
+            title="Download Section 16.1 table formatted in Excel (.xlsx) per Apotex standards"
+          >
+            <FileSpreadsheet size={14} color="#16a34a" /> Download Excel
+          </a>
           <button 
             className="btn-secondary" 
             onClick={() => setShowPdfPreview(true)}
             title="Preview Section 16.1 PBRER PDF matching official regulatory submission format"
             style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
           >
-            <Eye size={15} color="#2563eb" /> Preview PDF
+            <Eye size={14} color="#2563eb" /> Preview PDF
           </button>
           <a
-            href={getSection161PdfUrl(product, false)}
+            href={getSection161PdfUrl(product, false, reportData.dataset_id)}
             download={`${product}_Section_16.1_PBRER_Report.pdf`}
             className="btn-primary"
             style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
             title="Download formal A4 PBRER PDF Report"
           >
-            <FileDown size={15} /> Download PBRER PDF
+            <FileDown size={14} /> Download PDF
           </a>
         </div>
       </div>
