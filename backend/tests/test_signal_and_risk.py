@@ -728,19 +728,69 @@ def test_export_drug_clean_html_section_sequence():
         "<p>On 13-Dec-2025, the United States Food and Drug Administration Center for Drug Evaluation and Research "
         "approved the following safety labeling changes for Addyi (flibanserin; <em>Additions underlined</em>):</p>"
     )
-    pos_wp = html_out.find("<h2>5 Warnings and Precautions</h2>")
-    pos_ar = html_out.find("<h2>6 Adverse Reactions</h2>")
-    pos_usp = html_out.find("<h2>8 Use in Specific Populations</h2>")
+    pos_wp = html_out.find("<h2>Warnings and Precautions</h2>")
+    pos_ar = html_out.find("<h2>Adverse Reactions</h2>")
+    pos_usp = html_out.find("<h2>Use in Specific Populations</h2>")
 
     assert pos_intro != -1, "Approval introductory paragraph must be present"
-    assert pos_wp != -1, "5 Warnings and Precautions must be present"
-    assert pos_ar != -1, "6 Adverse Reactions must be present"
-    assert pos_usp != -1, "8 Use in Specific Populations must be present"
+    assert pos_wp != -1, "Warnings and Precautions must be present"
+    assert pos_ar != -1, "Adverse Reactions must be present"
+    assert pos_usp != -1, "Use in Specific Populations must be present"
+
+    # Confirm section numbers are NOT in the headings
+    assert "<h2>5 Warnings and Precautions</h2>" not in html_out
+    assert "<h2>6 Adverse Reactions</h2>" not in html_out
+    assert "<h2>8 Use in Specific Populations</h2>" not in html_out
 
     # Canonical order: intro paragraph < Warnings and Precautions < Adverse Reactions < Use in Specific Populations
     assert pos_intro < pos_wp, "Approval intro paragraph must precede section headings"
     assert pos_wp < pos_ar, "Warnings and Precautions must precede Adverse Reactions"
     assert pos_ar < pos_usp, "Adverse Reactions must precede Use in Specific Populations"
+
+
+def test_export_drug_clean_html_removes_subheading_numbers():
+    """
+    Verifies that section numbers (e.g. 5) and subsection numbers (e.g. 5.1)
+    are stripped from headings in export_drug_clean_html API output.
+    """
+    from app.ui import export_drug_clean_html
+
+    drug = {
+        "display_name": "CONZIP",
+        "active_ingredient": "TRAMADOL",
+        "application_number": "NDA-022370",
+    }
+    changes = [
+        {
+            "section": "5 Warnings and Precautions",
+            "source_date": "2025-12-22",
+            "updated_text": (
+                "5.1 Addiction, Abuse, and Misuse\n\n"
+                "Additions and/or revisions underlined:\n"
+                "CONZIP contains tramadol, a Schedule IV controlled substance. As an opioid, CONZIP exposes users to the risks of addiction, abuse and misuse.\n"
+                "Although the risk of addiction in any individual is unknown, it can occur in patients appropriately prescribed CONZIP.\n\n"
+                "5.2 Life-Threatening Respiratory Depression\n"
+                "Serious, life-threatening, or fatal respiratory depression has been reported."
+            ),
+        }
+    ]
+
+    html_out = export_drug_clean_html(drug, changes, standalone=False)
+
+    # 1. Section heading must not have '5 '
+    assert "<h2>Warnings and Precautions</h2>" in html_out
+    assert "5 Warnings and Precautions" not in html_out
+
+    # 2. Subsection headings must not have '5.1 ' or '5.2 '
+    assert "<h3>Addiction, Abuse, and Misuse</h3>" in html_out
+    assert "<h3>Life-Threatening Respiratory Depression</h3>" in html_out
+    assert "5.1" not in html_out
+    assert "5.2" not in html_out
+
+    # 3. Content and formatting are preserved
+    assert "<em>Additions and/or revisions underlined:</em>" in html_out
+    assert "CONZIP contains tramadol, a Schedule IV controlled substance" in html_out
+    assert "Serious, life-threatening, or fatal respiratory depression" in html_out
 
 
 

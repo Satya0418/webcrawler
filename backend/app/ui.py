@@ -60,24 +60,23 @@ FDA_SECTION_ORDER = {
 }
 
 FDA_CANONICAL_SECTION_PREFIX = {
-    "warnings and precautions": "5 Warnings and Precautions",
-    "adverse reactions": "6 Adverse Reactions",
-    "use in specific populations": "8 Use in Specific Populations",
-    "contraindications": "4 Contraindications",
-    "drug interactions": "7 Drug Interactions",
+    "warnings and precautions": "Warnings and Precautions",
+    "adverse reactions": "Adverse Reactions",
+    "use in specific populations": "Use in Specific Populations",
+    "contraindications": "Contraindications",
+    "drug interactions": "Drug Interactions",
 }
 
 
 def format_section_display_title(sec_name: str) -> str:
-    """Formats section display title with canonical FDA numbering (e.g. '5 Warnings and Precautions')."""
+    """Formats section display title with canonical FDA clean title without section numbers (e.g. 'Warnings and Precautions')."""
     s = (sec_name or "").strip()
-    norm = s.lower()
-    if re.match(r"^\d+\b", s):
-        return s
+    clean_s = re.sub(r"^\d+(?:\.\d+)*[.\s:-]*", "", s).strip()
+    norm = clean_s.lower()
     for key, canonical in FDA_CANONICAL_SECTION_PREFIX.items():
         if key in norm:
             return canonical
-    return s
+    return clean_s if clean_s else s
 
 
 def get_section_sort_key(sec_name: str) -> tuple:
@@ -252,7 +251,7 @@ def _render_text_to_html_parts(cleaned_text: str, html_parts: List[str], bullet_
     while i < n:
         line = lines[i]
 
-        clean_no_tags = re.sub(r"<\/?(?:strong|b|i|u|em)>", "", line).strip()
+        clean_no_tags = re.sub(r"<[^>]+>", "", line).strip()
 
         # 1. Notice line: 'Additions and/or revisions underlined:'
         if re.match(r"(?i)^additions\s+and(?:/or)?\s+revisions\s+underlined\s*:?$", clean_no_tags):
@@ -280,9 +279,14 @@ def _render_text_to_html_parts(cleaned_text: str, html_parts: List[str], bullet_
             continue
 
         # 3. Check if line is a subheading (e.g. '5.3 Central Nervous System Depression' or 'Postmarketing Experience')
-        subhead_match = re.match(r"^((?:\d+(?:\.\d+)*\s+)?[A-Z][A-Za-z0-9\s\(\)\-\/\,\?]{2,70})$", clean_no_tags)
+        subhead_match = re.match(r"^((?:\d+(?:\.\d+)*[.\s:-]*\s*)?[A-Z][A-Za-z0-9\s\(\)\-\/\,\?]{2,70})$", clean_no_tags)
         if subhead_match and not line.endswith(".") and not line.endswith(":"):
-            html_parts.append(f"<h3>{html.escape(subhead_match.group(1).strip())}</h3>")
+            subhead_title = re.sub(r"^\d+(?:\.\d+)*[.\s:-]*", "", subhead_match.group(1)).strip()
+            # If line is identical to the enclosing section title, skip duplicate heading
+            if html_parts and (f"<h2>{subhead_title}</h2>" in html_parts[-1] or f"<h4>{subhead_title}</h4>" in html_parts[-1]):
+                i += 1
+                continue
+            html_parts.append(f"<h3>{html.escape(subhead_title)}</h3>")
             i += 1
             continue
 

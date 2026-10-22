@@ -190,7 +190,8 @@ class TestAdverseReactionsExtraction:
         assert report["formatted_date"] == "25-Jun-2026"
         assert "Renal and urinary disorders: acute kidney injury, renal failure" in report["formatted_report"]
         assert "Postmarketing Experience" in report["formatted_report"]
-        assert "3.1 The United States Food and Drug Administration" in report["formatted_report"]
+        assert "The United States Food and Drug Administration" in report["formatted_report"]
+        assert "3.1" not in report["formatted_report"]
         assert "On 25-Jun-2026, the United States Food and Drug Administration" in report["formatted_report"]
         assert "Arikayce Kit" in report["formatted_report"]
 

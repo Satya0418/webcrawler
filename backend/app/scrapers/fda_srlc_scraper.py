@@ -135,8 +135,9 @@ def clean_adverse_reaction_text(raw_text: str) -> str:
             if re.match(r"(?i)^(additions\s+and/or\s+revisions\s+underlined|newly\s+added)", line):
                 continue
 
-            # Strip section numbers from subheadings: "6.2 Postmarketing Experience" -> "Postmarketing Experience"
-            line = re.sub(r"^\s*6\.\d+\s*", "", line)
+            # Strip section numbers from subheadings: "6.2 Postmarketing Experience" -> "Postmarketing Experience", "5.1 Addiction..." -> "Addiction..."
+            line = re.sub(r"^\s*\d+(?:\.\d+)+[.\s:-]*\s*", "", line)
+            line = re.sub(r"^\s*\d+\s+(?=(?:Warnings|Adverse|Use|Contraindications|Drug))", "", line, flags=re.IGNORECASE)
             line = re.sub(r"^\s*6\s+Adverse\s+Reactions", "Adverse Reactions", line, flags=re.IGNORECASE)
 
             # Strip cross-references in brackets like "[see Warnings and Precautions (5.5)]"
@@ -709,7 +710,7 @@ class FDASrLCScraper:
             )
 
             report_lines = [
-                "3.1 The United States Food and Drug Administration",
+                "The United States Food and Drug Administration",
                 "",
                 intro_line,
                 "",
@@ -856,7 +857,7 @@ class FDASrLCScraper:
         )
 
         report_lines = [
-            "3.1 The United States Food and Drug Administration",
+            "The United States Food and Drug Administration",
             "",
             intro_line,
             "",
