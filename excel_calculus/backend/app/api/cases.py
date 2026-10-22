@@ -50,9 +50,14 @@ def list_cases(
     }
 
 @router.get("/{case_number}")
-def get_case_detail(case_number: str, concern_id: Optional[str] = None, db: Session = Depends(get_db)):
+def get_case_detail(
+    case_number: str,
+    concern_id: Optional[str] = None,
+    dataset_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     service = CaseService(db)
     try:
-        return service.get_complete_case(case_number=case_number, concern_id=concern_id)
+        return service.get_complete_case(case_number=case_number, concern_id=concern_id, dataset_id=dataset_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

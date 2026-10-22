@@ -15,6 +15,7 @@ class AssessmentUpdate(BaseModel):
     reviewer_notes: Optional[str] = None
     secondary_result: Optional[str] = None
     reviewer_id: Optional[str] = "reviewer"
+    dataset_id: Optional[str] = None
 
 @router.post("")
 def set_assessment(data: AssessmentUpdate, db: Session = Depends(get_db)):
@@ -30,7 +31,8 @@ def set_assessment(data: AssessmentUpdate, db: Session = Depends(get_db)):
             exclusion_reason=data.exclusion_reason,
             reviewer_notes=data.reviewer_notes,
             secondary_result=data.secondary_result,
-            reviewer_id=data.reviewer_id
+            reviewer_id=data.reviewer_id,
+            dataset_id=data.dataset_id
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

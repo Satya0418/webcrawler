@@ -126,8 +126,11 @@ async def upload_file(
     - Line Listing: parses cases, products, explodes Event Verbatim into individual events
     - MedDRA SMQ Reference: loads hierarchical SMQ terminology
     """
-    if not file.filename.endswith((".xlsx", ".xls")):
-        raise HTTPException(status_code=400, detail="Only Excel workbooks (.xlsx, .xls) are supported.")
+    if not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only Excel workbooks (.xlsx) are supported. Legacy .xls files are not supported."
+        )
 
     uploads_dir = "/Users/satya/projects/webcrwler/excel_calculus/data/uploads"
     os.makedirs(uploads_dir, exist_ok=True)

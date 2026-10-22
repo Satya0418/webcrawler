@@ -100,12 +100,12 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
     if (!reportData) return;
 
     // Per Requirement 18: No Total row in official regulatory table (cases may belong to multiple concerns)
-    let tsv = `Risk Term\tNumber of Relevant Case Reports\n`;
+    let tsv = `Risk Term\tNumber of Case Reports\n`;
     let html = `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse: collapse; font-family: 'Times New Roman', Times, serif; width: 100%; font-size: 10pt;">
       <thead>
         <tr style="background-color: #f1f5f9; font-weight: bold;">
           <th align="left" style="border: 1px solid #000000; padding: 6px 8px;">Risk Term</th>
-          <th align="center" style="border: 1px solid #000000; padding: 6px 8px; width: 180px;">Number of Relevant Case Reports</th>
+          <th align="center" style="border: 1px solid #000000; padding: 6px 8px; width: 180px;">Number of Case Reports</th>
         </tr>
       </thead>
       <tbody>`;
@@ -215,7 +215,7 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
-            accept=".xlsx, .xls"
+            accept=".xlsx"
             style={{ display: "none" }}
             id="section161-file-input"
           />
@@ -483,7 +483,7 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
                   Risk Term
                 </th>
                 <th style={{ width: "30%", textAlign: "center", padding: "0.75rem 1rem", fontSize: "0.85rem", textTransform: "uppercase" }}>
-                  Number of Relevant Case Reports
+                  Number of Case Reports
                 </th>
               </tr>
             </thead>
@@ -549,7 +549,7 @@ export const Section161Table: React.FC<Props> = ({ product, onSelectConcern }) =
                 <th style={{ width: "35%" }}>Risk Term / Safety Concern</th>
                 <th style={{ width: "30%" }}>Search Method & Criteria</th>
                 <th style={{ width: "15%", textAlign: "center" }}>
-                  Number of Relevant Case Reports
+                  Number of Case Reports
                 </th>
                 <th style={{ width: "12%", textAlign: "center" }}>Reviewer Status</th>
                 <th style={{ width: "8%", textAlign: "center" }}>Action</th>

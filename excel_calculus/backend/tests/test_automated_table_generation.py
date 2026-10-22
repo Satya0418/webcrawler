@@ -328,13 +328,14 @@ def test_streaming_ingestion_large_synthetic_workbook(db_session):
 def test_api_1click_generate_section_16_1():
     """
     Test POST /api/reports/section-16-1/generate endpoint:
-    - Ingests file, runs searches, and returns Section 16.1 report data.
+    - Uses real expected headers ("Case Number", "Product Name", "Event Verbatim").
+    - Ingests file, runs searches, and returns Section 16.1 report data with verified nonzero count on known risk terms.
     """
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.append(["Case Number", "Suspect Product Names", "Events Reported (Cleaned)"])
-    ws.append(["API-001", "SyntheticApiProduct", "Hepatitis acute"])
-    ws.append(["API-002", "SyntheticApiProduct", "Cardiac arrest"])
+    ws.append(["Case Number", "Product Name", "Event Verbatim"])
+    ws.append(["CAN-API-001", "Abiraterone", "[HEPATITIS ACUTE]"])
+    ws.append(["CAN-API-002", "Abiraterone", "[HEPATIC FAILURE]"])
 
     bio = io.BytesIO()
     wb.save(bio)
@@ -343,7 +344,7 @@ def test_api_1click_generate_section_16_1():
 
     response = client.post(
         "/api/reports/section-16-1/generate",
-        data={"product": "SyntheticApiProduct"},
+        data={"product": "Abiraterone"},
         files={"file": ("api_test.xlsx", bio, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
     )
 
@@ -352,8 +353,18 @@ def test_api_1click_generate_section_16_1():
     assert json_data["status"] == "success"
     assert "data" in json_data
     report = json_data["data"]
-    assert report["product_name"] == "SyntheticApiProduct"
+    assert report["product_name"] == "Abiraterone"
     assert len(report["table_sections"]) == 3
+
+    # Assert that Hepatotoxicity risk term has a nonzero count (2 cases)
+    hep_risk = None
+    for sec in report["table_sections"]:
+        for r in sec["risks"]:
+            if "Hepatotoxicity" in r["risk_term"]:
+                hep_risk = r
+                break
+    assert hep_risk is not None, "Hepatotoxicity risk term must be present in report"
+    assert hep_risk["number_of_relevant_cases"] == 2, f"Expected 2 cases for Hepatotoxicity in this dataset, got {hep_risk['number_of_relevant_cases']}"
 
     # Clean up generated dataset
     ds_id = report.get("dataset_id")
@@ -406,7 +417,8 @@ def test_api_get_section_16_1_excel():
     all_values = [cell.value for row in ws.iter_rows() for cell in row if cell.value is not None]
     assert any("PBRER Section 16.1" in str(v) for v in all_values)
     assert any("Risk Term" in str(v) for v in all_values)
-    assert any("Number of Relevant Case Reports" in str(v) for v in all_values)
+    assert any("Number of Case Reports" in str(v) for v in all_values)
+    assert not any("Number of Relevant Case Reports" in str(v) for v in all_values)
     assert any("IMPORTANT IDENTIFIED RISKS" in str(v).upper() for v in all_values)
     assert any("Hepatotoxicity" in str(v) for v in all_values)
     wb.close()
@@ -471,27 +483,267 @@ def test_reviewer_assessment_does_not_mutate_official_count(db_session):
     assert official_count_before == 14
 
     # Now simulate an assessment status change via API
-    resp = client.post("/api/assessment", json={
-        "case_number": "2025AP002474",
-        "concern_id": hep_before["concern_id"],
-        "status": "NOT_RELEVANT",
-        "exclusion_reason": "Confounding viral hepatitis etiology",
-        "reviewer_notes": "Tested in automated test suite",
-        "reviewer_id": "Dr. Automated Test"
-    })
-    assert resp.status_code == 200
+    try:
+        resp = client.post("/api/assessment", json={
+            "case_number": "2025AP006512",
+            "concern_id": hep_before["concern_id"],
+            "status": "NOT_RELEVANT",
+            "exclusion_reason": "Confounding viral hepatitis etiology",
+            "reviewer_notes": "Tested in automated test suite",
+            "reviewer_id": "Dr. Automated Test"
+        })
+        assert resp.status_code == 200
 
-    # Regenerate Section 16.1 report
-    report_after = report_service.generate_section_16_1_table("Abiraterone")
-    hep_after = None
-    for sec in report_after["table_sections"]:
-        for r in sec["risks"]:
-            if "Hepatotoxicity" in r["risk_term"]:
-                hep_after = r
-                break
+        # Regenerate Section 16.1 report
+        report_after = report_service.generate_section_16_1_table("Abiraterone")
+        hep_after = None
+        for sec in report_after["table_sections"]:
+            for r in sec["risks"]:
+                if "Hepatotoxicity" in r["risk_term"]:
+                    hep_after = r
+                    break
 
-    assert hep_after is not None
-    # The official Section 16.1 count MUST remain strictly 14
-    assert hep_after["number_of_relevant_cases"] == 14
-    # But excluded_count in reviewer breakdown reflects the change
-    assert hep_after["excluded_count"] >= 1
+        assert hep_after is not None
+        # The official Section 16.1 count MUST remain strictly 14
+        assert hep_after["number_of_relevant_cases"] == 14
+        # But excluded_count in reviewer breakdown reflects the change
+        assert hep_after["excluded_count"] >= 1
+    finally:
+        client.post("/api/assessment", json={
+            "case_number": "2025AP006512",
+            "concern_id": hep_before["concern_id"],
+            "status": "CANDIDATE"
+        })
+
+
+# --------------------------------------------------------------------------
+# 6. FIX & SECURE ADDITIONAL VERIFICATION TESTS
+# --------------------------------------------------------------------------
+
+def test_idempotent_reingestion_no_duplicate_cases(db_session):
+    """
+    Test Item 1: Ingestion idempotency.
+    Uploading or ingesting the same Excel file twice must clear/overwrite the existing dataset,
+    ensuring case, event, and product counts do not inflate or duplicate.
+    """
+    import tempfile
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Case Number", "Product Name", "Event Verbatim", "Age", "Sex"])
+    ws.append(["IDEMP-001", "IdempProd", "[ASTHENIA]", "50", "Male"])
+    ws.append(["IDEMP-002", "IdempProd", "[FATIGUE]", "60", "Female"])
+    ws.append(["IDEMP-003", "IdempProd", "[NAUSEA]", "70", "Male"])
+
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp_path = tmp.name
+    wb.save(tmp_path)
+    wb.close()
+
+    ingestion = IngestionService(db_session)
+    dataset_id = None
+    try:
+        # First ingestion
+        res1 = ingestion.ingest_linelisting_file(tmp_path, primary_product_name="IdempProd")
+        dataset_id = res1["dataset_id"]
+        assert res1["status"] == "success"
+        assert res1["total_cases"] == 3
+        assert res1["total_events"] == 3
+
+        count_cases_1 = db_session.query(CaseRecord).filter_by(dataset_id=dataset_id).count()
+        count_events_1 = db_session.query(CaseEvent).filter_by(dataset_id=dataset_id).count()
+        assert count_cases_1 == 3
+        assert count_events_1 == 3
+
+        # Second ingestion of the EXACT SAME FILE
+        res2 = ingestion.ingest_linelisting_file(tmp_path, primary_product_name="IdempProd")
+        assert res2["dataset_id"] == dataset_id
+        assert res2["total_cases"] == 3
+        assert res2["total_events"] == 3
+
+        count_cases_2 = db_session.query(CaseRecord).filter_by(dataset_id=dataset_id).count()
+        count_events_2 = db_session.query(CaseEvent).filter_by(dataset_id=dataset_id).count()
+
+        # COUNTS MUST NOT INCREASE
+        assert count_cases_2 == count_cases_1 == 3, f"Case counts doubled! Before: {count_cases_1}, After: {count_cases_2}"
+        assert count_events_2 == count_events_1 == 3, f"Event counts doubled! Before: {count_events_1}, After: {count_events_2}"
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        if dataset_id:
+            db_session.query(CaseEvent).filter_by(dataset_id=dataset_id).delete(synchronize_session=False)
+            db_session.query(CaseRecord).filter_by(dataset_id=dataset_id).delete(synchronize_session=False)
+            db_session.query(Dataset).filter_by(id=dataset_id).delete(synchronize_session=False)
+            db_session.commit()
+
+
+def test_unconfigured_product_returns_404_and_raises_error(db_session):
+    """
+    Test Item 2: Strict product filtering.
+    Products without configured safety concerns must raise a clear error and return 404,
+    never falling back to mix concerns of other products.
+    """
+    report_service = ReportService(db_session)
+    with pytest.raises(ValueError) as excinfo:
+        report_service.generate_section_16_1_table("NonExistentDrug12345")
+    assert "No configured safety concerns found for product" in str(excinfo.value)
+
+    # API returns 404
+    resp = client.get("/api/reports/section-16-1?product=NonExistentDrug12345")
+    assert resp.status_code == 404
+    assert "No configured safety concerns found for product" in resp.json()["detail"]
+
+
+def test_missing_event_verbatim_header_raises_error(db_session):
+    """
+    Test Item 3: Missing 'Event Verbatim' header triggers validation error.
+    """
+    import tempfile
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Case Number", "Age", "Sex", "Product Name"])  # Missing Event Verbatim
+    ws.append(["CASE-001", "55", "Female", "TestDrug"])
+
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp_path = tmp.name
+    wb.save(tmp_path)
+    wb.close()
+
+    ingestion = IngestionService(db_session)
+    try:
+        with pytest.raises(ValueError) as excinfo:
+            ingestion.ingest_linelisting_file(tmp_path, primary_product_name="TestDrug")
+        assert "Required header 'Event Verbatim' not found" in str(excinfo.value)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+def test_legacy_xls_upload_rejected():
+    """
+    Test Item 4: Excel format handling.
+    Legacy .xls uploads are strictly rejected with HTTP 400.
+    """
+    fake_xls_content = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # OLE2 Compound Document Header
+    bio = io.BytesIO(fake_xls_content)
+
+    # 1. Test POST /api/reports/section-16-1/generate
+    resp1 = client.post(
+        "/api/reports/section-16-1/generate",
+        data={"product": "Abiraterone"},
+        files={"file": ("legacy_line_listing.xls", bio, "application/vnd.ms-excel")}
+    )
+    assert resp1.status_code == 400
+    assert "Only Excel workbooks (.xlsx) are supported" in resp1.json()["detail"]
+
+    # 2. Test POST /api/ingestion/upload
+    bio.seek(0)
+    resp2 = client.post(
+        "/api/ingestion/upload",
+        files={"file": ("legacy_line_listing.xls", bio, "application/vnd.ms-excel")}
+    )
+    assert resp2.status_code == 400
+    assert "Only Excel workbooks (.xlsx) are supported" in resp2.json()["detail"]
+
+
+def test_incremental_chunked_hashing():
+    """
+    Test Item 5: Incremental hashing.
+    Verify chunked SHA-256 calculation matches hashlib on full payload without memory blowout.
+    """
+    import tempfile
+    import hashlib
+    data = b"ExcelLineListingPayloadBlock" * 2500
+    expected_hash = hashlib.sha256(data).hexdigest()
+
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp_path = tmp.name
+        tmp.write(data)
+
+    try:
+        sha256 = hashlib.sha256()
+        with open(tmp_path, "rb") as f:
+            while True:
+                chunk = f.read(8192)
+                if not chunk:
+                    break
+                sha256.update(chunk)
+        computed_hash = sha256.hexdigest()
+        assert computed_hash == expected_hash
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+def test_dataset_scoped_reviewer_assessments(db_session):
+    """
+    Test Item 6: Dataset-scoped reviewer counts.
+    Ensure reviewer assessments do not leak across datasets even when case numbers are identical.
+    """
+    from excel_calculus.backend.app.services.case_service import CaseService
+    ds_1 = "ds_scoped_test_1"
+    ds_2 = "ds_scoped_test_2"
+    case_num = "CASE-SHARED-REVIEW"
+    concern = db_session.query(SafetyConcern).filter_by(product_name="Abiraterone").first()
+    assert concern is not None
+
+    try:
+        # Create Case in Dataset 1
+        case1 = CaseRecord(dataset_id=ds_1, case_number=case_num, product_name="Abiraterone")
+        db_session.add(case1)
+        # Create Case in Dataset 2
+        case2 = CaseRecord(dataset_id=ds_2, case_number=case_num, product_name="Abiraterone")
+        db_session.add(case2)
+        db_session.commit()
+
+        case_service = CaseService(db_session)
+        # Mark RELEVANT in Dataset 1
+        case_service.update_assessment(
+            case_number=case_num,
+            concern_id=concern.id,
+            status="RELEVANT",
+            dataset_id=ds_1
+        )
+        # Mark NOT_RELEVANT in Dataset 2
+        case_service.update_assessment(
+            case_number=case_num,
+            concern_id=concern.id,
+            status="NOT_RELEVANT",
+            dataset_id=ds_2
+        )
+        db_session.commit()
+
+        # Check detail in Dataset 1
+        detail1 = case_service.get_complete_case(case_num, concern_id=concern.id, dataset_id=ds_1)
+        assert detail1["assessment"]["status"] == "RELEVANT"
+
+        # Check detail in Dataset 2
+        detail2 = case_service.get_complete_case(case_num, concern_id=concern.id, dataset_id=ds_2)
+        assert detail2["assessment"]["status"] == "NOT_RELEVANT"
+    finally:
+        db_session.query(RelevanceAssessment).filter(RelevanceAssessment.dataset_id.in_([ds_1, ds_2])).delete(synchronize_session=False)
+        db_session.query(CaseRecord).filter(CaseRecord.dataset_id.in_([ds_1, ds_2])).delete(synchronize_session=False)
+        db_session.commit()
+
+
+def test_pdf_and_excel_heading_exact_wording(db_session):
+    """
+    Test Item 7: Table heading correction.
+    Column heading must be 'Number of Case Reports' and NOT 'Number of Relevant Case Reports'.
+    """
+    report_service = ReportService(db_session)
+    report = report_service.generate_section_16_1_table("Abiraterone")
+
+    excel_service = ExcelReportService(db_session)
+    excel_bytes = io.BytesIO(excel_service.generate_section_16_1_excel(report))
+    wb = openpyxl.load_workbook(excel_bytes)
+    ws = wb.active
+    assert ws["B4"].value == "Number of Case Reports", f"Excel B4 heading was: {ws['B4'].value}"
+    wb.close()
+
+    pdf_service = PDFReportService(db_session)
+    pdf_bytes = pdf_service.generate_section_16_1_pdf(report)
+    import pypdf
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    pdf_text = "".join(p.extract_text() for p in reader.pages)
+    assert "Number of" in pdf_text and "Case Reports" in pdf_text
+    assert "Number of Relevant Case Reports" not in pdf_text

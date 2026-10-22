@@ -8,8 +8,11 @@ class CaseService:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_complete_case(self, case_number: str, concern_id: str = None):
-        case = self.db.query(CaseRecord).filter_by(case_number=case_number).first()
+    def get_complete_case(self, case_number: str, concern_id: str = None, dataset_id: str = None):
+        case_q = self.db.query(CaseRecord).filter_by(case_number=case_number)
+        if dataset_id:
+            case_q = case_q.filter_by(dataset_id=dataset_id)
+        case = case_q.first()
         if not case:
             raise ValueError(f"Case not found: {case_number}")
 
@@ -78,10 +81,14 @@ class CaseService:
         # Fetch assessment for this concern
         assessment = None
         if concern_id:
-            ass_rec = self.db.query(RelevanceAssessment).filter_by(
+            ass_q = self.db.query(RelevanceAssessment).filter_by(
                 case_number=case_number,
                 concern_id=concern_id
-            ).first()
+            )
+            target_ds = dataset_id or (case.dataset_id if case else None)
+            if target_ds:
+                ass_q = ass_q.filter_by(dataset_id=target_ds)
+            ass_rec = ass_q.first()
             if ass_rec:
                 assessment = {
                     "status": ass_rec.status,
@@ -167,35 +174,42 @@ class CaseService:
         exclusion_reason: str = None,
         reviewer_notes: str = None,
         secondary_result: str = None,
-        reviewer_id: str = "reviewer"
+        reviewer_id: str = "reviewer",
+        dataset_id: str = None
     ):
         if status not in ("CANDIDATE", "RELEVANT", "NOT_RELEVANT", "NEEDS_REVIEW"):
             raise ValueError(f"Invalid assessment status: {status}")
 
-        ass = self.db.query(RelevanceAssessment).filter_by(
+        case_q = self.db.query(CaseRecord).filter_by(case_number=case_number)
+        if dataset_id:
+            case_q = case_q.filter_by(dataset_id=dataset_id)
+        case = case_q.first()
+        case_id = case.id if case else None
+        target_dataset_id = dataset_id or (case.dataset_id if case else None)
+
+        ass_q = self.db.query(RelevanceAssessment).filter_by(
             case_number=case_number,
             concern_id=concern_id
-        ).first()
+        )
+        if target_dataset_id:
+            ass_q = ass_q.filter_by(dataset_id=target_dataset_id)
+        ass = ass_q.first()
 
         prev_status = ass.status if ass else "NEW"
-
-        case = self.db.query(CaseRecord).filter_by(case_number=case_number).first()
-        case_id = case.id if case else None
-        dataset_id = case.dataset_id if case else None
 
         if not ass:
             ass = RelevanceAssessment(
                 case_id=case_id,
                 case_number=case_number,
                 concern_id=concern_id,
-                dataset_id=dataset_id
+                dataset_id=target_dataset_id
             )
             self.db.add(ass)
         else:
             if not ass.case_id and case_id:
                 ass.case_id = case_id
-            if not ass.dataset_id and dataset_id:
-                ass.dataset_id = dataset_id
+            if not ass.dataset_id and target_dataset_id:
+                ass.dataset_id = target_dataset_id
 
         ass.status = status
         ass.exclusion_reason = exclusion_reason

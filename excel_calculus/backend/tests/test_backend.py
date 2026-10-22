@@ -464,20 +464,27 @@ def test_33_assessment_status_change_does_not_alter_section_16_1_count(db):
     assert hep_risk["number_of_relevant_cases"] == 14
 
     # Step 2: Manually assess candidate cases: one as RELEVANT, one as NOT_RELEVANT
-    cases = db.query(CaseRecord).filter_by(product_name="Abiraterone").all()
-    c1, c2 = cases[0], cases[1]
-    
-    for c_obj, status in [(c1, "RELEVANT"), (c2, "NOT_RELEVANT")]:
+    run = db.query(SearchRun).filter_by(concern_id="abi_hepatotoxicity", is_active=True).first()
+    c1_num, c2_num = "2025AP034387", "2025AP012204"
+
+    for c_num, status in [(c1_num, "RELEVANT"), (c2_num, "NOT_RELEVANT")]:
+        c_obj = db.query(CaseRecord).filter_by(case_number=c_num).first()
         ass = db.query(RelevanceAssessment).filter_by(
-            case_number=c_obj.case_number, concern_id="abi_hepatotoxicity"
+            case_number=c_num, concern_id="abi_hepatotoxicity"
         ).first()
         if not ass:
             ass = RelevanceAssessment(
-                case_id=c_obj.id, case_number=c_obj.case_number, concern_id="abi_hepatotoxicity", status=status
+                case_id=c_obj.id if c_obj else None,
+                case_number=c_num,
+                concern_id="abi_hepatotoxicity",
+                dataset_id=run.dataset_id if run else None,
+                status=status
             )
             db.add(ass)
         else:
             ass.status = status
+            if run and not ass.dataset_id:
+                ass.dataset_id = run.dataset_id
     db.commit()
 
     # Step 3: Regenerate Section 16.1 table

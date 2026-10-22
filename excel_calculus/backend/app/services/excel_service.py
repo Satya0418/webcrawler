@@ -71,7 +71,7 @@ class ExcelReportService:
 
         # Table Header Row 4
         ws["A4"] = "Risk Term"
-        ws["B4"] = "Number of Relevant Case Reports"
+        ws["B4"] = "Number of Case Reports"
 
         for col, align in (("A4", align_th_left), ("B4", align_th_center)):
             ws[col].font = font_th

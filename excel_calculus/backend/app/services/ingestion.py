@@ -3,8 +3,12 @@ import re
 import hashlib
 from datetime import datetime
 import openpyxl
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from excel_calculus.backend.app.models.entities import CaseRecord, CaseEvent, CaseProduct, AuditLog, Dataset
+from excel_calculus.backend.app.models.entities import (
+    CaseRecord, CaseEvent, CaseProduct, AuditLog, Dataset,
+    SearchRun, SearchMatch, RelevanceAssessment
+)
 
 class IngestionService:
     def __init__(self, db: Session):
@@ -204,8 +208,15 @@ class IngestionService:
 
         file_name = os.path.basename(file_path)
 
+        # Chunked SHA-256 calculation (8192-byte blocks) to avoid loading entire file into memory
+        sha256 = hashlib.sha256()
         with open(file_path, "rb") as f:
-            file_hash = hashlib.sha256(f.read()).hexdigest()
+            while True:
+                chunk = f.read(8192)
+                if not chunk:
+                    break
+                sha256.update(chunk)
+        file_hash = sha256.hexdigest()
 
         if not reporting_period:
             if "20260428" in file_name or "abiraterone" in primary_product_name.lower():
@@ -232,6 +243,18 @@ class IngestionService:
                 status="ACTIVE"
             )
             self.db.add(dataset)
+            self.db.flush()
+        else:
+            # Idempotent re-ingestion: clear existing records for this dataset before re-importing
+            # to guarantee counts do not duplicate or inflate on repeated uploads of the same file.
+            run_ids = [r[0] for r in self.db.query(SearchRun.id).filter_by(dataset_id=dataset_id).all()]
+            if run_ids:
+                self.db.query(SearchMatch).filter(SearchMatch.search_run_id.in_(run_ids)).delete(synchronize_session=False)
+                self.db.query(SearchRun).filter_by(dataset_id=dataset_id).delete(synchronize_session=False)
+            self.db.query(RelevanceAssessment).filter_by(dataset_id=dataset_id).delete(synchronize_session=False)
+            self.db.query(CaseEvent).filter_by(dataset_id=dataset_id).delete(synchronize_session=False)
+            self.db.query(CaseProduct).filter_by(dataset_id=dataset_id).delete(synchronize_session=False)
+            self.db.query(CaseRecord).filter_by(dataset_id=dataset_id).delete(synchronize_session=False)
             self.db.flush()
 
         wb = None
@@ -260,6 +283,13 @@ class IngestionService:
             if idx_case < 0:
                 raise ValueError(
                     f"Required header 'Case Number' not found in worksheet '{sheet_name}'. "
+                    f"Found headers: {headers[:10]}"
+                )
+
+            idx_ev = col_idx("Event Verbatim")
+            if idx_ev < 0:
+                raise ValueError(
+                    f"Required header 'Event Verbatim' not found in worksheet '{sheet_name}'. "
                     f"Found headers: {headers[:10]}"
                 )
 
@@ -321,11 +351,14 @@ class IngestionService:
                 raw_ind = str(get_val(row, idx_prod_ind) or "")
 
                 # Check if case exists in this specific dataset
+                is_new_case = False
                 case_rec = self.db.query(CaseRecord).filter_by(dataset_id=dataset_id, case_number=case_num).first()
                 if not case_rec:
                     case_rec = CaseRecord(dataset_id=dataset_id, case_number=case_num)
                     self.db.add(case_rec)
                     self.db.flush()
+                    total_cases += 1
+                    is_new_case = True
 
                 seriousness_raw = str(get_val(row, idx_seriousness) or "").strip()
 
@@ -357,17 +390,23 @@ class IngestionService:
                 case_rec.raw_source_sheet = sheet_name
                 case_rec.raw_source_row = r_idx
 
-                # Clear existing child event & product records for this internal case_id during reconciliation
-                self.db.query(CaseEvent).filter_by(case_id=case_rec.id).delete()
-                self.db.query(CaseProduct).filter_by(case_id=case_rec.id).delete()
-
                 # Explode events
                 parsed_events = self.parse_event_verbatim(raw_ev)
                 outcomes_map = self.parse_outcomes(raw_outcome_ev)
                 onsets_list = self.parse_event_onsets(raw_onset)
 
+                existing_events = set()
+                current_max_pos = 0
+                if not is_new_case:
+                    existing_events = set(e[0] for e in self.db.query(CaseEvent.normalized_term).filter_by(case_id=case_rec.id).all())
+                    current_max_pos = self.db.query(func.max(CaseEvent.position)).filter_by(case_id=case_rec.id).scalar() or 0
+
                 for pos, ev_item in enumerate(parsed_events):
                     norm_upper = ev_item["normalized_term"]
+                    if not is_new_case and norm_upper in existing_events:
+                        continue
+                    existing_events.add(norm_upper)
+
                     matched_outcome = outcomes_map.get(norm_upper, case_rec.case_outcome)
 
                     # Determine onset mapping
@@ -388,12 +427,12 @@ class IngestionService:
                         case_id=case_rec.id,
                         case_number=case_num,
                         dataset_id=dataset_id,
-                        position=pos + 1,  # 1-indexed position
+                        position=current_max_pos + pos + 1,  # 1-indexed position
                         raw_verbatim=ev_item["raw_verbatim"],
                         normalized_term=norm_upper,
                         preferred_term=None,  # Null until exact MedDRA lookup matches it! Never fabricate!
                         pt_code=None,
-                        soc=case_rec.primary_soc if pos == 0 else None,
+                        soc=case_rec.primary_soc if (current_max_pos + pos) == 0 else None,
                         event_onset=matched_onset,
                         onset_mapping_status=onset_status,
                         event_outcome=matched_outcome,
@@ -416,7 +455,15 @@ class IngestionService:
                     primary_duration=raw_dur,
                     primary_indication=raw_ind
                 )
+                existing_prods = set()
+                if not is_new_case:
+                    existing_prods = set(p[0] for p in self.db.query(CaseProduct.product_name_raw).filter_by(case_id=case_rec.id).all())
+
                 for prod_item in parsed_prods:
+                    if not is_new_case and prod_item["raw"] in existing_prods:
+                        continue
+                    existing_prods.add(prod_item["raw"])
+
                     prod_rec = CaseProduct(
                         case_id=case_rec.id,
                         case_number=case_num,
@@ -433,7 +480,6 @@ class IngestionService:
                     self.db.add(prod_rec)
                     total_products += 1
 
-                total_cases += 1
                 batch_count += 1
                 if batch_count % 100 == 0:
                     self.db.flush()

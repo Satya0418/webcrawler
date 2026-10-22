@@ -44,6 +44,8 @@ def get_section_16_1_report(
             dataset_id=dataset_id,
             auto_execute_all=auto_search
         )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -69,8 +71,11 @@ async def generate_section_16_1_automated(
     target_dataset_id = dataset_id
 
     if file and file.filename:
-        if not file.filename.endswith((".xlsx", ".xls")):
-            raise HTTPException(status_code=400, detail="Only Excel workbooks (.xlsx, .xls) are supported.")
+        if not file.filename.lower().endswith(".xlsx"):
+            raise HTTPException(
+                status_code=400,
+                detail="Only Excel workbooks (.xlsx) are supported. Legacy .xls files are not supported."
+            )
 
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -121,6 +126,8 @@ async def generate_section_16_1_automated(
             "message": f"Section 16.1 table generated successfully for {target_product}.",
             "data": table_result
         }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Table generation failed: {str(e)}")
 
@@ -149,6 +156,8 @@ def get_section_16_1_pdf(
             media_type="application/pdf",
             headers={"Content-Disposition": disposition}
         )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -174,5 +183,7 @@ def get_section_16_1_excel(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

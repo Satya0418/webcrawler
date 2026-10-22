@@ -26,10 +26,17 @@ class ReportService:
         matches = self.db.query(SearchMatch).filter_by(search_run_id=latest_run.id).all() if latest_run else self.db.query(SearchMatch).filter_by(concern_id=concern_id).all()
         distinct_case_nums = sorted(list(set(m.case_number for m in matches)))
 
-        assessments = self.db.query(RelevanceAssessment).filter_by(concern_id=concern_id).all()
+        target_dataset_id = latest_run.dataset_id if latest_run else None
+        ass_q = self.db.query(RelevanceAssessment).filter_by(concern_id=concern_id)
+        if target_dataset_id:
+            ass_q = ass_q.filter_by(dataset_id=target_dataset_id)
+        assessments = ass_q.all()
         ass_map = {a.case_number: a for a in assessments}
 
-        cases = self.db.query(CaseRecord).filter(CaseRecord.case_number.in_(distinct_case_nums)).all()
+        cases_q = self.db.query(CaseRecord).filter(CaseRecord.case_number.in_(distinct_case_nums))
+        if target_dataset_id:
+            cases_q = cases_q.filter(CaseRecord.dataset_id == target_dataset_id)
+        cases = cases_q.all()
         cases_map = {c.case_number: c for c in cases}
 
         relevant_cases = []
@@ -164,7 +171,7 @@ class ReportService:
         """
         concerns = self.db.query(SafetyConcern).filter_by(product_name=product_name).all()
         if not concerns:
-            concerns = self.db.query(SafetyConcern).all()
+            raise ValueError(f"No configured safety concerns found for product '{product_name}'.")
 
         reporting_period = concerns[0].reporting_period if concerns else "Current Reporting Period"
 
@@ -248,8 +255,11 @@ class ReportService:
 
             distinct_cases = sorted(list(set(m.case_number for m in matches)))
 
-            # Reviewer assessments (tracked separately for clinical audit)
-            assessments = self.db.query(RelevanceAssessment).filter_by(concern_id=c.id).all()
+            # Reviewer assessments (tracked separately for clinical audit, strictly scoped by dataset)
+            ass_query = self.db.query(RelevanceAssessment).filter_by(concern_id=c.id)
+            if active_dataset_id:
+                ass_query = ass_query.filter_by(dataset_id=active_dataset_id)
+            assessments = ass_query.all()
             ass_map = {a.case_number: a.status for a in assessments}
 
             confirmed_relevant_count = 0

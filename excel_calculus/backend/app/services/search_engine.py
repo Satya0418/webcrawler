@@ -382,24 +382,36 @@ class SearchEngineService:
         search_run.distinct_cases_count = len(matched_case_numbers)
         self.db.commit()
 
-        # Initialize/preserve Relevance Assessments
+        # Initialize/preserve Relevance Assessments (scoped by dataset)
         for c_num in matched_case_numbers:
-            case_obj = self.db.query(CaseRecord).filter_by(case_number=c_num).first()
-            existing_ass = self.db.query(RelevanceAssessment).filter_by(
+            case_q = self.db.query(CaseRecord).filter_by(case_number=c_num)
+            if dataset_id:
+                case_q = case_q.filter_by(dataset_id=dataset_id)
+            case_obj = case_q.first()
+
+            ass_q = self.db.query(RelevanceAssessment).filter_by(
                 case_number=c_num,
                 concern_id=concern_id
-            ).first()
+            )
+            if dataset_id:
+                ass_q = ass_q.filter_by(dataset_id=dataset_id)
+            existing_ass = ass_q.first()
+
             if not existing_ass:
                 ass = RelevanceAssessment(
                     case_id=case_obj.id if case_obj else None,
                     case_number=c_num,
                     concern_id=concern_id,
+                    dataset_id=dataset_id,
                     status="CANDIDATE",
                     reviewer_id=reviewer_id
                 )
                 self.db.add(ass)
-            elif case_obj and existing_ass.case_id is None:
-                existing_ass.case_id = case_obj.id
+            else:
+                if case_obj and existing_ass.case_id is None:
+                    existing_ass.case_id = case_obj.id
+                if dataset_id and not existing_ass.dataset_id:
+                    existing_ass.dataset_id = dataset_id
         self.db.commit()
 
         # Audit trail logging
@@ -435,8 +447,11 @@ class SearchEngineService:
         dataset_id = target_run.dataset_id if target_run else None
         distinct_cases = sorted(list(set(m.case_number for m in matches)))
 
-        # Status counts from human relevance assessment
-        assessments = self.db.query(RelevanceAssessment).filter_by(concern_id=concern_id).all()
+        # Status counts from human relevance assessment (scoped strictly by dataset if available)
+        ass_q = self.db.query(RelevanceAssessment).filter_by(concern_id=concern_id)
+        if dataset_id:
+            ass_q = ass_q.filter_by(dataset_id=dataset_id)
+        assessments = ass_q.all()
         ass_map = {a.case_number: a for a in assessments}
 
         relevant_count = sum(1 for c in distinct_cases if ass_map.get(c) and ass_map[c].status == "RELEVANT")
@@ -518,7 +533,7 @@ class SearchEngineService:
         """
         concerns = self.db.query(SafetyConcern).filter_by(product_name=product_name).all()
         if not concerns:
-            concerns = self.db.query(SafetyConcern).all()
+            return []
 
         results = []
         for c in concerns:

@@ -193,7 +193,7 @@ class PDFReportService:
 
         # Table Header Row (Repeats across pages if broken)
         th_term = Paragraph("Risk Term", th_left_style)
-        th_count = Paragraph("Number of Relevant<br/>Case Reports", th_center_style)
+        th_count = Paragraph("Number of<br/>Case Reports", th_center_style)
         table_data.append([th_term, th_count])
 
         table_style_commands = [

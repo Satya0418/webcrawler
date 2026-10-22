@@ -180,7 +180,7 @@ export const IngestionManager: React.FC<Props> = ({ onFileIngested }) => {
                   handleFileSelect(e.target.files[0]);
                 }
               }}
-              accept=".xlsx,.xls"
+              accept=".xlsx"
               style={{ display: "none" }}
             />
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
