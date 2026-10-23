@@ -644,9 +644,17 @@ async def post_signal_and_risk(
                         end_dt = alt_e or end_dt
                         break
 
-    # Step 2: If no data locally or no changes found, query FDA SrLC live
-    # Traverses all search candidates (not just the first few) and tries generic/ingredient fallbacks
-    if not drug or not changes:
+    has_local_history = False
+    if local_drugs:
+        has_local_history = any(
+            bool(DatabaseService.get_safety_changes_by_drug_id(db, cand.id, allowed_sections_only=False))
+            for cand in local_drugs
+        )
+
+    # Step 2: Query FDA SrLC live if no local drug exists or local drug has no scraped history.
+    # If the drug is already indexed with safety history, but no changes fall within the requested date range,
+    # skip live crawling and proceed to the 404 date-range response.
+    if (not local_drugs or not has_local_history) and (not drug or not changes):
         try:
             # Build prioritized search queries: productName -> genericName -> activeIngredients
             search_queries = [prod_name]

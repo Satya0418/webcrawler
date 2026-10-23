@@ -471,6 +471,13 @@ class FDASrLCScraper:
                         # Clean section title (e.g., "5 Warnings and Precautions", "6 Adverse Reactions")
                         raw_section = re.sub(r"\s+", " ", h4.get_text()).strip()
 
+                        # Explicitly reject Section 17 and all non-whitelisted sections
+                        from app.sources.fda_srlc.section_detector import FDASrLCSectionDetector, clean_general_section_text
+                        if FDASrLCSectionDetector.is_section_17(raw_section):
+                            continue
+                        if not FDASrLCSectionDetector.is_whitelisted_section(raw_section):
+                            continue
+
                         # Collect all sibling elements up to the next h4
                         section_elements = []
                         for sib in h4.next_siblings:
@@ -495,12 +502,30 @@ class FDASrLCScraper:
                             original_text = parts[0].replace("Original Text:", "").strip()
                             updated_text = parts[1].strip()
 
-                        # Clean adverse reactions text to prevent section 17 or editorial noise leakage
-                        if "adverse reaction" in raw_section.lower() and updated_text:
-                            updated_text = clean_adverse_reaction_text(updated_text)
+                        # Clean section text according to section type
+                        norm_section = raw_section
+                        if FDASrLCSectionDetector.is_adverse_reactions(raw_section):
+                            norm_section = "Adverse Reactions"
+                            if updated_text:
+                                updated_text = clean_adverse_reaction_text(updated_text)
+                        elif FDASrLCSectionDetector.is_warnings_and_precautions(raw_section):
+                            norm_section = "Warnings and Precautions"
+                            if updated_text:
+                                updated_text = clean_general_section_text(updated_text)
+                        elif FDASrLCSectionDetector.is_use_in_specific_populations(raw_section):
+                            norm_section = "Use in Specific Populations"
+                            if updated_text:
+                                preg_content = FDASrLCSectionDetector.extract_pregnancy_subsections(updated_text)
+                                if not preg_content:
+                                    # Discard Section 8 if it doesn't contain pregnancy/lactation (8.1-8.3)
+                                    continue
+                                updated_text = preg_content
+
+                        if not updated_text or not updated_text.strip():
+                            continue
 
                         change_record = {
-                            "section": raw_section,
+                            "section": norm_section,
                             "source_record_id": suppl_id or f"{record['drug_name']}-{change_date}",
                             "source_date": change_date,
                             "change_type": "Labeling Revision",

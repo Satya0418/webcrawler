@@ -108,6 +108,16 @@ class DatabaseService:
             if not change_data.get("source_url"):
                 change_data["source_url"] = "https://www.accessdata.fda.gov/scripts/cder/safetylabelingchanges"
 
+            # Strictly reject Section 17 and non-whitelisted sections
+            from app.sources.fda_srlc.section_detector import FDASrLCSectionDetector
+            raw_sec_input = change_data.get("section") or change_data.get("labeling_section") or ""
+            if FDASrLCSectionDetector.is_section_17(raw_sec_input):
+                logger.info(f"Dropping Section 17 change for drug {drug_id}: {raw_sec_input}")
+                return None, False
+            if not FDASrLCSectionDetector.is_whitelisted_section(raw_sec_input, change_data.get("updated_text")):
+                logger.info(f"Dropping non-whitelisted section change for drug {drug_id}: {raw_sec_input}")
+                return None, False
+
             # Parse dates into datetime objects before validation
             source_date = _parse_date(change_data.get("source_date"))
             approval_date = _parse_date(change_data.get("approval_date"))
@@ -381,6 +391,7 @@ class DatabaseService:
         drug_id: int,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
+        allowed_sections_only: bool = True,
     ) -> List[SafetyLabelingChange]:
         """Get safety changes for a given drug, optionally filtered by date range, chronologically descending."""
         query = select(SafetyLabelingChange).where(SafetyLabelingChange.drug_id == drug_id)
@@ -393,7 +404,15 @@ class DatabaseService:
 
         query = query.order_by(desc(SafetyLabelingChange.source_date), asc(SafetyLabelingChange.id))
         result = session.execute(query)
-        return list(result.scalars().all())
+        records = list(result.scalars().all())
+        if allowed_sections_only:
+            from app.sources.fda_srlc.section_detector import FDASrLCSectionDetector
+            records = [
+                r for r in records
+                if not FDASrLCSectionDetector.is_section_17(r.section or "")
+                and FDASrLCSectionDetector.is_whitelisted_section(r.section or "", r.updated_text or "")
+            ]
+        return records
 
     @staticmethod
     def get_safety_change_by_id(session: Session, change_id: int) -> Optional[SafetyLabelingChange]:

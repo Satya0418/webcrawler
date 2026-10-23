@@ -122,6 +122,12 @@ class FDASrLCExtractor:
             for h4 in h4_tags:
                 raw_sec_name = re.sub(r"\s+", " ", h4.get_text()).strip()
 
+                # Explicitly reject Section 17 and non-whitelisted sections
+                if self.section_detector.is_section_17(raw_sec_name):
+                    continue
+                if not self.section_detector.is_whitelisted_section(raw_sec_name):
+                    continue
+
                 # Collect sibling elements up to the next h4
                 section_elements = []
                 for sib in h4.next_siblings:
@@ -132,6 +138,16 @@ class FDASrLCExtractor:
 
                 elem_texts = [clean_fda_element_text(elem) for elem in section_elements]
                 formatted_text = "\n\n".join([t for t in elem_texts if t]).strip()
+
+                # If Section 8, verify pregnancy subsections (8.1-8.3) exist
+                if self.section_detector.is_use_in_specific_populations(raw_sec_name):
+                    preg_content = self.section_detector.extract_pregnancy_subsections(formatted_text)
+                    if not preg_content:
+                        continue
+                    formatted_text = preg_content
+
+                if not formatted_text:
+                    continue
 
                 raw_html_snippets = "".join(str(elem) for elem in section_elements)
                 sanitized_html = sanitize_fda_section_html(raw_html_snippets)

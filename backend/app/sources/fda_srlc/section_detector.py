@@ -314,3 +314,45 @@ class FDASrLCSectionDetector:
 
         # Fallback: whole section text if pregnancy indicator was confirmed
         return clean_general_section_text(section_text)
+
+    @staticmethod
+    def is_section_17(header_text: str) -> bool:
+        """Identify Section 17 / Patient Counseling / Medication Guide."""
+        if not header_text:
+            return False
+        clean = re.sub(r"[\r\n\t]+", " ", str(header_text)).strip().lower()
+        if re.search(r"\b(?:17\b|17\s+17|pci/pi/mg|patient\s+counseling|medication\s+guide|patient\s+information|how\s+should\s+i\s+use)\b", clean):
+            return True
+        if "patient counseling" in clean or "medication guide" in clean or "patient information" in clean:
+            return True
+        return False
+
+    @staticmethod
+    def is_whitelisted_section(header_text: str, text: Optional[str] = None) -> bool:
+        """
+        Enforce strict whitelist:
+        ONLY allows:
+        - Section 6: Adverse Reactions
+        - Section 5: Warnings and Precautions
+        - Section 8: Use in Specific Populations (8.1 Pregnancy, 8.2 Lactation, 8.3 Reproductive Potential)
+        
+        Strictly rejects Section 17 and all other sections.
+        """
+        if not header_text:
+            return False
+        if FDASrLCSectionDetector.is_section_17(header_text):
+            return False
+        if FDASrLCSectionDetector.is_adverse_reactions(header_text):
+            return True
+        if FDASrLCSectionDetector.is_warnings_and_precautions(header_text):
+            return True
+        if FDASrLCSectionDetector.is_use_in_specific_populations(header_text):
+            if text:
+                return bool(FDASrLCSectionDetector.extract_pregnancy_subsections(text))
+            return True
+        return False
+
+
+def is_whitelisted_safety_section(header_text: str, text: Optional[str] = None) -> bool:
+    """Convenience module function for strict safety section whitelisting."""
+    return FDASrLCSectionDetector.is_whitelisted_section(header_text, text)

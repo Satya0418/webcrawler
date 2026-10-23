@@ -135,8 +135,14 @@ def export_drug_csv(drug: Any, changes: List[Any]) -> str:
     active_ingr = _get_val(drug, "active_ingredient", "")
     app_num = _get_val(drug, "application_number", "")
 
-    # Filter to latest date only
-    latest_changes = filter_latest_date_changes(changes)
+    # Filter strictly to whitelisted safety sections only (Section 6 Adverse Reactions, Section 5 Warnings, Section 8.1-8.3 Pregnancy/Lactation)
+    from app.sources.fda_srlc.section_detector import FDASrLCSectionDetector
+    filtered_changes = [
+        c for c in (changes or [])
+        if not FDASrLCSectionDetector.is_section_17(_get_val(c, "section", ""))
+        and FDASrLCSectionDetector.is_whitelisted_section(_get_val(c, "section", ""), _get_val(c, "updated_text", ""))
+    ]
+    latest_changes = filter_latest_date_changes(filtered_changes)
     latest_changes = sorted(latest_changes, key=lambda c: get_section_sort_key(_get_val(c, "section", "")))
 
     for c in latest_changes:
@@ -356,10 +362,36 @@ def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = Tru
     active_ingr = _get_val(drug, "active_ingredient", "") or "Not specified"
     app_num = _get_val(drug, "application_number", "") or "N/A"
 
+    from app.sources.fda_srlc.section_detector import FDASrLCSectionDetector
+    # Filter strictly to whitelisted safety sections only (Section 6 Adverse Reactions, Section 5 Warnings, Section 8.1-8.3 Pregnancy/Lactation)
+    filtered_changes = [
+        c for c in (changes or [])
+        if not FDASrLCSectionDetector.is_section_17(_get_val(c, "section", ""))
+        and FDASrLCSectionDetector.is_whitelisted_section(_get_val(c, "section", ""), _get_val(c, "updated_text", ""))
+    ]
+
+    if not filtered_changes:
+        no_data_msg = "<p>No data is present on adverse reaction or safety changes.</p>"
+        if not standalone:
+            return no_data_msg
+        return (
+            f"<!DOCTYPE html>\n"
+            f'<html lang="en">\n'
+            f"<head>\n"
+            f'    <meta charset="UTF-8">\n'
+            f'    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
+            f"    <title>{html.escape(display_clean)} - Safety Information</title>\n"
+            f"</head>\n"
+            f"<body>\n"
+            f"{no_data_msg}\n"
+            f"</body>\n"
+            f"</html>"
+        )
+
     if filter_latest:
-        target_changes = filter_latest_date_changes(changes)
+        target_changes = filter_latest_date_changes(filtered_changes)
     else:
-        target_changes = changes or []
+        target_changes = filtered_changes or []
 
     # Extract date strings
     date_strs = []
@@ -423,7 +455,12 @@ def export_drug_clean_html(drug: Any, changes: List[Any], standalone: bool = Tru
                 html_parts.append(f"<h4>{html.escape(format_section_display_title(sec))}</h4>")
                 _render_text_to_html_parts(cleaned_text, html_parts, bullet_pat)
 
-    inner_body = "\n".join(html_parts)
+    # If html_parts only contains the intro paragraph without any actual section content
+    rendered_sections = [p for p in html_parts if p.startswith("<h2>") or p.startswith("<h4>") or p.startswith("<h3>")]
+    if not rendered_sections:
+        inner_body = "<p>No data is present on adverse reaction or safety changes.</p>"
+    else:
+        inner_body = "\n".join(html_parts)
 
     if not standalone:
         return inner_body
@@ -467,8 +504,14 @@ def export_drug_json(drug: Any, changes: List[Any]) -> str:
     created = _get_val(drug, "created_at", "")
     updated = _get_val(drug, "updated_at", "")
 
-    # Filter to latest date only
-    latest_changes = filter_latest_date_changes(changes)
+    # Filter strictly to whitelisted safety sections only
+    from app.sources.fda_srlc.section_detector import FDASrLCSectionDetector
+    filtered_changes = [
+        c for c in (changes or [])
+        if not FDASrLCSectionDetector.is_section_17(_get_val(c, "section", ""))
+        and FDASrLCSectionDetector.is_whitelisted_section(_get_val(c, "section", ""), _get_val(c, "updated_text", ""))
+    ]
+    latest_changes = filter_latest_date_changes(filtered_changes)
 
     # Deduplicate changes by section on the latest date
     unique_sections = {}
